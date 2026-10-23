@@ -119,6 +119,10 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 				FixedSource eventRight = new FixedSource("eventRight", "EventRight", "async", "seda:inSharedEvents");
 				eventRight.setValuePath("$.right");
 				eventRight.setPollingIntervalMs(300);
+				FixedSource changing = new FixedSource("changing", "Changing", "async", "direct:inChanging");
+				changing.setEvaluation(dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation.ON_CHANGE);
+				FixedSource cached = new FixedSource("cached", "Cached", "async", "direct:inCached");
+				cached.setEvaluation(dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation.CACHED);
 				RoutesConfiguration routes = new RoutesConfiguration(
 						Arrays.asList(
 								// single-async route
@@ -140,7 +144,13 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 								new FixedSource("sOnly", "S", "sync", "seda:inSOnly"),
 								// two async sources arriving on threads of their own
 								new FixedSource("serialA", "A", "async", "direct:inSerialA"),
-								new FixedSource("serialB", "B", "async", "direct:inSerialB")),
+								new FixedSource("serialB", "B", "async", "direct:inSerialB"),
+								// headers of the source's message
+								new FixedSource("headed", "Headed", "async", "direct:inHeaded"),
+								new FixedSource("polledHeaded", "PolledHeaded", "sync", "seda:inPolledHeaded"),
+								// an OnChange trigger the gate holds back
+								changing,
+								cached),
 						List.of(),
 						List.of(new FixedSink("outAny", "mock:anyOut"),
 								new FixedSink("outNull", "mock:nullOut"),
@@ -149,7 +159,10 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 								new FixedSink("outShared", "mock:sharedOut"),
 								new FixedSink("outSharedEvents", "mock:sharedEventsOut"),
 								new FixedSink("outSyncOnly", "mock:syncOnlyOut"),
-								new FixedSink("outSerial", "direct:serialSink")),
+								new FixedSink("outSerial", "direct:serialSink"),
+								new FixedSink("outHeaded", "mock:headedOut"),
+								new FixedSink("outPolledHeaded", "mock:polledHeadedOut"),
+								new FixedSink("outChanging", "mock:changingOut")),
 						List.of());
 
 				add(route("onAny", List.of("stateA"), List.of("outAny")), routes);
@@ -161,6 +174,9 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 				add(route("sharedEvents", List.of("eventLeft", "eventRight"), List.of("outSharedEvents")), routes);
 				add(route("syncOnly", List.of("sOnly"), List.of("outSyncOnly")), routes);
 				add(route("serial", List.of("serialA", "serialB"), List.of("outSerial")), routes);
+				add(route("headed", List.of("headed"), List.of("outHeaded")), routes);
+				add(route("polledHeaded", List.of("polledHeaded"), List.of("outPolledHeaded")), routes);
+				add(route("changingBehindGate", List.of("changing", "cached"), List.of("outChanging")), routes);
 				// a slow sink that counts the evaluations writing at the same time
 				from("direct:serialSink").process(exchange -> {
 					MOST_CONCURRENT.accumulateAndGet(RUNNING.incrementAndGet(), Math::max);
@@ -196,6 +212,94 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 		assertEquals(1, MOST_CONCURRENT.get(), "a mapping evaluates once at a time");
 		Map<?, ?> last = sourcesOf(out.getExchanges().get(out.getExchanges().size() - 1).getMessage().getBody());
 		assertEquals(Map.of("A", "a" + updates, "B", "b" + updates), last, "the last evaluation writes the latest values");
+	}
+
+	@Test
+	void noHeaderOfTheSourcesMessageReachesASink() throws Exception {
+		MockEndpoint out = getMockEndpoint("mock:headedOut");
+		out.expectedMessageCount(1);
+		template.sendBodyAndHeaders("direct:inHeaded", "value",
+				Map.of("CamelMiloNodeIds", List.of("ns=2;s=Read"), "Content-Encoding", "gzip"));
+		out.assertIsSatisfied(2000);
+		var headers = out.getExchanges().get(0).getMessage().getHeaders();
+		assertNull(headers.get("CamelMiloNodeIds"), "a Read's node list would turn an OPC UA write into a read");
+		assertNull(headers.get("Content-Encoding"), "a source's transport headers are not a sink's");
+	}
+
+	@Test
+	void noHeaderOfAPolledReadReachesASink() throws Exception {
+		MockEndpoint out = getMockEndpoint("mock:polledHeadedOut");
+		out.expectedMinimumMessageCount(1);
+		template.sendBodyAndHeader("seda:inPolledHeaded", "value", "CamelMiloNodeIds", List.of("ns=2;s=Read"));
+		out.assertIsSatisfied(4000);
+		assertNull(out.getExchanges().get(0).getMessage().getHeader("CamelMiloNodeIds"));
+	}
+
+	@Test
+	void anOnChangeTriggerTheGateHoldsBackEvaluatesOnceTheGateOpens() throws Exception {
+		MockEndpoint out = getMockEndpoint("mock:changingOut");
+		out.expectedMessageCount(1);
+		template.sendBody("direct:inChanging", "5"); // the first value counts, but Cached has not delivered
+		template.sendBody("direct:inCached", "c"); // not a trigger itself: releases the held one
+		out.assertIsSatisfied(2000);
+		assertEquals(Map.of("Changing", "5", "Cached", "c"), sourcesOf(out.getExchanges().get(0).getMessage().getBody()));
+		template.sendBody("direct:inChanging", "5"); // unchanged
+		template.sendBody("direct:inCached", "d"); // never a trigger
+		Thread.sleep(300);
+		assertEquals(1, out.getReceivedCounter(), "an unchanged value and a Cached update do not evaluate");
+	}
+
+	@Test
+	void anEvaluationCopiesItsSourceValueOnce() throws Exception {
+		var threads = (com.sun.management.ThreadMXBean) java.lang.management.ManagementFactory.getThreadMXBean();
+		List<Object> payload = new java.util.ArrayList<>();
+		for (int i = 0; i < 20_000; i++) payload.add(new java.util.LinkedHashMap<>(Map.of("index", (long) i, "name", "item")));
+		MockEndpoint out = getMockEndpoint("mock:anyOut");
+		for (int i = 0; i < 5; i++) template.sendBody("direct:inA", payload); // warm up
+		long copy = Long.MAX_VALUE;
+		for (int i = 0; i < 5; i++) {
+			long before = threads.getCurrentThreadAllocatedBytes();
+			dk.aau.smartproductionlab.dmp.core.util.JsonCodec.freeze(payload);
+			copy = Math.min(copy, threads.getCurrentThreadAllocatedBytes() - before);
+		}
+		long evaluation = Long.MAX_VALUE;
+		for (int i = 0; i < 5; i++) {
+			out.reset();
+			long before = threads.getCurrentThreadAllocatedBytes();
+			template.sendBody("direct:inA", payload);
+			evaluation = Math.min(evaluation, threads.getCurrentThreadAllocatedBytes() - before);
+		}
+		assertEquals(payload, sourcesOf(out.getExchanges().get(0).getMessage().getBody()).get("StationState"));
+		assertTrue(evaluation < 2 * copy, "one evaluation allocated " + evaluation + " bytes, one copy of its source "
+				+ copy + ": the value is copied once, when the cache accepts it");
+	}
+
+	@Test
+	void evaluationsAndSinkWritesAreRecordedAsFlightRecorderEvents() throws Exception {
+		java.nio.file.Path file = java.nio.file.Files.createTempFile("dmp-evaluation", ".jfr");
+		try (var recording = new jdk.jfr.Recording()) {
+			recording.enable("dk.aau.smartproductionlab.dmp.Evaluation");
+			recording.enable("dk.aau.smartproductionlab.dmp.SinkWrite");
+			recording.start();
+			MockEndpoint out = getMockEndpoint("mock:anyOut");
+			out.expectedMessageCount(1);
+			template.sendBody("direct:inA", "RECORDED");
+			out.assertIsSatisfied(2000);
+			recording.stop();
+			recording.dump(file);
+			var events = jdk.jfr.consumer.RecordingFile.readAllEvents(file);
+			var evaluation = events.stream().filter(event -> event.getEventType().getName().endsWith(".Evaluation")).findFirst().orElseThrow();
+			assertEquals("onAny", evaluation.getString("mapping"));
+			assertEquals("StationState", evaluation.getString("triggers"));
+			assertTrue(evaluation.getBoolean("succeeded"));
+			var write = events.stream().filter(event -> event.getEventType().getName().endsWith(".SinkWrite")).findFirst().orElseThrow();
+			assertEquals("outAny", write.getString("sink"));
+			assertEquals("mock", write.getString("kind"));
+			assertTrue(!write.getDuration().isNegative() && evaluation.getDuration().compareTo(write.getDuration()) >= 0,
+					"the sink write is part of its evaluation");
+		} finally {
+			java.nio.file.Files.deleteIfExists(file);
+		}
 	}
 
 	@Test

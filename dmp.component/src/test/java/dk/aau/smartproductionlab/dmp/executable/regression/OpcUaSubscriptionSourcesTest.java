@@ -163,10 +163,21 @@ class OpcUaSubscriptionSourcesTest {
 		assertTrue(writes.stream().noneMatch(body -> body.contains("not a program transition")), String.valueOf(writes));
 	}
 
-	/** One variable (Level) and the Server object's transition events. */
+	@Test
+	void aPolledVariableWrittenToAnotherVariableIsWrittenNotRead() throws Exception {
+		// The poll's Read leaves its node list on the source's message; the evaluation must not hand it to the
+		// sink, whose producer would then Read the polled node instead of writing (and report success).
+		runtime.installBundle("copy", compileWrite("function aimc_main(sources) return { Out = sources.Pressure + 1 } end"));
+		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(42).equals(device.setpoint()));
+		device.level(50);
+		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(51).equals(device.setpoint()));
+	}
+
+	/** One variable (Level), a writable one (Setpoint) and the Server object's transition events. */
 	private static final class Device extends ManagedAddressSpaceFragmentWithLifecycle {
 		private final OpcUaServer server;
 		private final UaVariableNode level;
+		private final UaVariableNode setpoint;
 		private final SubscriptionModel subscriptions;
 
 		Device(OpcUaServer server) {
@@ -180,6 +191,15 @@ class OpcUaSubscriptionSourcesTest {
 					.setDataType(NodeIds.Int32).setTypeDefinition(NodeIds.BaseDataVariableType)
 					.setAccessLevel(AccessLevel.CurrentRead).setUserAccessLevel(AccessLevel.CurrentRead).buildAndAdd();
 			level(41);
+			setpoint = UaVariableNode.builder(getNodeContext()).setNodeId(new NodeId(1, "Setpoint"))
+					.setBrowseName(new QualifiedName(1, "Setpoint")).setDisplayName(LocalizedText.english("Setpoint"))
+					.setDataType(NodeIds.Int32).setTypeDefinition(NodeIds.BaseDataVariableType)
+					.setAccessLevel(AccessLevel.READ_WRITE).setUserAccessLevel(AccessLevel.READ_WRITE).buildAndAdd();
+			setpoint.setValue(new DataValue(new Variant(0), StatusCode.GOOD, DateTime.now()));
+		}
+
+		Object setpoint() {
+			return setpoint.getValue().getValue().getValue();
 		}
 
 		void level(int value) {
@@ -220,6 +240,33 @@ class OpcUaSubscriptionSourcesTest {
 
 	// ---- models: the opcua-read fixture with Pressure observed, or replaced by an event affordance ----
 
+	/** The opcua-read fixture with Pressure read every 50 ms (not observed) and written to the Setpoint variable. */
+	private RoutesConfiguration compileWrite(String lua) throws Exception {
+		JsonObject aid = json(resource("opcua-read/aid.json")).getAsJsonObject();
+		JsonObject opcua = child(aid, "interface_opcua");
+		child(child(opcua, "EndpointMetadata"), "base").addProperty("value", "opc.tcp://127.0.0.1:" + devicePort);
+		JsonObject properties = child(child(opcua, "InteractionMetadata"), "properties");
+		JsonObject pressure = child(properties, "Pressure");
+		child(child(pressure, "forms"), "href").addProperty("value", "/?id=ns=1;s=Level");
+		JsonObject setpoint = pressure.deepCopy();
+		setpoint.addProperty("idShort", "Setpoint");
+		child(setpoint, "title").addProperty("value", "Setpoint");
+		child(child(setpoint, "forms"), "href").addProperty("value", "/?id=ns=1;s=Setpoint");
+		properties.getAsJsonArray("value").add(setpoint);
+		JsonObject aimc = json(resource("opcua-read/aimc.json")).getAsJsonObject();
+		JsonObject mapping = child(aimc, "MappingConfigurations").getAsJsonArray("value").get(0).getAsJsonObject();
+		JsonObject source = child(mapping, "Sources").getAsJsonArray("value").get(0).getAsJsonObject();
+		source.getAsJsonArray("value").add(json("{\"modelType\":\"Property\",\"idShort\":\"PollingInterval\","
+				+ "\"valueType\":\"xs:double\",\"value\":\"0.05\"}"));
+		JsonArray sinkKeys = child(source, "Source").getAsJsonObject("value").getAsJsonArray("keys").deepCopy();
+		sinkKeys.get(4).getAsJsonObject().addProperty("value", "Setpoint");
+		JsonObject sink = child(mapping, "Sinks").getAsJsonArray("value").get(0).getAsJsonObject();
+		child(sink, "Sink").getAsJsonObject("value").add("keys", sinkKeys);
+		child(mapping, "Transformation").addProperty("value",
+				Base64.getEncoder().encodeToString(lua.getBytes(StandardCharsets.UTF_8)));
+		return bundles(aid, aimc).get(0);
+	}
+
 	private RoutesConfiguration compile(boolean events, String lua) throws Exception {
 		return compile(events, new String[] { lua }).get(0);
 	}
@@ -259,7 +306,11 @@ class OpcUaSubscriptionSourcesTest {
 					Base64.getEncoder().encodeToString(lua.getBytes(StandardCharsets.UTF_8)));
 			mappings.add(copy);
 		}
+		return bundles(aid, aimc);
+	}
 
+	/** Publishes the models to a fake repository and compiles the AIMC's bundles. */
+	private List<RoutesConfiguration> bundles(JsonObject aid, JsonObject aimc) throws Exception {
 		if (repository != null) repository.close();
 		repository = new FakeAasRepository();
 		String publishedAimc = PublishedModels.publish(aimc.toString(), "contractAAS", "contract");

@@ -524,7 +524,10 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   its decoded, `valuePath`-extracted value to a per-mapping latest-value cache.
   The mapping evaluates when a triggering source updates **and every observed
   or polled source has delivered at least once**; the others refresh the cache
-  only.
+  only. A trigger that arrives before then is kept: the first evaluation once
+  the last source has delivered counts it as a trigger (`meta.sources.<id>.trigger`).
+  The cache keeps each value as it was accepted, immutable, and every
+  evaluation, the Lua conversion and the sinks share it; it is copied once.
 - A `ReadAtEvaluation` source has no consumer and no interval (a
   `PollingInterval` other than 0 blocks the mapping). Each evaluation reads it
   once, after the readiness gate and before the Lua; a failed read fails the
@@ -538,6 +541,9 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   from an older cache, and its writes never precede an earlier one's. While an
   evaluation runs, a source arriving on another thread waits; its value is
   already in the cache. `meta.sources` times belong to the same snapshot.
+  An evaluation runs on a message of its own: no header or property of a
+  source's message (a Read's node list, an HTTP response's headers) reaches the
+  transformation or a sink.
 - Every mapping has consumers and producers of its own. Mappings may observe
   the same affordance or AAS element: each gets its own monitored item,
   subscription, listener or poll at its own authored interval, and never sees
@@ -746,7 +752,7 @@ end
   | `meta.invocation.caller`, `.skill`, `.aas`, `.submodel`, `.path`, `.restPath` | an Operation call only: who called (`basyx` or `rest`) and the Operation | the same |
   | `meta.invocation.durationMs` | — | from the start to the end of the sinks or the device's reply |
   | `meta.invocation.outcome` | — | `Succeeded`, or `Failed` when the request Lua, a sink, a read or the device failed (§6, §7 step 8) |
-  | `meta.invocation.error` | — | with `Failed`: `code` (the connector's, e.g. `DEVICE_REJECTED`, `DMP_SOURCE_READ_FAILED`), `message`, and the connector's `category` (`REMOTE`, `TIMEOUT`, `TRANSPORT`, `CONFIGURATION`) where it has one |
+  | `meta.invocation.error` | — | with `Failed`: `code` (the connector's, e.g. `DEVICE_REJECTED`, `DMP_SOURCE_READ_FAILED`, else `DMP_MAPPING_FAILED`), `message` (a failed read's own cause included), and the connector's `category` (`REMOTE`, `TIMEOUT`, `TRANSPORT`, `CONFIGURATION`) where it has one |
 
   `meta.sources` and `meta.sinks` are always tables. Lua can use them for
   explicit logging: `Time = meta.sources.State.time`,
@@ -811,6 +817,14 @@ written by an ordinary Sink or a ResponseSink (§5.5). The DMP's own state is in
 per mapping change (`mapping <token> of AIMC <token> is blocked (category),
 generation n`; warnings for `blocked` and `failed`), with repository IDs as
 the status tokens, followed by one line per diagnostic.
+
+The Java Flight Recorder records an ordinary mapping's evaluations, off
+unless a recording is started (`-XX:StartFlightRecording` or `jcmd <pid>
+JFR.start`): `dk.aau.smartproductionlab.dmp.Evaluation` spans one evaluation,
+Lua and every sink, with its `mapping`, `triggers` and `waitedNanos` (from the
+triggering source's arrival to the evaluation's start);
+`dk.aau.smartproductionlab.dmp.SinkWrite` spans one sink's send until its
+connector acknowledged it, with its `sink` and `kind`.
 
 `GET /management/mappings?aimc=<AIMC submodel id>` explains one AIMC's
 mappings: per mapping its `identity`, `listIndex`, `state`, `category`,

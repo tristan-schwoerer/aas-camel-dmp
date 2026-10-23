@@ -139,8 +139,6 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 		for (List<String> endpointIds : acquisitions.values()) {
 			String endpointId = endpointIds.get(0);
 			DataSourceConfiguration config = routesConfiguration.getDatasources().get(endpointId);
-			List<String> sourceIds = endpointIds.stream()
-					.map(id -> FanIn.resolveSourceId(routesConfiguration, id)).toList();
 			if (config != null && "sync".equalsIgnoreCase(config.getDelivery())) {
 				// Sync sources issue a fresh Read when the connector has a read
 				// adapter; consumer-only sources retain their polling consumer path.
@@ -154,7 +152,6 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 						.routeId(pollRouteId);
 				RouteCreatorHelper.configureSyncRead(poll, config.getConnectionURI(), SYNC_POLL_TIMEOUT_MS);
 				poll.filter(exchange -> exchange.getMessage().getBody() != null)
-						.setHeader(FanIn.SOURCE_ID_HEADER, org.apache.camel.builder.Builder.constant(sourceIds.get(0)))
 						.process(fanIn.disassemble(endpointIds))
 						.filter(fanIn::contributed)
 						.filter(fanIn::selectedTrigger)
@@ -171,7 +168,6 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 						;
 				sourceRoute = RouteCreatorHelper.normalizeSourceEvents(sourceRoute, config, routeId);
 				sourceRoute
-						.setHeader(FanIn.SOURCE_ID_HEADER, org.apache.camel.builder.Builder.constant(sourceIds.get(0)))
 						.process(fanIn.disassemble(endpointIds))
 						.filter(fanIn::contributed)
 						.filter(fanIn::selectedTrigger)

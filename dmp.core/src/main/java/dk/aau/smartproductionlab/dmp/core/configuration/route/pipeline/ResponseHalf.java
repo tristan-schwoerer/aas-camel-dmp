@@ -70,9 +70,9 @@ public final class ResponseHalf {
 	/** The route running the response half on a copy of the evaluation (a Content Enricher). */
 	public String uri() { return uri; }
 
-	/** Before the request transformation: keeps the evaluation's sources. */
+	/** Before the request transformation: keeps the evaluation's sources (frozen; their values already are). */
 	public void keepRequestSources(Exchange exchange) {
-		exchange.setProperty(REQUEST_SOURCES, JsonCodec.copyValue(exchange.getMessage().getBody()));
+		exchange.setProperty(REQUEST_SOURCES, JsonCodec.freeze(exchange.getMessage().getBody()));
 	}
 
 	/** After every sink succeeded: the ResponseSources, each projecting the value its Sink was sent. */
@@ -82,7 +82,7 @@ public final class ResponseHalf {
 		Map<String, Object> times = new LinkedHashMap<>();
 		for (Map<String, Object> binding : sourceBindings) {
 			Object value = written.get(String.valueOf(binding.get("sinkId")));
-			sources.putAll(ResponseProjectionProcessor.project(JsonCodec.copyValue(value), List.of(binding)));
+			sources.putAll(ResponseProjectionProcessor.project(value, List.of(binding)));
 			times.put(String.valueOf(binding.get("sourceId")), TransformerMeta.source(java.time.Instant.now()));
 		}
 		prepare(exchange, sources, times, TransformerMeta.finished(invocation(exchange), "Succeeded", null));

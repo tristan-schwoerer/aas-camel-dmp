@@ -184,9 +184,7 @@ class AffordancePipelineTest extends CamelTestSupport {
 						List.of("position", "invoke", "state"), List.of(), List.of());
 				triggerFanIn = new FanIn(triggerRoute, triggerConfigs, AffordanceValidation.Mode.OFF);
 				for (String endpointId : triggerRoute.getDatasources()) {
-					String sourceId = FanIn.resolveSourceId(triggerConfigs, endpointId);
 					from("direct:" + endpointId)
-						.setHeader(FanIn.SOURCE_ID_HEADER, constant(sourceId))
 						.process(triggerFanIn.disassemble(List.of(endpointId)))
 						.filter(triggerFanIn::contributed)
 						.filter(triggerFanIn::selectedTrigger)

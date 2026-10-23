@@ -119,6 +119,64 @@ public final class JsonCodec {
 		return value;
 	}
 
+	/**
+	 * An immutable deep copy of a decoded value tree, made once where a value enters an evaluation (SPEC §6);
+	 * every later stage shares it instead of copying it again. Maps and lists become unmodifiable; byte arrays
+	 * are copied and never written to afterwards. A frozen value is returned as it is.
+	 */
+	public static Object freeze(Object value) {
+		if (value instanceof FrozenMap || value instanceof FrozenList) return value;
+		if (value instanceof byte[] bytes) return bytes.clone();
+		if (value instanceof Map<?, ?> map) {
+			Map<String, Object> copy = new LinkedHashMap<>(Math.max(4, (int) (map.size() / 0.75f) + 1));
+			map.forEach((key, member) -> copy.put(String.valueOf(key), freeze(member)));
+			return new FrozenMap(copy);
+		}
+		if (value instanceof List<?> list) {
+			Object[] copy = new Object[list.size()];
+			int index = 0;
+			for (Object member : list) copy[index++] = freeze(member);
+			return new FrozenList(copy);
+		}
+		if (value != null && value.getClass().isArray()) return copyValue(value);
+		return value;
+	}
+
+	/** Whether {@code value} is a tree {@link #freeze} made, safe to share. */
+	public static boolean isFrozen(Object value) {
+		return value instanceof FrozenMap || value instanceof FrozenList;
+	}
+
+	/** An unmodifiable JSON object, in member order. */
+	private static final class FrozenMap extends java.util.AbstractMap<String, Object> {
+		private final Map<String, Object> members;
+		private final Map<String, Object> view;
+
+		private FrozenMap(Map<String, Object> members) {
+			this.members = members;
+			this.view = java.util.Collections.unmodifiableMap(members);
+		}
+
+		@Override public java.util.Set<Map.Entry<String, Object>> entrySet() { return view.entrySet(); }
+		@Override public java.util.Set<String> keySet() { return view.keySet(); }
+		@Override public java.util.Collection<Object> values() { return view.values(); }
+		@Override public Object get(Object key) { return members.get(key); }
+		@Override public boolean containsKey(Object key) { return members.containsKey(key); }
+		@Override public int size() { return members.size(); }
+	}
+
+	/** An unmodifiable JSON array. */
+	private static final class FrozenList extends java.util.AbstractList<Object> implements java.util.RandomAccess {
+		private final Object[] members;
+
+		private FrozenList(Object[] members) {
+			this.members = members;
+		}
+
+		@Override public Object get(int index) { return members[index]; }
+		@Override public int size() { return members.length; }
+	}
+
 	/** Serialises to JSON with nulls preserved and integral numbers integral. */
 	public static String toJson(Object value) {
 		return GSON.toJson(toJsonCompatibleValue(value));

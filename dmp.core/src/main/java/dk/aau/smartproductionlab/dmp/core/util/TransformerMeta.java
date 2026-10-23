@@ -55,7 +55,7 @@ public final class TransformerMeta {
 
 	/**
 	 * {@code meta.invocation.error}: the connector's code and category where it has them (also as the cause of a
-	 * failure that reports several sinks), and the message.
+	 * failure that reports several sinks), else {@code defaultCode}; and the message.
 	 */
 	public static Map<String, Object> error(Throwable failure, String defaultCode) {
 		Map<String, Object> error = new LinkedHashMap<>();
@@ -68,7 +68,7 @@ public final class TransformerMeta {
 			error.put("code", connector.getConnectorCode());
 			error.put("category", connector.getCategory().name());
 		} else {
-			error.put("code", failure == null ? defaultCode : failure.getClass().getSimpleName());
+			error.put("code", defaultCode);
 		}
 		error.put("message", failure == null || failure.getMessage() == null ? "" : failure.getMessage());
 		return error;

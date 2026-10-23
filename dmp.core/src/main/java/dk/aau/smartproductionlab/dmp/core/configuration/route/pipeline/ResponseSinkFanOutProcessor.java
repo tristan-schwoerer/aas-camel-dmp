@@ -140,12 +140,21 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 		jobs.end();
 	}
 
-	/** Steps of the write route: send the job's payload to its endpoint; a failure is counted and logged. */
+	/**
+	 * Steps of the write route: send the job's payload to its endpoint, chosen among the bindings' endpoints
+	 * (resolved once, when the route starts); a failure is counted and logged.
+	 */
 	public void configureWrite(ProcessorDefinition<?> route) {
-		route.process(ResponseSinkFanOutProcessor::toWriteMessage)
-				.doTry()
-					.toD("${header." + WRITE_ENDPOINT_HEADER + "}")
-				.doCatch(Exception.class)
+		var attempt = route.process(ResponseSinkFanOutProcessor::toWriteMessage).doTry();
+		var endpoints = attempt.choice();
+		for (String endpoint : bindings.stream().map(SinkBinding::endpoint).distinct().toList())
+			endpoints.when(exchange -> endpoint.equals(exchange.getMessage().getHeader(WRITE_ENDPOINT_HEADER, String.class)))
+					.to(endpoint);
+		endpoints.otherwise().process(exchange -> {
+			throw new IllegalStateException("response write references an unconfigured sink endpoint");
+		});
+		endpoints.end();
+		attempt.doCatch(Exception.class)
 					.process(this::recordFailure)
 				.doFinally()
 					.process(exchange -> pendingWrites.decrementAndGet())
@@ -182,8 +191,9 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 
 	private void recordFailure(Exchange exchange) {
 		long failures = failedWrites.incrementAndGet();
+		Throwable cause = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Throwable.class);
 		LOGGER.warn("mapping {} response sink group {} failed; the call or evaluation is unchanged (failed={})",
-				correlationId, exchange.getProperty(SINK_LABEL), failures);
+				correlationId, exchange.getProperty(SINK_LABEL), failures, cause);
 	}
 
 	public List<DispatchJob> prepareJobs(Exchange exchange) {
@@ -247,25 +257,24 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 						group.bindings.stream().map(b -> b.sinkId).toList(), paths);
 				AffordanceValidation validator = group.payloadGroup == null
 						? null : payloadValidators.get(group.payloadGroup);
-				if (validator != null) validator.outgoing(JsonCodec.toJsonCompatibleValue(payload));
+				if (validator != null) validator.outgoing(payload);
 			} else {
 				payload = group.values.get(first.sinkId);
 				validateMember(first, payload);
 				AffordanceValidation validator = first.payloadGroup == null
 						? singlePayloadValidators.get(first.sinkId)
 						: payloadValidators.get(first.payloadGroup);
-				if (validator != null) validator.outgoing(JsonCodec.toJsonCompatibleValue(payload));
+				if (validator != null) validator.outgoing(payload);
 			}
 		} catch (RuntimeException e) {
-			LOGGER.warn("mapping {} response sink group {} rejected before send",
-				correlationId, group.payloadGroup == null ? first.sinkId : group.payloadGroup);
+			LOGGER.warn("mapping {} response sink group {} rejected before send: {}",
+				correlationId, group.payloadGroup == null ? first.sinkId : group.payloadGroup, e.getMessage());
 			return null;
 		}
 
 		String endpoint = first.endpoint;
 		String sinkLabel = group.payloadGroup == null ? first.sinkId : group.payloadGroup;
-		return new DispatchJob(endpoint, JsonCodec.copyValue(JsonCodec.toJsonCompatibleValue(payload)),
-				sinkLabel, group.jsonPayload);
+		return new DispatchJob(endpoint, JsonCodec.toJsonCompatibleValue(payload), sinkLabel, group.jsonPayload);
 	}
 
 	/** Wire Tap's exchange copy is shallow; snapshot payload trees before scheduling. */
@@ -361,7 +370,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 
 	private void validateMember(SinkBinding binding, Object value) {
 		AffordanceValidation validator = memberValidators.get(binding.sinkId);
-		if (validator != null) validator.outgoing(JsonCodec.toJsonCompatibleValue(value));
+		if (validator != null) validator.outgoing(value);
 	}
 
 	private static final class Group {

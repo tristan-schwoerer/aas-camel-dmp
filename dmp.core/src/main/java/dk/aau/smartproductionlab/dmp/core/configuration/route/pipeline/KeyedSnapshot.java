@@ -39,9 +39,9 @@ public final class KeyedSnapshot {
 		this.root = root;
 	}
 
-	/** A defensive snapshot over an already-decoded Java value tree. */
+	/** A snapshot over an already-decoded Java value tree, frozen ({@link JsonCodec#freeze}): frozen members are shared. */
 	public static KeyedSnapshot of(Object root) {
-		return new KeyedSnapshot(JsonCodec.copyValue(root));
+		return new KeyedSnapshot(JsonCodec.freeze(root));
 	}
 
 	/** The empty keyed snapshot. */

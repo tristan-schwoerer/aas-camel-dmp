@@ -86,38 +86,26 @@ service, the PLC4X option deserializer, `AASComponentUtil`,
 resources and javadoc references. CI runs on `main`. Kept: the one-shot
 `DmpComponent.installBundle(String, RoutesConfiguration)`, which 65 tests use.
 
-### H1. One clean evaluation (`dmp.core`)
+### H1. One clean evaluation — done (2026-10-23)
 
-An evaluation becomes its own exchange instead of the source's exchange
-mutated along the way.
-
-- **Fresh message.** Each evaluation starts from a fresh message, so no source
-  header or property reaches Lua or a sink. Today a polled OPC UA source
-  leaves `CamelMiloNodeIds`, which an OPC UA sink then executes as a Read and
-  reports as a successful write. HTTP response headers go out as request
-  headers of an HTTP sink.
-- **One copy per value.** Values are copied once at the connector boundary
-  and are immutable after that (unmodifiable maps and lists). The cache
-  snapshot, the per-sink start and the response half share them. This removes
-  about 10 of the 12 full copies of the simplest mapping, and the 2S+2 copies
-  of `requestSources` (S = number of sinks); the Lua conversions stay.
-- **OnChange.** A change stays pending until an evaluation passes the
-  readiness gate (today a first value the gate drops is lost). Values are
-  compared only for OnChange sources.
-- **Per message.** Sink endpoints are resolved when the route is built (no
-  `toD`, no `send(String uri)` per evaluation), and nothing is formatted for a
-  disabled DEBUG log.
-- **Causes kept.** `ConnectorInvocationException` takes a cause.
-  `DMP_SOURCE_READ_FAILED` carries the read's own error.
-  `meta.invocation.error.code` is the connector's code or `DMP_MAPPING_FAILED`,
-  never a Java class name.
-- **O3 hook** (EVALUATION §4.2): source arrival and sink completion as a JFR
-  event, in the same place.
-- **Tests:**
-  - a polled OPC UA source with an OPC UA sink;
-  - an HTTP source with an HTTP sink (headers);
-  - OnChange behind the gate;
-  - a copy-count or allocation check on the S1 mapping.
+- An evaluation runs on an exchange of its own (`FanIn.evaluate`), so no source
+  header reaches a sink. A new end-to-end test polls an OPC UA variable and
+  writes another one; on the H0 code the sink read the polled node instead.
+- Values are frozen once (`JsonCodec.freeze`) when the cache accepts them and
+  shared after that by the snapshot, the sinks (`PayloadAssembler` shares
+  contributions), the response half and the per-sink base properties. One
+  evaluation of a 20 000-item payload allocated 10.8 copies of it at H0 and
+  1.0 now (measured with `ThreadMXBean`; the test asserts under 2).
+- A trigger the readiness gate holds back stays pending until an evaluation
+  passes the gate; only OnChange sources compare values.
+- Response writes choose among their endpoints instead of `toD`; FanIn resolves
+  its collector endpoint once; the DEBUG log formats only when enabled.
+- `ConnectorInvocationException` takes a cause; `DMP_SOURCE_READ_FAILED` keeps
+  the read's error and category; `meta.invocation.error.code` falls back to
+  `DMP_MAPPING_FAILED`, never a Java class name; failed response writes log
+  their exception.
+- O3: JFR events `dk.aau.smartproductionlab.dmp.Evaluation` and `.SinkWrite`
+  (SPEC §10).
 
 ### H2. Lua budget (`dmp.camel-lua`)
 

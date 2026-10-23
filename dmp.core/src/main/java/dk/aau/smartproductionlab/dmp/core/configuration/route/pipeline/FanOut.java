@@ -29,7 +29,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
@@ -43,6 +42,7 @@ import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfigu
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload;
+import dk.aau.smartproductionlab.dmp.core.diagnostics.SinkWriteEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,6 +92,7 @@ public final class FanOut {
 	private static final String DISPATCH_OUTCOMES_PROPERTY = "dmp.dispatchOutcomes";
 	private static final String CURRENT_DISPATCH_JOB = "dmp.currentDispatchJob";
 	private static final String DISPATCH_ENDPOINT_HEADER = "dmp.dispatchEndpoint";
+	private static final String SINK_WRITE_EVENT = "dmp.sinkWriteEvent";
 	/** Exchange property carrying each SinkId's value as staged for its sink (a response's ResponseSources). */
 	private static final String SINK_VALUES_PROPERTY = "dmp.sinkValues";
 	/** Exchange property holding the first sink failure, the cause of the fan-out's own. */
@@ -122,8 +123,10 @@ public final class FanOut {
 			throw new IllegalArgumentException("route " + routeId + ": one endpoint per sink is required");
 
 		if (transformerEndpoints != null && transformerEndpoints.length > 0) {
-			route.process(exchange -> LOGGER.debug("route {}: body before transformer: {}",
-					routeId, exchange.getMessage().getBody(String.class)));
+			route.process(exchange -> {
+				if (LOGGER.isDebugEnabled()) LOGGER.debug("route {}: body before transformer: {}",
+						routeId, exchange.getMessage().getBody());
+			});
 			route.to(transformerEndpoints);
 		}
 
@@ -165,8 +168,8 @@ public final class FanOut {
 			}
 		}
 
-		// invariant 1: the shared result is parsed ONCE into one immutable
-		// snapshot; every sink below starts from that same value
+		// invariant 1: the shared result is frozen ONCE into one immutable
+		// snapshot; every sink below shares that same value, uncopied
 		route.process(exchange -> {
 			KeyedSnapshot result = KeyedSnapshot.parse(exchange.getMessage().getBody());
 			exchange.setProperty(RESULT_PROPERTY, result);
@@ -176,9 +179,8 @@ public final class FanOut {
 			exchange.setProperty(DISPATCH_JOBS_PROPERTY, new ArrayList<DispatchJob>());
 			exchange.setProperty(SINK_VALUES_PROPERTY, new LinkedHashMap<String, Object>());
 			exchange.setProperty(FIRST_FAILURE_PROPERTY, new java.util.concurrent.atomic.AtomicReference<Exception>());
-			exchange.setProperty(BRANCH_BASE_PROPERTIES,
-					copyProperties(exchange.getProperties()));
-			exchange.setProperty(BRANCH_BASE_HEADERS, copyMap(exchange.getMessage().getHeaders()));
+			exchange.setProperty(BRANCH_BASE_PROPERTIES, baseProperties(exchange.getProperties()));
+			exchange.setProperty(BRANCH_BASE_HEADERS, new LinkedHashMap<>(exchange.getMessage().getHeaders()));
 			LOGGER.debug("route {}: body after transformer: {}",
 					routeId, exchange.getMessage().getBody());
 		});
@@ -208,14 +210,14 @@ public final class FanOut {
 						memberValidators.get(configId).outgoing(member == JsonPointer.JSON_NULL ? null : member);
 						DataSinkConfiguration sinkConfig = routesConfiguration.getDatasinks().get(configId);
 						if (sinkConfig != null && sinkConfig.getSinkId() != null)
-							sinkValues(e).put(sinkConfig.getSinkId(), JsonCodec.copyValue(member));
+							sinkValues(e).put(sinkConfig.getSinkId(), member);
 						if (group != null) {
 							if (sendGroup && groupFailures(e).contains(group)) {
 								throw new IllegalArgumentException("payloadGroup " + group + " has a failed member");
 							}
 							Map<String, Object> staged = groupPayloads(e)
 									.computeIfAbsent(group, ignored -> new LinkedHashMap<>());
-							staged.put(configId, JsonCodec.copyValue(member));
+							staged.put(configId, member);
 							if (sendGroup) {
 								Object merged = PayloadAssembler.assemble(staged, groupMembers.get(group), valuePaths);
 								groupPayloads(e).remove(group);
@@ -254,6 +256,9 @@ public final class FanOut {
 			DispatchJob job = (DispatchJob) exchange.getMessage().getBody();
 			stripFanOutState(exchange);
 			exchange.setProperty(CURRENT_DISPATCH_JOB, job);
+			SinkWriteEvent write = new SinkWriteEvent();
+			write.begin();
+			exchange.setProperty(SINK_WRITE_EVENT, write);
 			exchange.getMessage().setHeader(DISPATCH_ENDPOINT_HEADER, job.endpoint());
 			if (job.jsonPayload()) exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
 			else exchange.getMessage().removeHeader(Exchange.CONTENT_TYPE);
@@ -274,12 +279,18 @@ public final class FanOut {
 			throw new IllegalStateException("fan-out job references an unconfigured sink endpoint");
 		});
 		endpointChoice.end();
-		send.process(exchange -> exchange.getMessage().setBody(
-				new DispatchOutcome((DispatchJob) exchange.getProperty(CURRENT_DISPATCH_JOB), null)));
+		send.process(exchange -> {
+			commitWrite(exchange, true);
+			exchange.getMessage().setBody(
+					new DispatchOutcome((DispatchJob) exchange.getProperty(CURRENT_DISPATCH_JOB), null));
+		});
 		send.doCatch(Exception.class)
-				.process(exchange -> exchange.getMessage().setBody(new DispatchOutcome(
-						(DispatchJob) exchange.getProperty(CURRENT_DISPATCH_JOB),
-						exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class))))
+				.process(exchange -> {
+					commitWrite(exchange, false);
+					exchange.getMessage().setBody(new DispatchOutcome(
+							(DispatchJob) exchange.getProperty(CURRENT_DISPATCH_JOB),
+							exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class)));
+				})
 				.end();
 		split.end();
 		route.process(FanOut::collectDispatchOutcomes);
@@ -308,6 +319,19 @@ public final class FanOut {
 
 	private record DispatchJob(String routeId, String configId, String endpoint, Object payload,
 			boolean jsonPayload) { }
+
+	/** Ends a sink write's {@link SinkWriteEvent} once its connector answered. */
+	private static void commitWrite(Exchange exchange, boolean succeeded) {
+		SinkWriteEvent write = exchange.getProperty(SINK_WRITE_EVENT, SinkWriteEvent.class);
+		if (write == null || !write.shouldCommit()) return;
+		DispatchJob job = (DispatchJob) exchange.getProperty(CURRENT_DISPATCH_JOB);
+		write.mapping = job.routeId();
+		write.sink = job.configId();
+		int colon = job.endpoint().indexOf(':');
+		write.kind = colon <= 0 ? "unknown" : job.endpoint().substring(0, colon);
+		write.succeeded = succeeded;
+		write.commit();
+	}
 
 	private record DispatchOutcome(DispatchJob job, Exception failure) { }
 
@@ -355,7 +379,7 @@ public final class FanOut {
 
 	private static void restoreBranchState(org.apache.camel.Exchange exchange) {
 		restoreBranchMetadata(exchange);
-		exchange.getMessage().setBody(JsonCodec.copyValue(snapshotOf(exchange).root()));
+		exchange.getMessage().setBody(snapshotOf(exchange).root());
 	}
 
 	@SuppressWarnings("unchecked")
@@ -364,10 +388,10 @@ public final class FanOut {
 		Map<String, Object> headers = (Map<String, Object>) exchange.getProperty(BRANCH_BASE_HEADERS);
 		if (properties == null || headers == null) return;
 		exchange.getProperties().clear();
-		exchange.getProperties().putAll(copyProperties(properties));
+		exchange.getProperties().putAll(properties);
 		exchange.setProperty(BRANCH_BASE_PROPERTIES, properties);
 		exchange.setProperty(BRANCH_BASE_HEADERS, headers);
-		exchange.getMessage().setHeaders(copyMap(headers));
+		exchange.getMessage().setHeaders(new LinkedHashMap<>(headers));
 	}
 
 	private static void stripFanOutState(Exchange exchange) {
@@ -382,52 +406,24 @@ public final class FanOut {
 		exchange.removeProperty(BRANCH_BASE_HEADERS);
 	}
 
-	private static Map<String, Object> copyProperties(Map<String, Object> properties) {
-		Map<String, Object> copy = new LinkedHashMap<>();
-		properties.forEach((key, value) -> copy.put(key,
-				isFanOutState(key) ? value : copyMetadata(value)));
-		return copy;
+	/**
+	 * The properties every sink starts from. Map and list values are frozen once (a value already frozen, like
+	 * the sources, is shared as it is), so a sink can never change what its siblings see; the fan-out's own
+	 * state stays shared and writable.
+	 */
+	private static Map<String, Object> baseProperties(Map<String, Object> properties) {
+		Map<String, Object> base = new LinkedHashMap<>();
+		properties.forEach((key, value) -> base.put(key, isFanOutState(key)
+				|| !(value instanceof Map<?, ?> || value instanceof List<?>) ? value : JsonCodec.freeze(value)));
+		return base;
 	}
 
 	private static boolean isFanOutState(String key) {
-		return RESULT_PROPERTY.equals(key) || SINK_FAILURES_PROPERTY.equals(key) || GROUP_PAYLOADS_PROPERTY.equals(key)
-				|| GROUP_FAILURES_PROPERTY.equals(key) || DISPATCH_JOBS_PROPERTY.equals(key)
-				|| SINK_VALUES_PROPERTY.equals(key) || FIRST_FAILURE_PROPERTY.equals(key)
-				|| BRANCH_BASE_PROPERTIES.equals(key)
+		return RESULT_PROPERTY.equals(key) || SINK_FAILURES_PROPERTY.equals(key)
+				|| GROUP_PAYLOADS_PROPERTY.equals(key) || GROUP_FAILURES_PROPERTY.equals(key)
+				|| DISPATCH_JOBS_PROPERTY.equals(key) || SINK_VALUES_PROPERTY.equals(key)
+				|| FIRST_FAILURE_PROPERTY.equals(key) || BRANCH_BASE_PROPERTIES.equals(key)
 				|| BRANCH_BASE_HEADERS.equals(key);
-	}
-
-	private static Map<String, Object> copyMap(Map<String, Object> values) {
-		Map<String, Object> copy = new LinkedHashMap<>();
-		values.forEach((key, value) -> copy.put(key, copyMetadata(value)));
-		return copy;
-	}
-
-	private static Object copyMetadata(Object value) {
-		if (value instanceof Map<?, ?> map) {
-			Map<String, Object> copy = new LinkedHashMap<>();
-			map.forEach((key, member) -> copy.put(String.valueOf(key), copyMetadata(member)));
-			return copy;
-		}
-		if (value instanceof List<?> list) {
-			List<Object> copy = new ArrayList<>(list.size());
-			list.forEach(member -> copy.add(copyMetadata(member)));
-			return copy;
-		}
-		if (value instanceof Set<?> set) {
-			Set<Object> copy = new LinkedHashSet<>();
-			set.forEach(member -> copy.add(copyMetadata(member)));
-			return copy;
-		}
-		if (value != null && value.getClass().isArray()) {
-			int length = java.lang.reflect.Array.getLength(value);
-			Object copy = java.lang.reflect.Array.newInstance(value.getClass().getComponentType(), length);
-			for (int i = 0; i < length; i++) {
-				java.lang.reflect.Array.set(copy, i, copyMetadata(java.lang.reflect.Array.get(value, i)));
-			}
-			return copy;
-		}
-		return value;
 	}
 
 	private static Object selectedValue(KeyedSnapshot result, String configId,
@@ -439,9 +435,9 @@ public final class FanOut {
 						+ "': SinkId '" + config.getSinkId() + "' not present in the transform result");
 			}
 			Object value = result.value(config.getSinkId());
-			return value == null ? JsonPointer.JSON_NULL : JsonCodec.copyValue(value);
+			return value == null ? JsonPointer.JSON_NULL : value;
 		}
-		return JsonCodec.copyValue(result.root());
+		return result.root();
 	}
 
 	static boolean sameDestination(String first, String second) {
@@ -497,10 +493,10 @@ public final class FanOut {
 		DataSinkConfiguration config = dataSinkId == null
 				? null
 				: routesConfiguration.getDatasinks().get(dataSinkId);
-		if (config == null) return JsonCodec.copyValue(value);
+		if (config == null) return value;
 		String valuePath = config.getValuePath();
 		if (config.handlesValuePathInternally()) {
-			return JsonCodec.copyValue(valuePath == null || valuePath.isBlank() ? value : result.root());
+			return valuePath == null || valuePath.isBlank() ? value : result.root();
 		}
 		return PayloadAssembler.assemble(java.util.Collections.singletonMap(dataSinkId, value),
 				List.of(dataSinkId), java.util.Collections.singletonMap(dataSinkId, valuePath));

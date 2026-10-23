@@ -42,16 +42,20 @@ import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
  *
  * <p>The difference is the direction of completion: fan-in waits for every
  * required source before it can emit (a partial sources map is never produced),
- * but a contribution only drives evaluation when its SourceId is selected by
- * the route's execution semantics (or legacy any-source behavior applies).
+ * and a contribution only drives evaluation when its source's {@link Evaluation}
+ * mode makes it a trigger. A trigger the readiness gate holds back stays pending
+ * until an evaluation passes the gate.
+ *
+ * <p>Values are frozen ({@link JsonCodec#freeze}) once, when the cache accepts them;
+ * every evaluation, the transformation and the sinks share them from then on.
  */
 public final class FanIn implements ManagedRouteResource {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(FanIn.class);
-	public static final String SOURCE_ID_HEADER = "AIMC_SourceId";
-
 	/** Exchange property flagging a source that actually contributed a value. */
 	public static final String CONTRIBUTION_PROPERTY = SourceEventAdapter.CONTRIBUTION_PROPERTY;
+	/** When the first source of this message accepted its value ({@link System#nanoTime}). */
+	private static final String ARRIVED_PROPERTY = FanIn.class.getName() + ".arrived";
 	private static final String ACCEPTED_SNAPSHOT_PROPERTY = FanIn.class.getName() + ".acceptedSnapshot";
 	private static final String CONTRIBUTING_SOURCE_IDS_PROPERTY = FanIn.class.getName() + ".contributingSourceIds";
 	private static final String ACCEPTED_TIMES_PROPERTY = FanIn.class.getName() + ".acceptedTimes";
@@ -61,6 +65,7 @@ public final class FanIn implements ManagedRouteResource {
 	private static final String TRIGGERS_PROPERTY = FanIn.class.getName() + ".triggers";
 
 	private final RoutesConfiguration routesConfiguration;
+	private final String mappingId;
 	private final Map<String, String> sourceIdByEndpoint = new LinkedHashMap<>();
 	private final Map<String, Evaluation> evaluationByEndpoint = new LinkedHashMap<>();
 	private final SourceCache cache = new SourceCache();
@@ -70,6 +75,7 @@ public final class FanIn implements ManagedRouteResource {
 	/** One evaluation of the mapping at a time, so a later one never writes older state. */
 	private final java.util.concurrent.locks.ReentrantLock evaluation = new java.util.concurrent.locks.ReentrantLock(true);
 	private volatile org.apache.camel.ProducerTemplate producer;
+	private volatile org.apache.camel.Endpoint collect;
 
 	@Override
 	public void bind(org.apache.camel.CamelContext context) { producer = context.createProducerTemplate(); }
@@ -86,6 +92,7 @@ public final class FanIn implements ManagedRouteResource {
 
 	FanIn(RouteConfiguration routeConfig, RoutesConfiguration routesConfiguration, AffordanceValidation.Mode mode) {
 		this.routesConfiguration = routesConfiguration;
+		this.mappingId = routeConfig.getRouteId();
 		for (String endpointId : routeConfig.getDatasources()) {
 			sourceIdByEndpoint.put(endpointId, resolveSourceId(routesConfiguration, endpointId));
 			DataSourceConfiguration config = routesConfiguration.getDatasources().get(endpointId);
@@ -142,7 +149,9 @@ public final class FanIn implements ManagedRouteResource {
 					value == JsonPointer.JSON_NULL ? null : value)) {
 				return;
 			}
-				SourceCache.Snapshot accepted = cache.acceptAndSnapshot(sourceId, value);
+			if (exchange.getProperty(ARRIVED_PROPERTY) == null) exchange.setProperty(ARRIVED_PROPERTY, System.nanoTime());
+			SourceCache.Snapshot accepted = cache.accept(sourceId, value,
+					evaluationByEndpoint.get(dataSourceId) == Evaluation.ON_CHANGE);
 			exchange.setProperty(ACCEPTED_SNAPSHOT_PROPERTY, accepted.values());
 			exchange.setProperty(ACCEPTED_TIMES_PROPERTY, accepted.times());
 			exchange.setProperty(CONTRIBUTION_PROPERTY, true);
@@ -189,7 +198,7 @@ public final class FanIn implements ManagedRouteResource {
 		if (value == null) throw new IllegalStateException("the read returned no value");
 		Object plain = value == JsonPointer.JSON_NULL ? null : value;
 		if (!validators.get(dataSourceId).incoming(plain)) throw new IllegalStateException("the value does not match the source's schema");
-		return plain;
+		return JsonCodec.freeze(plain);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -221,7 +230,8 @@ public final class FanIn implements ManagedRouteResource {
 
 	/**
 	 * True when this contribution triggers an evaluation: a contributing source evaluates {@code OnUpdate}, or
-	 * {@code OnChange} and its value changed. The triggering SourceIds are kept for Lua's {@code meta}.
+	 * {@code OnChange} and its value changed, or an earlier trigger is still held back by the readiness gate.
+	 * The triggering SourceIds are kept for Lua's {@code meta}.
 	 */
 	public boolean selectedTrigger(Exchange exchange) {
 		Set<String> changed = changed(exchange);
@@ -234,7 +244,7 @@ public final class FanIn implements ManagedRouteResource {
 				triggers.add(sourceIdByEndpoint.get(endpointId));
 		}
 		exchange.setProperty(TRIGGERS_PROPERTY, Set.copyOf(triggers));
-		return !triggers.isEmpty();
+		return !triggers.isEmpty() || cache.holdsTriggers();
 	}
 
 	/**
@@ -242,20 +252,54 @@ public final class FanIn implements ManagedRouteResource {
 	 * is snapshotted inside the lock, so an evaluation starts from a cache at least as new as the
 	 * one before it and its sinks never overwrite a newer evaluation's writes. Each source still
 	 * accepts its value on its own thread; a source waits only while another evaluation runs.
+	 *
+	 * <p>The evaluation runs on an exchange of its own: no header or property of the source's message
+	 * reaches the transformation or a sink. A failed evaluation fails the source's message. A trigger
+	 * that arrives before every source has delivered is held until an evaluation passes the gate.
 	 */
 	public Processor evaluate(String collectUri) {
 		return exchange -> {
+			@SuppressWarnings("unchecked")
+			Set<String> triggers = exchange.getProperty(TRIGGERS_PROPERTY, Set.class);
+			Long arrived = exchange.getProperty(ARRIVED_PROPERTY, Long.class);
 			evaluation.lock();
 			try {
+				long started = System.nanoTime();
 				SourceCache.Snapshot current = cache.snapshot();
-				exchange.setProperty(ACCEPTED_SNAPSHOT_PROPERTY, current.values());
-				exchange.setProperty(ACCEPTED_TIMES_PROPERTY, current.times());
+				if (!complete(current.values())) {
+					cache.hold(triggers);
+					LOGGER.debug("fan-in: waiting for sources {} (have {})", expectedSourceIds(), current.values().ids());
+					return;
+				}
+				Set<String> evaluated = new java.util.LinkedHashSet<>(triggers == null ? Set.of() : triggers);
+				evaluated.addAll(cache.releaseHeld());
+				var event = new dk.aau.smartproductionlab.dmp.core.diagnostics.EvaluationEvent();
+				event.begin();
+				Exchange run = new org.apache.camel.support.DefaultExchange(exchange.getContext());
+				run.setProperty(ACCEPTED_SNAPSHOT_PROPERTY, current.values());
+				run.setProperty(ACCEPTED_TIMES_PROPERTY, current.times());
+				run.setProperty(TRIGGERS_PROPERTY, Set.copyOf(evaluated));
 				if (producer == null) producer = exchange.getContext().createProducerTemplate();
-				producer.send(collectUri, exchange);
+				if (collect == null) collect = exchange.getContext().getEndpoint(collectUri);
+				producer.send(collect, run);
+				if (run.getException() != null) exchange.setException(run.getException());
+				if (event.shouldCommit()) {
+					event.mapping = mappingId;
+					event.triggers = String.join(",", evaluated);
+					event.waitedNanos = arrived == null ? 0 : Math.max(0, started - arrived);
+					event.succeeded = run.getException() == null;
+					event.commit();
+				}
 			} finally {
 				evaluation.unlock();
 			}
 		};
+	}
+
+	/** Whether every source the mapping waits for has delivered at least once. */
+	private boolean complete(KeyedSnapshot accepted) {
+		for (String id : expectedSourceIds()) if (!accepted.has(id)) return false;
+		return true;
 	}
 
 	/**
@@ -379,11 +423,12 @@ public final class FanIn implements ManagedRouteResource {
 	}
 
 	private Object decodeIncoming(Exchange exchange, DataSourceConfiguration config, Object body) {
+		// The cache freezes what a source accepts (its one copy): a decoded value is passed on as it is.
 		if (Boolean.TRUE.equals(exchange.getProperty(SourceEventAdapter.NORMALIZED_VALUE_PROPERTY))) {
-			return JsonCodec.copyValue(body);
+			return body;
 		}
 		if (body instanceof Map<?, ?> || body instanceof List<?> || body == JsonPointer.JSON_NULL) {
-			return JsonCodec.copyValue(body);
+			return body;
 		}
 		String text = null;
 		if (body instanceof String value) {
@@ -411,7 +456,7 @@ public final class FanIn implements ManagedRouteResource {
 			}
 		}
 		if (text == null) {
-			return JsonCodec.copyValue(body);
+			return body;
 		}
 		if (!jsonContent(exchange) && !jsonSchema(config.getSchema())) return text;
 		Object decoded = JsonCodec.parseJson(text);
@@ -443,12 +488,19 @@ public final class FanIn implements ManagedRouteResource {
 		/** When each source's latest value was accepted. */
 		private final Map<String, java.time.Instant> accepted = new LinkedHashMap<>();
 
+		/** Triggers the readiness gate held back; the next evaluation that passes it releases them. */
+		private final Set<String> held = new java.util.LinkedHashSet<>();
+
 		/** The cached values with the times they were accepted, taken together; whether the accepted value changed. */
 		record Snapshot(KeyedSnapshot values, Map<String, java.time.Instant> times, boolean changed) { }
 
-		synchronized Snapshot acceptAndSnapshot(String sourceId, Object value) {
-			Object next = value == null ? JsonPointer.JSON_NULL : JsonCodec.copyValue(value);
-			boolean changed = !latest.containsKey(sourceId) || !sameValue(latest.get(sourceId), next);
+		/**
+		 * Freezes and caches {@code value}, the one copy it gets. Only an {@code OnChange} source
+		 * ({@code compare}) compares it with its previous value; for the others {@code changed} is false.
+		 */
+		synchronized Snapshot accept(String sourceId, Object value, boolean compare) {
+			Object next = value == null ? JsonPointer.JSON_NULL : JsonCodec.freeze(value);
+			boolean changed = compare && (!latest.containsKey(sourceId) || !sameValue(latest.get(sourceId), next));
 			latest.put(sourceId, next);
 			accepted.put(sourceId, java.time.Instant.now());
 			return snapshot(changed);
@@ -456,11 +508,24 @@ public final class FanIn implements ManagedRouteResource {
 
 		synchronized Snapshot snapshot() { return snapshot(false); }
 
+		/** Shares the frozen values: only the SourceId map itself is new. */
 		private Snapshot snapshot(boolean changed) {
 			Map<String, Object> values = new LinkedHashMap<>();
 			latest.forEach((key, cachedValue) -> values.put(key,
 					cachedValue == JsonPointer.JSON_NULL ? null : cachedValue));
 			return new Snapshot(KeyedSnapshot.of(values), Map.copyOf(accepted), changed);
+		}
+
+		synchronized void hold(Set<String> triggers) {
+			if (triggers != null) held.addAll(triggers);
+		}
+
+		synchronized boolean holdsTriggers() { return !held.isEmpty(); }
+
+		synchronized Set<String> releaseHeld() {
+			Set<String> released = Set.copyOf(held);
+			held.clear();
+			return released;
 		}
 
 		/** Decoded values compared by content: maps, lists, byte arrays and numbers by their value. */
@@ -484,6 +549,6 @@ public final class FanIn implements ManagedRouteResource {
 			return java.util.Objects.equals(left, right);
 		}
 
-		synchronized void clear() { latest.clear(); accepted.clear(); }
+		synchronized void clear() { latest.clear(); accepted.clear(); held.clear(); }
 	}
 }

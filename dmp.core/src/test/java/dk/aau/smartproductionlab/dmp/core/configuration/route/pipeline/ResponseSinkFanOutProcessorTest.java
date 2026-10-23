@@ -73,7 +73,7 @@ class ResponseSinkFanOutProcessorTest {
 			}
 		});
 		context.start();
-		var processor = new ResponseSinkFanOutProcessor(context, "deadline", List.of(), 1, 2);
+		var processor = new ResponseSinkFanOutProcessor(context, "deadline", List.of(Map.of("sinkId", "old-target", "endpoint", "direct:uninterruptible-write")), 1, 2);
 		try {
 			var job = new ResponseSinkFanOutProcessor.DispatchJob("direct:uninterruptible-write", 1, "old-target", false);
 			dispatch(context, processor, List.of(job));
@@ -168,7 +168,7 @@ class ResponseSinkFanOutProcessorTest {
 		});
 		context.start();
 		try {
-			try (var processor = new ResponseSinkFanOutProcessor(context, "queued", List.of(), 1, 4)) {
+			try (var processor = new ResponseSinkFanOutProcessor(context, "queued", List.of(Map.of("sinkId", "Queued", "endpoint", "direct:queued")), 1, 4)) {
 				processor.responseExecutor().execute(() -> {
 					try {
 						if (!release.await(2, TimeUnit.SECONDS)) throw new IllegalStateException("test release timed out");
@@ -290,7 +290,7 @@ class ResponseSinkFanOutProcessorTest {
 		});
 		context.start();
 		try {
-			try (var processor = new ResponseSinkFanOutProcessor(context, "drain", List.of(), 1, 2)) {
+			try (var processor = new ResponseSinkFanOutProcessor(context, "drain", List.of(Map.of("sinkId", "drain", "endpoint", "direct:drain")), 1, 2)) {
 				var job = new ResponseSinkFanOutProcessor.DispatchJob("direct:drain", Map.of("v", 1), "drain", false);
 				dispatch(context, processor, List.of(job));
 				processor.close();

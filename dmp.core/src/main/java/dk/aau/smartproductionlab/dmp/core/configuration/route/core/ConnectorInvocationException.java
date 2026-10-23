@@ -12,7 +12,13 @@ public final class ConnectorInvocationException extends RuntimeException {
 
 	public ConnectorInvocationException(Category category, String connectorCode,
 			String message, Map<String, Object> details) {
-		super(message);
+		this(category, connectorCode, message, details, null);
+	}
+
+	/** A failure caused by {@code cause}, which the log keeps. */
+	public ConnectorInvocationException(Category category, String connectorCode,
+			String message, Map<String, Object> details, Throwable cause) {
+		super(message, cause);
 		this.category = category;
 		this.connectorCode = connectorCode;
 		this.details = Map.copyOf(details);

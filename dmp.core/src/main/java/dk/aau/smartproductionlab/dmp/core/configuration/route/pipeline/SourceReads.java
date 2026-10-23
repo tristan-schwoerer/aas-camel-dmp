@@ -18,7 +18,8 @@ import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 /**
  * Sources read at evaluation ({@code ReadAtEvaluation}, and an Operation's further sources): one fresh Read per
  * evaluation, decoded like a contribution and never cached. A failed read fails the evaluation with
- * {@code DMP_SOURCE_READ_FAILED}.
+ * {@code DMP_SOURCE_READ_FAILED}, the read's own failure as its cause and in its message; its category is the
+ * connector's where it has one.
  */
 public final class SourceReads {
 	private SourceReads() { }
@@ -34,12 +35,22 @@ public final class SourceReads {
 		route.process(exchange -> exchange.getMessage().setBody(decoder.decode(dataSourceId, exchange)))
 				.doCatch(Exception.class)
 					.process(exchange -> {
-						throw new ConnectorInvocationException(ConnectorInvocationException.Category.TRANSPORT,
-								"DMP_SOURCE_READ_FAILED", "a source read at evaluation could not be read",
-								Map.of("source", FanIn.resolveSourceId(routesConfiguration, dataSourceId)));
+						Throwable cause = exchange.getProperty(org.apache.camel.Exchange.EXCEPTION_CAUGHT, Throwable.class);
+						ConnectorInvocationException connector = connectorFailure(cause);
+						throw new ConnectorInvocationException(connector == null
+								? ConnectorInvocationException.Category.TRANSPORT : connector.getCategory(),
+								"DMP_SOURCE_READ_FAILED", "a source read at evaluation could not be read"
+										+ (cause == null || cause.getMessage() == null ? "" : ": " + cause.getMessage()),
+								Map.of("source", FanIn.resolveSourceId(routesConfiguration, dataSourceId)), cause);
 					})
 				.end();
 		return "direct:" + readRouteId;
+	}
+
+	private static ConnectorInvocationException connectorFailure(Throwable failure) {
+		for (Throwable current = failure; current != null; current = current.getCause())
+			if (current instanceof ConnectorInvocationException connector) return connector;
+		return null;
 	}
 
 	/** Enricher strategy: the read value under {@code sourceId} in the sources map, its time in {@code meta.sources}. */

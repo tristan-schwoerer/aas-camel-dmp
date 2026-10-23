@@ -78,21 +78,19 @@ class PayloadAssemblerTest {
 	}
 
 	@Test
-	void selectedWholePreservesNestedMemberNamedLikeItsSinkIdAndDecodedTypes() {
+	void selectedWholePreservesNestedMemberNamedLikeItsSinkIdAndSharesItsValues() {
 		Map<String, Object> payload = new LinkedHashMap<>();
 		payload.put("sinkId", Map.of("inner", "103.55"));
 		payload.put("sibling", new ArrayList<>(List.of(7L, true)));
 		Object assembled = PayloadAssembler.assemble(Map.of("sinkId", payload), List.of("sinkId"), Map.of());
 		assertEquals(payload, assembled);
-		assertNotSame(payload, assembled);
-		assertNotSame(payload.get("sibling"), ((Map<?, ?>) assembled).get("sibling"));
+		assertSame(payload.get("sibling"), ((Map<?, ?>) assembled).get("sibling"), "contributions are shared, not copied");
 		assertEquals(List.of("sinkId", "sibling"), new ArrayList<>(((Map<?, ?>) assembled).keySet()));
 		byte[] bytes = {0, 1, -1};
 		Map<?, ?> binary = (Map<?, ?>) PayloadAssembler.assemble(
 				Map.of("Whole", Map.of("bytes", bytes), "Member", bytes),
 				List.of("Whole", "Member"), Map.of("Member", "$.bytes"));
 		assertArrayEquals(bytes, (byte[]) binary.get("bytes"));
-		assertNotSame(bytes, binary.get("bytes"));
 	}
 
 	@Test
