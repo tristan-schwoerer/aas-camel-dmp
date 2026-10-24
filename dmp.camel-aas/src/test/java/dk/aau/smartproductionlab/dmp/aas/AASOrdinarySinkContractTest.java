@@ -11,10 +11,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASDatasinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSink;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanOut;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import org.junit.jupiter.api.Test;
 
@@ -33,20 +32,14 @@ class AASOrdinarySinkContractTest {
 		});
 		server.start();
 		try (DefaultCamelContext context = new DefaultCamelContext()) {
-			AASDatasinkConfiguration sink = new AASDatasinkConfiguration(
+			Sink sink = new Sink("internal-sink-id", "AuthoredId", new AasElementSink(
 					"http://127.0.0.1:" + server.getAddress().getPort() + "/submodels/test",
-					"Value", "internal-sink-id");
-			sink.setSinkId("AuthoredId");
-			sink.setValuePath("AuthoredId");
-			RouteConfiguration route = new RouteConfiguration("execution-policy", List.of(), List.of(),
-					List.of("internal-sink-id"));
-			RoutesConfiguration configuration = new RoutesConfiguration(List.of(), List.of(), List.of(sink),
-					List.of(route));
+					"Value", "Property", "AuthoredId")).withValuePath("AuthoredId");
 			context.addRoutes(new RouteBuilder() {
 				@Override
 				public void configure() {
-					FanOut.apply(from("direct:ordinary"), configuration, route, new String[0],
-							new String[] {sink.getConnectionURI()}, "ordinary");
+					FanOut.apply(from("direct:ordinary"), List.of(sink), new String[0],
+							new String[] {sink.endpoint().uri(null)}, "ordinary");
 				}
 			});
 			context.start();

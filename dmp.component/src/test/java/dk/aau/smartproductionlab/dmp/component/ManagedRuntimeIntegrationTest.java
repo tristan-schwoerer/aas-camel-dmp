@@ -22,7 +22,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.camel.builder.RouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import dk.aau.smartproductionlab.dmp.management.repository.FakeAasRepository;

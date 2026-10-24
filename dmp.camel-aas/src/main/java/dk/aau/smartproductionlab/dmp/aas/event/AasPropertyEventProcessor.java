@@ -20,8 +20,8 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import dk.aau.smartproductionlab.dmp.aas.AasValues;
 import dk.aau.smartproductionlab.dmp.aas.http.AasHttp;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventSource;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
 import com.google.gson.Gson;
@@ -33,9 +33,9 @@ import com.google.gson.JsonParser;
  * Converts a BaSyx submodel event into an ordinary mapping source
  * contribution.  The processor is deliberately transport-neutral: Kafka is
  * only the current event connector, while the filter contract is expressed by
- * the typed datasource configuration.
+ * the source's {@link AasEventSource}.
  */
-final class AasPropertyEventProcessor implements Processor {
+public final class AasPropertyEventProcessor implements Processor {
 
 	static final String MATCH_PROPERTY = "dmp.aasEventMatch";
 	static final String EVENT_ID_HEADER = "AasEvent.EventId";
@@ -50,11 +50,11 @@ final class AasPropertyEventProcessor implements Processor {
 
 	private static final java.time.Duration ENRICHMENT_TIMEOUT = java.time.Duration.ofSeconds(5);
 
-	private final DataSourceConfiguration configuration;
+	private final AasEventSource source;
 	private final Set<String> seenEvents = ConcurrentHashMap.newKeySet();
 
-	AasPropertyEventProcessor(DataSourceConfiguration configuration) {
-		this.configuration = configuration;
+	public AasPropertyEventProcessor(AasEventSource source) {
+		this.source = source;
 	}
 
 	@Override
@@ -83,8 +83,8 @@ final class AasPropertyEventProcessor implements Processor {
 		exchange.getMessage().setHeader(EVENT_TIME_HEADER,
 				text(event, "timestamp") != null ? text(event, "timestamp") : text(event, "eventTime"));
 
-		String watched = String.valueOf(configuration.getEventFilter().get("elementPath"));
-		String expectedType = String.valueOf(configuration.getEventFilter().get("modelType"));
+		String watched = source.idShortPath();
+		String expectedType = String.valueOf(source.modelType());
 		JsonElement value = null;
 		if (elementPath != null && watched.equals(elementPath.replace('/', '.'))) {
 			value = propertyValue(event);
@@ -115,7 +115,7 @@ final class AasPropertyEventProcessor implements Processor {
 		Object decoded = AasValues.elementValue(toJava(value));
 		exchange.getMessage().setBody(decoded);
 		exchange.setProperty(MATCH_PROPERTY, true);
-		exchange.setProperty(SourceEventAdapter.CONTRIBUTION_PROPERTY, true);
+		exchange.setProperty(Source.CONTRIBUTION_PROPERTY, true);
 	}
 
 	private String eventIdentity(Exchange exchange, JsonObject event) {
@@ -133,11 +133,7 @@ final class AasPropertyEventProcessor implements Processor {
 	}
 
 	private boolean matches(JsonObject event) {
-		Map<String, Object> filter = configuration.getEventFilter();
-		if (filter == null) {
-			return false;
-		}
-		String expectedSubmodel = String.valueOf(filter.get("submodelId"));
+		String expectedSubmodel = source.submodelId();
 		String actualSubmodel = text(event, "submodelId");
 		if (actualSubmodel == null) {
 			actualSubmodel = text(event, "id");
@@ -152,7 +148,7 @@ final class AasPropertyEventProcessor implements Processor {
 		if (!"SME_CREATED".equals(type) && !"SME_UPDATED".equals(type)) {
 			return false;
 		}
-		String expectedPath = String.valueOf(filter.get("elementPath"));
+		String expectedPath = source.idShortPath();
 		String actualPath = text(event, "smElementPath");
 		if (actualPath == null) {
 			return false;
@@ -163,16 +159,15 @@ final class AasPropertyEventProcessor implements Processor {
 			return expectedPath.startsWith(actualPath + ".") || expectedPath.startsWith(actualPath + "[");
 		}
 		JsonElement element = event.get("smElement");
-		Object expectedType = filter.get("modelType");
-		return expectedType == null || element == null || !element.isJsonObject()
-				|| String.valueOf(expectedType).equals(text(element.getAsJsonObject(), "modelType"));
+		return source.modelType() == null || element == null || !element.isJsonObject()
+				|| source.modelType().equals(text(element.getAsJsonObject(), "modelType"));
 	}
 
 	private JsonElement propertyValue(JsonObject event) {
 		JsonElement element = event.get("smElement");
 		if (element != null && element.isJsonObject()) {
 			JsonObject property = element.getAsJsonObject();
-			String expectedType = String.valueOf(configuration.getEventFilter().get("modelType"));
+			String expectedType = String.valueOf(source.modelType());
 			if (!expectedType.equals(text(property, "modelType"))) {
 				return null;
 			}
@@ -238,11 +233,11 @@ final class AasPropertyEventProcessor implements Processor {
 	}
 
 	private JsonElement readCurrentValue(org.apache.camel.CamelContext context) throws Exception {
-		Object rawUrl = configuration.getEventFilter().get("readUrl");
-		if (rawUrl == null || String.valueOf(rawUrl).isBlank()) {
+		String readUrl = source.readUrl();
+		if (readUrl == null || readUrl.isBlank()) {
 			return null;
 		}
-		JsonElement body = JsonParser.parseString(AasHttp.of(context).get(String.valueOf(rawUrl), ENRICHMENT_TIMEOUT));
+		JsonElement body = JsonParser.parseString(AasHttp.of(context).get(readUrl, ENRICHMENT_TIMEOUT));
 		return body.isJsonObject() && body.getAsJsonObject().has("value") ? body : null;
 	}
 

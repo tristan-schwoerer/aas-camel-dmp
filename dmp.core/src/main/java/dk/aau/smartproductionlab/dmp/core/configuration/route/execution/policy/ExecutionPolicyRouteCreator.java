@@ -30,30 +30,34 @@ import java.util.Map;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.ProcessorDefinition;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreator;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanIn;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanOut;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseHalf;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.SourceReads;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.execution.DmpPollComponent;
+import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.PlanBuild;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The ONE mapping-route creator: every MappingConfiguration compiles to
- * {@code sources[] + sinks[] + transformer(s)} and this creator wires exactly
+ * The ONE mapping-route creator: every {@link MappingRoute} is
+ * {@code sources[] + sinks[] + transformer} and this creator wires exactly
  * that, with acquisition, trigger selection and readiness kept independent:
  *
  * <ul>
  * <li>every source contributes its LATEST value to a per-route cache —
- * async sources on message arrival, sync sources polled by their own
- * declared {@code pollingIntervalMs} (the AIMC's IDTA polling interval, MC
- * level or per-source override);</li>
+ * observed sources on message arrival, read sources polled by their own
+ * {@code pollingIntervalMs} (the AIMC's IDTA polling interval, MC
+ * level or per-source override) through {@code dmp-poll:}, whose ticks share
+ * one scheduler;</li>
+ * <li>the consumer's thread only accepts the value: evaluations run on the
+ * shared workers, one at a time per mapping ({@link FanIn#evaluate});</li>
  * <li>every valid source update refreshes the cached contribution; an update
  * evaluates the mapping only when the source's {@link Evaluation} triggers
  * ({@code OnUpdate}, or {@code OnChange} with a changed value) and once all
@@ -70,58 +74,55 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Fan-out reuses the shared transform-once multicast {@link FanOut}.
  */
-public class ExecutionPolicyRouteCreator implements RouteCreator {
+public class ExecutionPolicyRouteCreator {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionPolicyRouteCreator.class);
 
 	private final RouteBuilder routeBuilder;
-	private final RoutesConfiguration routesConfiguration;
+	private final PlanBuild build;
 
-	public ExecutionPolicyRouteCreator(RouteBuilder routeBuilder, RoutesConfiguration routesConfiguration) {
+	public ExecutionPolicyRouteCreator(RouteBuilder routeBuilder) {
 		this.routeBuilder = routeBuilder;
-		this.routesConfiguration = routesConfiguration;
+		this.build = PlanBuild.of(routeBuilder);
 	}
 
-	@Override
-	public void addRouteToRouteBuilder(RouteConfiguration routeConfig) {
-		String routeId = routeConfig.getRouteId() != null ? routeConfig.getRouteId() : "<unnamed-policy>";
+	public void create(MappingRoute mapping) {
+		String routeId = mapping.routeId();
+		List<Sink> sinks = mapping.sinks();
+		String[] dataSinkEndpoints = build.uris(sinks.stream().map(Sink::endpoint).toList());
+		String[] dataTransformerEndpoints = mapping.transformation() == null ? new String[0]
+				: new String[] { build.uri(mapping.transformation()) };
 
-		for (String endpointId : routeConfig.getDatasources()) {
-			RouteCreatorHelper.getDataSourceEndpoint(routesConfiguration, endpointId, routeId);
-		}
-		String[] dataSinkEndpoints = RouteCreatorHelper.getDataSinkEndpoints(
-				routesConfiguration, routeConfig.getDatasinks(), routeId);
-		String[] dataTransformerEndpoints = RouteCreatorHelper.getDataTransformerEndpoints(
-				routesConfiguration, routeConfig.getTransformers(), routeId);
-
-		FanIn fanIn = new FanIn(routeConfig, routesConfiguration);
+		Map<String, String> sinkUris = new LinkedHashMap<>();
+		for (int i = 0; i < sinks.size(); i++)
+			if (sinks.get(i).sinkId() != null) sinkUris.put(sinks.get(i).sinkId(), dataSinkEndpoints[i]);
+		FanIn fanIn = new FanIn(routeId, mapping.sources(), sinkUris);
 		if (routeBuilder instanceof DmpRouteBuilder managed) managed.registerManagedResource(fanIn);
-		List<String> readAtEvaluation = routeConfig.getDatasources().stream()
-				.filter(id -> evaluation(id) == Evaluation.READ_AT_EVALUATION).toList();
+		List<Source> readAtEvaluation = mapping.sources().stream()
+				.filter(source -> source.evaluation() == Evaluation.READ_AT_EVALUATION).toList();
 		String collectUri = "direct:policy-" + routeId;
 
-		// Install the collector before source/timer ingress routes so it is ready
+		// Install the collector before source/poll ingress routes so it is ready
 		// before any source can contribute during dynamic route startup. Sources reach it
-		// through FanIn.evaluate, which runs one evaluation at a time on a fresh snapshot.
+		// through FanIn.evaluate, which queues one evaluation at a time on the shared workers.
 		registerRouteId(routeId);
-		if (routeConfig.getDatasources().isEmpty()) registerIngressRouteId(routeId);
+		if (mapping.sources().isEmpty()) registerIngressRouteId(routeId);
 		ProcessorDefinition<?> cycle = routeBuilder.from(collectUri)
 				.routeId(routeId)
 				.filter(fanIn.gatePredicate())
 				.process(fanIn.merge());
-		ResponseHalf response = ResponseHalf.of(routeBuilder, routesConfiguration, routeConfig, routeId);
+		ResponseHalf response = mapping.response() == null ? null
+				: new ResponseHalf(routeBuilder, build, mapping.response(), routeId);
 		if (response == null) {
 			readAtEvaluation(cycle, fanIn, readAtEvaluation, routeId);
-			FanOut.apply(cycle, routesConfiguration, routeConfig,
-					dataTransformerEndpoints, dataSinkEndpoints, routeId);
+			FanOut.apply(cycle, sinks, dataTransformerEndpoints, dataSinkEndpoints, routeId);
 		} else {
 			// The response half runs after the sinks, also when the evaluation failed, and inside the
 			// evaluation: its writes finish before the next evaluation starts.
 			var attempt = cycle.doTry();
 			readAtEvaluation(attempt, fanIn, readAtEvaluation, routeId);
 			attempt.process(response::keepRequestSources);
-			FanOut.apply(attempt, routesConfiguration, routeConfig,
-					dataTransformerEndpoints, dataSinkEndpoints, routeId);
+			FanOut.apply(attempt, sinks, dataTransformerEndpoints, dataSinkEndpoints, routeId);
 			attempt.process(response::succeeded).enrich(response.uri(), ResponseHalf::keepOriginal);
 			attempt.doCatch(Exception.class)
 					.process(response::failed)
@@ -130,43 +131,45 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 					.end();
 		}
 
-		Map<Acquisition, List<String>> acquisitions = new LinkedHashMap<>();
-		for (String endpointId : routeConfig.getDatasources()) {
-			if (readAtEvaluation.contains(endpointId)) continue;
-			DataSourceConfiguration config = routesConfiguration.getDatasources().get(endpointId);
-			acquisitions.computeIfAbsent(Acquisition.of(config), ignored -> new java.util.ArrayList<>()).add(endpointId);
+		Map<Acquisition, List<Source>> acquisitions = new LinkedHashMap<>();
+		for (Source source : mapping.sources()) {
+			if (source.evaluation() == Evaluation.READ_AT_EVALUATION) continue;
+			acquisitions.computeIfAbsent(Acquisition.of(source, build.uri(source.endpoint())),
+					ignored -> new java.util.ArrayList<>()).add(source);
 		}
-		for (List<String> endpointIds : acquisitions.values()) {
-			String endpointId = endpointIds.get(0);
-			DataSourceConfiguration config = routesConfiguration.getDatasources().get(endpointId);
-			if (config != null && "sync".equalsIgnoreCase(config.getDelivery())) {
-				// Sync sources issue a fresh Read when the connector has a read
+		for (List<Source> group : acquisitions.values()) {
+			Source source = group.get(0);
+			List<String> endpointIds = group.stream().map(Source::id).toList();
+			String endpointId = source.id();
+			String uri = build.uri(source.endpoint());
+			if (source.read()) {
+				// Read sources issue a fresh Read when the connector has a read
 				// adapter; consumer-only sources retain their polling consumer path.
-				long periodMs = effectivePollingIntervalMs(config);
+				long periodMs = effectivePollingIntervalMs(source);
 				LOGGER.info("route {}: {} sync source(s) polled every {} ms", routeId, endpointIds.size(), periodMs);
 				String pollRouteId = routeId + "-poll-" + endpointId;
 				registerRouteId(pollRouteId);
 				registerIngressRouteId(pollRouteId);
 				ProcessorDefinition<?> poll = routeBuilder
-						.from("timer:" + timerName(routeId, endpointId) + "?period=" + periodMs)
+						.from(DmpPollComponent.uri("policy-" + routeId + "-" + endpointId, periodMs))
 						.routeId(pollRouteId);
-				RouteCreatorHelper.configureSyncRead(poll, config.getConnectionURI(), SYNC_POLL_TIMEOUT_MS);
+				RouteCreatorHelper.configureSyncRead(poll, uri, SYNC_POLL_TIMEOUT_MS);
 				poll.filter(exchange -> exchange.getMessage().getBody() != null)
 						.process(fanIn.disassemble(endpointIds))
 						.filter(fanIn::contributed)
 						.filter(fanIn::selectedTrigger)
 						.process(fanIn.evaluate(collectUri));
 			} else {
-				// async source: the consumer feeds the cache and drives an
+				// observed source: the consumer feeds the cache and drives an
 				// evaluation on every arrival
 				String sourceRouteId = routeId + "-source-" + endpointId;
 				registerRouteId(sourceRouteId);
 				registerIngressRouteId(sourceRouteId);
 				ProcessorDefinition<?> sourceRoute = routeBuilder
-						.from(routesConfiguration.getDatasources().get(endpointId).getConnectionURI())
+						.from(uri)
 						.routeId(sourceRouteId)
 						;
-				sourceRoute = RouteCreatorHelper.normalizeSourceEvents(sourceRoute, config, routeId);
+				sourceRoute = RouteCreatorHelper.normalizeSourceEvents(sourceRoute, source);
 				sourceRoute
 						.process(fanIn.disassemble(endpointIds))
 						.filter(fanIn::contributed)
@@ -178,17 +181,12 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 	}
 
 	/** One fresh Read per evaluation of each source read at evaluation, into the sources map. */
-	private void readAtEvaluation(ProcessorDefinition<?> evaluation, FanIn fanIn, List<String> endpointIds, String routeId) {
-		for (int i = 0; i < endpointIds.size(); i++) {
-			String endpointId = endpointIds.get(i);
-			evaluation.enrich(SourceReads.route(routeBuilder, routesConfiguration, routeId, i, endpointId, fanIn),
-					SourceReads.into(FanIn.resolveSourceId(routesConfiguration, endpointId)));
+	private void readAtEvaluation(ProcessorDefinition<?> evaluation, FanIn fanIn, List<Source> sources, String routeId) {
+		for (int i = 0; i < sources.size(); i++) {
+			Source source = sources.get(i);
+			evaluation.enrich(SourceReads.route(routeBuilder, build, routeId, i, source, fanIn),
+					SourceReads.into(source.sourceId()));
 		}
-	}
-
-	private Evaluation evaluation(String endpointId) {
-		DataSourceConfiguration config = routesConfiguration.getDatasources().get(endpointId);
-		return config == null ? Evaluation.ON_UPDATE : config.getEvaluation();
 	}
 
 	private void registerRouteId(String routeId) {
@@ -204,14 +202,10 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 	/** Per-source poll ceiling for one sync read. */
 	public static final long SYNC_POLL_TIMEOUT_MS = Long.getLong("dmp.policy.syncPollTimeoutMs", 5000L);
 
-	private static String timerName(String routeId, String endpointId) {
-		return ("policy-" + routeId + "-" + endpointId).replaceAll("[^A-Za-z0-9_.-]", "-");
-	}
-
 	/** A read source is polled only at an authored interval; none is assumed. */
-	private static long effectivePollingIntervalMs(DataSourceConfiguration config) {
-		long authored = config.getPollingIntervalMs();
-		if (authored <= 0) throw new IllegalArgumentException("read source " + config.getUniqueId()
+	private static long effectivePollingIntervalMs(Source source) {
+		long authored = source.pollingIntervalMs();
+		if (authored <= 0) throw new IllegalArgumentException("read source " + source.id()
 				+ " has no polling interval; it needs a positive PollingInterval or DefaultPollingInterval");
 		return authored;
 	}
@@ -221,15 +215,12 @@ public class ExecutionPolicyRouteCreator implements RouteCreator {
 	 * and normalized the same way. The normalizer is built from the group's first source,
 	 * so its sources must also agree on whether their schema decodes the payload as JSON.
 	 */
-	private record Acquisition(Class<?> type, String uri, String delivery, long pollingIntervalMs,
-			String sourceKind, Map<String, Object> eventFilter, boolean jsonSchema) {
-		static Acquisition of(DataSourceConfiguration config) {
-			if (config == null) return new Acquisition(null, null, null, 0, null, null, false);
-			String delivery = config.getDelivery() == null ? null : config.getDelivery().toLowerCase(java.util.Locale.ROOT);
-			long pollingIntervalMs = "sync".equals(delivery) ? effectivePollingIntervalMs(config) : 0;
-			return new Acquisition(config.getClass(), config.getConnectionURI(), delivery, pollingIntervalMs,
-					config.getSourceKind(), config.getEventFilter(),
-					FanIn.jsonSchema(config.getSchema()));
+	private record Acquisition(Class<?> type, String uri, Source.Delivery delivery, long pollingIntervalMs,
+			boolean jsonSchema) {
+		static Acquisition of(Source source, String uri) {
+			long pollingIntervalMs = source.read() ? effectivePollingIntervalMs(source) : 0;
+			return new Acquisition(source.endpoint().getClass(), uri, source.delivery(), pollingIntervalMs,
+					FanIn.jsonSchema(source.schema()));
 		}
 	}
 }

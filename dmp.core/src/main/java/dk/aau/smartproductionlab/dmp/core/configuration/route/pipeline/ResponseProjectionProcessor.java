@@ -6,13 +6,14 @@ import java.util.Map;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
+import dk.aau.smartproductionlab.dmp.core.plan.Response.ResponseSource;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
 /** Projects a validated device reply into the authored response SourceIds. */
 public final class ResponseProjectionProcessor implements Processor {
-	private final List<Map<String, Object>> bindings;
+	private final List<ResponseSource> bindings;
 
-	public ResponseProjectionProcessor(List<Map<String, Object>> bindings) {
+	public ResponseProjectionProcessor(List<ResponseSource> bindings) {
 		this.bindings = List.copyOf(bindings);
 	}
 
@@ -21,17 +22,17 @@ public final class ResponseProjectionProcessor implements Processor {
 		exchange.getMessage().setBody(project(exchange.getMessage().getBody(), bindings));
 	}
 
-	public static Map<String, Object> project(Object parsed, List<Map<String, Object>> bindings) {
+	public static Map<String, Object> project(Object parsed, List<ResponseSource> bindings) {
 		Map<String, Object> sources = new LinkedHashMap<>();
-		for (Map<String, Object> binding : bindings) {
-			String sourceId = String.valueOf(binding.get("sourceId"));
+		for (ResponseSource binding : bindings) {
+			String sourceId = binding.sourceId();
 			if (sources.containsKey(sourceId)) {
 				throw projectionError("duplicate ResponseSource id " + sourceId);
 			}
 			Object value = parsed == JsonPointer.JSON_NULL ? null : parsed;
-			Object path = binding.get("valuePath");
-			if (path != null && !String.valueOf(path).isBlank()) {
-				Object selected = JsonPointer.extract(parsed, String.valueOf(path))
+			String path = binding.valuePath();
+			if (path != null && !path.isBlank()) {
+				Object selected = JsonPointer.extract(parsed, path)
 						.orElseThrow(() -> projectionError("missing ResponseSource valuePath " + path
 								+ " for " + sourceId));
 				value = selected == JsonPointer.JSON_NULL ? null : selected;

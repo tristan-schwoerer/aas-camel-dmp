@@ -37,9 +37,15 @@ import java.util.List;
 import java.util.Set;
 
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.Test;
 
@@ -53,21 +59,13 @@ class ManagedOrdinaryBundleLifecycleTest {
 		org.apache.camel.CamelContext context() { return camelContext; }
 	}
 
-	private static final class Source extends dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration {
-		private final String uri;
-		Source(String uri) { this.uri = uri; setSourceId("value"); }
-		@Override public String getConnectionURI() { return uri; }
+	private static Source source(String id, String sourceId, String uri) {
+		return new Source(id, sourceId, Endpoint.of(uri), Source.Delivery.OBSERVED, 0);
 	}
 
-	private static RoutesConfiguration paired(String routeId, String prefix) {
-		RoutesConfiguration result = flowing(routeId, "direct:" + prefix + "-first");
-		Source second = new Source("direct:" + prefix + "-second");
-		second.setSourceId("extra");
-		result.setDatasources(java.util.Map.of("in", result.getDatasources().get("in"), "second", second));
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of("in", "second"), List.of(), List.of("out"));
-		route.setRouteId(routeId);
-		result.setRoutes(List.of(route));
-		return result;
+	private static MappingRoute paired(String routeId, String prefix) {
+		return new MappingRoute(routeId, List.of(source("in", "value", "direct:" + prefix + "-first"),
+				source("second", "extra", "direct:" + prefix + "-second")), null, List.of(sink()), null);
 	}
 
 	@Test
@@ -81,41 +79,51 @@ class ManagedOrdinaryBundleLifecycleTest {
 					from("direct:lifecycle-output").process(exchange -> delivered.add(exchange.getMessage().getBody()));
 				}
 			});
-			var first = install(runtime, "first", () -> paired("first", "first"));
-			var sibling = install(runtime, "sibling", () -> paired("sibling", "sibling"));
+			var first = install(runtime, "first", paired("first", "first"));
+			var sibling = install(runtime, "sibling", paired("sibling", "sibling"));
 			var siblingRoute = runtime.context().getRoute("sibling");
 			var template = runtime.context().createProducerTemplate();
 			try {
+				// Evaluations run on the shared workers: wait for each one before the next mapping's sources.
 				template.sendBody("direct:first-first", 11);
 				template.sendBody("direct:first-second", 12);
+				awaitDelivered(delivered, List.of(11));
 				template.sendBody("direct:sibling-first", 21);
 				template.sendBody("direct:sibling-second", 22);
-				assertEquals(List.of(11, 21), delivered);
-				var candidate = runtime.stageBundle("first", runtime.nextBundleGeneration("first"), () -> paired("first", "first"));
+				awaitDelivered(delivered, List.of(11, 21));
+				var candidate = runtime.stageBundle("first", runtime.nextBundleGeneration("first"), paired("first", "first"));
 				var replaced = runtime.replaceBundle(first, candidate);
 				assertNotSame(first, replaced);
 				assertSame(sibling, runtime.managedBundle("sibling"));
 				assertSame(siblingRoute, runtime.context().getRoute("sibling"));
 				template.sendBody("direct:first-first", 31);
-				assertEquals(List.of(11, 21), delivered, "replacement must wait for a complete cold snapshot");
 				template.sendBody("direct:sibling-first", 41);
-				assertEquals(List.of(11, 21, 41), delivered, "sibling must retain readiness");
+				awaitDelivered(delivered, List.of(11, 21, 41));
+				assertEquals(List.of(11, 21, 41), delivered, "replacement must wait for a complete cold snapshot; sibling must retain readiness");
 				template.sendBody("direct:first-second", 32);
-				assertEquals(List.of(11, 21, 41, 31), delivered);
+				awaitDelivered(delivered, List.of(11, 21, 41, 31));
 			} finally { template.stop(); }
 		} finally { runtime.stopComponent(); }
 	}
 
-	private static final class Sink extends dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration {
-		Sink() { super("out"); setSinkId("value"); }
-		@Override public String getConnectionURI() { return "direct:lifecycle-output"; }
+	private static void awaitDelivered(List<Object> delivered, List<Object> expected) {
+		org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(5))
+				.untilAsserted(() -> assertEquals(expected, delivered));
 	}
 
-	private static final class RetryCloseTransformer extends dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration
-			implements dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource {
+	private static Sink sink() {
+		return new Sink("out", "value", Endpoint.of("direct:lifecycle-output"));
+	}
+
+	private static final class RetryCloseTransformer implements ManagedRouteResource {
 		int closes;
-		RetryCloseTransformer() { super("retry-close"); }
-		@Override public String getConnectionURI() { return "direct:retry-close"; }
+		/** A transformation whose build owns this resource. */
+		Endpoint endpoint() {
+			return resources -> {
+				resources.own(this);
+				return "direct:retry-close";
+			};
+		}
 		@Override public void bind(org.apache.camel.CamelContext context) { }
 		@Override public void close() {
 			if (++closes == 1) throw new IllegalStateException("injected cleanup failure");
@@ -130,8 +138,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 			runtime.startComponent();
 			int routes = runtime.context().getRoutesSize();
 			int endpoints = runtime.context().getEndpoints().size();
-			RoutesConfiguration candidate = flowing("broken", "missing-component:source");
-			candidate.setTransformers(java.util.Map.of("retry", resource));
+			MappingRoute candidate = flowing("broken", "missing-component:source", resource.endpoint());
 			assertThrows(IllegalStateException.class, () -> runtime.installBundle("owner", candidate));
 			var cleanup = runtime.managedBundle("owner");
 			assertFalse(cleanup.active());
@@ -187,14 +194,14 @@ class ManagedOrdinaryBundleLifecycleTest {
 					from("direct:lifecycle-output").process(exchange -> outputCount.incrementAndGet());
 				}
 			});
-			var old = install(runtime, "owner", () -> flowing("old", "startup:input"));
+			var old = install(runtime, "owner", flowing("old", "startup:input"));
 			assertEquals(0, outputCount.get(), "startup/retained delivery must not execute before activation");
 			int baselineEndpoints = runtime.context().getEndpoints().size();
 			int baselineRoutes = runtime.context().getRoutesSize();
-			var candidate = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), () -> flowing("new", "startup:input"));
+			var candidate = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), flowing("new", "startup:input"));
 			source.fail = true;
 			source.onStart = () -> {
-				// Only candidate fails; the previous definition's fresh restore succeeds.
+				// Only candidate fails; the previous plan's fresh restore succeeds.
 				if (runtime.context().getRoute("old-source-in") != null) source.fail = false;
 			};
 			assertThrows(IllegalStateException.class, () -> runtime.replaceBundle(old, candidate));
@@ -214,7 +221,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 			runtime.startComponent();
 			runtime.context().addComponent("startup", source);
 			int endpoints = runtime.context().getEndpoints().size();
-			var candidate = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), () -> flowing("new", "startup:input"));
+			var candidate = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), flowing("new", "startup:input"));
 			source.onStart = () -> runtime.nextBundleGeneration("owner");
 			assertThrows(IllegalStateException.class, () -> runtime.installBundle(candidate));
 			assertNull(runtime.managedBundle("owner"));
@@ -223,16 +230,28 @@ class ManagedOrdinaryBundleLifecycleTest {
 		} finally { runtime.stopComponent(); }
 	}
 
-	private static RoutesConfiguration flowing(String route, String input) {
-		RouteConfiguration definition = new RouteConfiguration("execution-policy", List.of("in"), List.of(), List.of("out"));
-		definition.setRouteId(route);
-		return new RoutesConfiguration(java.util.Map.of("in", new Source(input)), java.util.Map.of(),
-				java.util.Map.of("out", new Sink()), List.of(definition));
+	private static MappingRoute flowing(String route, String input) {
+		return flowing(route, input, null);
 	}
 
-	private static DmpComponent.ManagedBundle install(Runtime runtime, String owner,
-			java.util.function.Supplier<RoutesConfiguration> factory) {
-		return runtime.installBundle(runtime.stageBundle(owner, runtime.nextBundleGeneration(owner), factory));
+	private static MappingRoute flowing(String route, String input, Endpoint transformation) {
+		return new MappingRoute(route, List.of(source("in", "value", input)), transformation, List.of(sink()), null);
+	}
+
+	private static DmpComponent.ManagedBundle install(Runtime runtime, String owner, RoutePlan plan) {
+		return runtime.installBundle(runtime.stageBundle(owner, runtime.nextBundleGeneration(owner), plan));
+	}
+
+	/** {@code plan}, counting its builds; the build numbered {@code failFrom} and every later one fails. */
+	private static RoutePlan counted(RoutePlan plan, java.util.concurrent.atomic.AtomicInteger builds, int failFrom) {
+		return new RoutePlan() {
+			@Override public String routeId() { return plan.routeId(); }
+			@Override public List<Endpoint> endpoints() { return plan.endpoints(); }
+			@Override public void build(org.apache.camel.builder.RouteBuilder builder) {
+				if (builds.incrementAndGet() >= failFrom) throw new IllegalStateException("restore failed");
+				plan.build(builder);
+			}
+		};
 	}
 
 	@Test
@@ -244,7 +263,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 			int endpoints = runtime.context().getEndpoints().size();
 			for (int i = 0; i < 8; i++) {
 				String id = "churn-" + i;
-				var stage = runtime.stageBundle(id, runtime.nextBundleGeneration(id), () -> configuration(id));
+				var stage = runtime.stageBundle(id, runtime.nextBundleGeneration(id), configuration(id));
 				assertNull(runtime.context().getRoute(id));
 				assertEquals(routes, runtime.context().getRoutesSize());
 				var installed = runtime.installBundle(stage);
@@ -264,12 +283,12 @@ class ManagedOrdinaryBundleLifecycleTest {
 		Runtime runtime = new Runtime();
 		try {
 			runtime.startComponent();
-			var old = install(runtime, "owner", () -> configuration("old"));
-			var obsolete = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), () -> configuration("obsolete"));
+			var old = install(runtime, "owner", configuration("old"));
+			var obsolete = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), configuration("obsolete"));
 			runtime.removeBundle(old);
 			assertThrows(IllegalStateException.class, () -> runtime.installBundle(obsolete));
 			assertNull(runtime.managedBundle("owner"));
-			var recreated = install(runtime, "owner", () -> configuration("recreated"));
+			var recreated = install(runtime, "owner", configuration("recreated"));
 			assertTrue(recreated.generation() > obsolete.generation(), "recreated IDs must never reuse a pruned epoch");
 			assertThrows(IllegalArgumentException.class, () -> runtime.installBundle(obsolete));
 			assertSame(recreated, runtime.managedBundle("owner"));
@@ -281,7 +300,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 		Runtime runtime = new Runtime();
 		try {
 			runtime.startComponent();
-			var installed = install(runtime, "owner", () -> configuration("installed"));
+			var installed = install(runtime, "owner", configuration("installed"));
 			long staleDelete = runtime.nextBundleGeneration("owner");
 			long current = runtime.nextBundleGeneration("owner");
 			assertThrows(IllegalStateException.class, () -> runtime.removeBundle(installed, staleDelete));
@@ -299,11 +318,11 @@ class ManagedOrdinaryBundleLifecycleTest {
 		try {
 			runtime.startComponent();
 			var calls = new java.util.concurrent.atomic.AtomicInteger();
-			var old = install(runtime, "owner", () -> { calls.incrementAndGet(); return configuration("old"); });
-			var sibling = install(runtime, "sibling", () -> configuration("sibling"));
+			var old = install(runtime, "owner", counted(configuration("old"), calls, Integer.MAX_VALUE));
+			var sibling = install(runtime, "sibling", configuration("sibling"));
 			var siblingRoute = runtime.context().getRoute("sibling");
 			var stage = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"),
-					() -> flowing("broken", "missing-component:source"));
+					flowing("broken", "missing-component:source"));
 			assertThrows(IllegalStateException.class, () -> runtime.replaceBundle(old, stage));
 			var restored = runtime.managedBundle("owner");
 			assertNotSame(old, restored);
@@ -322,41 +341,14 @@ class ManagedOrdinaryBundleLifecycleTest {
 		try {
 			runtime.startComponent();
 			var calls = new java.util.concurrent.atomic.AtomicInteger();
-			var old = install(runtime, "owner", () -> {
-				if (calls.incrementAndGet() > 1) throw new IllegalStateException("restore failed");
-				return configuration("old");
-			});
+			var old = install(runtime, "owner", counted(configuration("old"), calls, 2));
 			var stage = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"),
-					() -> flowing("broken", "missing-component:source"));
+					flowing("broken", "missing-component:source"));
 			var failure = assertThrows(IllegalStateException.class, () -> runtime.replaceBundle(old, stage));
 			assertTrue(failure.getCause().getSuppressed().length > 0);
 			assertNull(runtime.managedBundle("owner"));
 			assertNull(runtime.context().getRoute("old"));
 		} finally { runtime.stopComponent(); }
-	}
-
-	@Test
-	void failedForeignLuaBindDoesNotReleaseExistingOwners() throws Exception {
-		Runtime first = new Runtime();
-		Runtime second = new Runtime();
-		LuaTransformerConfiguration lua = new LuaTransformerConfiguration("foreign-lua",
-				LuaCompiledSource.fromBytes("function aimc_main(sources) return sources end".getBytes(StandardCharsets.UTF_8),
-						"foreign", 256));
-		try {
-			first.context().start();
-			second.context().start();
-			var owner = first.installBundle("owner", configuration("foreign-owner", lua));
-			var sibling = first.installBundle("sibling", configuration("foreign-sibling", lua));
-			assertThrows(IllegalStateException.class,
-					() -> second.installBundle("intruder", configuration("intruder", lua)));
-			assertTrue(lua.isManagedSourceBound());
-			assertTrue(owner.active());
-			assertNull(second.managedBundle("intruder"));
-			first.removeBundle(owner);
-			assertTrue(lua.isManagedSourceBound(), "failed foreign binding must not decrement either legitimate owner");
-			first.removeBundle(sibling);
-			assertFalse(lua.isManagedSourceBound());
-		} finally { first.stopComponent(); second.stopComponent(); }
 	}
 
 	@Test
@@ -375,12 +367,12 @@ class ManagedOrdinaryBundleLifecycleTest {
 					});
 				}
 			});
-			var old = install(runtime, "owner", () -> flowing("old", "direct:lifecycle-input"));
+			var old = install(runtime, "owner", flowing("old", "direct:lifecycle-input"));
 			var template = runtime.context().createProducerTemplate();
 			try {
 				var request = pool.submit(() -> template.sendBody("direct:lifecycle-input", 42));
 				assertTrue(entered.await(2, java.util.concurrent.TimeUnit.SECONDS));
-				var stage = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), () -> configuration("new"));
+				var stage = runtime.stageBundle("owner", runtime.nextBundleGeneration("owner"), configuration("new"));
 				var replace = pool.submit(() -> runtime.replaceBundle(old, stage));
 				awaitQuiescence(old);
 				runtime.nextBundleGeneration("owner");
@@ -411,7 +403,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 					from("direct:lifecycle-output").process(exchange -> { entered.countDown(); release.await(); });
 				}
 			});
-			var old = install(runtime, "owner", () -> flowing("old", "direct:lifecycle-input"));
+			var old = install(runtime, "owner", flowing("old", "direct:lifecycle-input"));
 			var template = runtime.context().createProducerTemplate();
 			try {
 				var request = pool.submit(() -> template.sendBody("direct:lifecycle-input", 42));
@@ -466,18 +458,21 @@ class ManagedOrdinaryBundleLifecycleTest {
 	@Test
 	void managedLuaBindingLivesExactlyAsLongAsItsBundle() {
 		DmpComponent dmp = new DmpComponent();
-		LuaTransformerConfiguration lua = new LuaTransformerConfiguration("managed-lua",
-				LuaCompiledSource.fromBytes("function aimc_main(sources) return sources end"
-						.getBytes(StandardCharsets.UTF_8), "mapping:managed-lua", 256));
+		var bindings = new java.util.concurrent.CopyOnWriteArrayList<LuaBinding>();
+		Endpoint lua = observed(new LuaScript(LuaCompiledSource.fromBytes("function aimc_main(sources) return sources end"
+				.getBytes(StandardCharsets.UTF_8), "mapping:managed-lua", 256)), bindings);
 		try {
 			dmp.startComponent();
 			var bundle = dmp.installBundle("lua-owner", configuration("mapping-lua", lua));
 			var sibling = dmp.installBundle("lua-owner-2", configuration("mapping-lua-2", lua));
-			assertTrue(lua.isManagedSourceBound());
+			assertEquals(2, bindings.size(), "each bundle binds the shared compiled source under its own binding");
+			assertTrue(bindings.get(0).isManagedSourceBound());
+			assertTrue(bindings.get(1).isManagedSourceBound());
 			dmp.removeBundle(bundle);
-			assertTrue(lua.isManagedSourceBound());
+			assertFalse(bindings.get(0).isManagedSourceBound());
+			assertTrue(bindings.get(1).isManagedSourceBound());
 			dmp.removeBundle(sibling);
-			assertFalse(lua.isManagedSourceBound());
+			assertFalse(bindings.get(1).isManagedSourceBound());
 		} finally {
 			dmp.stopComponent();
 		}
@@ -486,33 +481,38 @@ class ManagedOrdinaryBundleLifecycleTest {
 	@Test
 	void componentStopRetiresManagedBundlesBeforeStoppingTheContext() {
 		DmpComponent dmp = new DmpComponent();
-		LuaTransformerConfiguration lua = new LuaTransformerConfiguration("managed-stop",
-				LuaCompiledSource.fromBytes("function aimc_main(sources) return sources end"
-						.getBytes(StandardCharsets.UTF_8), "mapping:managed-stop", 256));
+		var bindings = new java.util.concurrent.CopyOnWriteArrayList<LuaBinding>();
+		Endpoint lua = observed(new LuaScript(LuaCompiledSource.fromBytes("function aimc_main(sources) return sources end"
+				.getBytes(StandardCharsets.UTF_8), "mapping:managed-stop", 256)), bindings);
 		try {
 			dmp.startComponent();
 			dmp.installBundle("stop-owner", configuration("mapping-stop", lua));
-			assertTrue(lua.isManagedSourceBound());
+			assertEquals(1, bindings.size());
+			assertTrue(bindings.get(0).isManagedSourceBound());
 			dmp.stopComponent();
-			assertFalse(lua.isManagedSourceBound());
+			assertFalse(bindings.get(0).isManagedSourceBound());
 			assertNull(dmp.managedBundle("stop-owner"));
 		} finally {
 			dmp.stopComponent();
 		}
 	}
 
-	private static RoutesConfiguration configuration(String routeId) {
+	private static MappingRoute configuration(String routeId) {
 		return configuration(routeId, null);
 	}
 
-	private static RoutesConfiguration configuration(String routeId, LuaTransformerConfiguration lua) {
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of(), List.of(), List.of());
-		if (lua != null) {
-			route = new RouteConfiguration("execution-policy", List.of(), List.of("lua"), List.of());
-		}
-		route.setRouteId(routeId);
-		return new RoutesConfiguration(java.util.Map.of(),
-				lua == null ? java.util.Map.of() : java.util.Map.of("lua", lua),
-				java.util.Map.of(), List.of(route));
+	private static MappingRoute configuration(String routeId, Endpoint lua) {
+		return new MappingRoute(routeId, List.of(), lua, List.of(), null);
+	}
+
+	/** {@code lua}, recording the {@link LuaBinding} each build of it owns. */
+	private static Endpoint observed(LuaScript lua, List<LuaBinding> bindings) {
+		return resources -> lua.uri(new BundleResources() {
+			@Override public <T extends ManagedRouteResource> T own(T resource) {
+				T owned = resources.own(resource);
+				if (owned instanceof LuaBinding binding) bindings.add(binding);
+				return owned;
+			}
+		});
 	}
 }

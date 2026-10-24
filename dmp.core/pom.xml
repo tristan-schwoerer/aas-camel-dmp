@@ -35,6 +35,11 @@
 	</build>
 
 	<dependencies>
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- Logging backend for tests only; dmp.component chooses the runtime backend. -->
 		<dependency>
 			<groupId>org.slf4j</groupId>

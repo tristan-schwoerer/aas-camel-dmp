@@ -34,7 +34,7 @@ import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaTimeoutHook;
 import org.luaj.vm2.Globals;
 import org.luaj.vm2.LuaError;
 import org.luaj.vm2.LuaValue;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -108,7 +108,7 @@ public class LuaProducer extends DefaultProducer {
 		Object body = getBody(exchange);
 		LuaValue sources = buildSources(body);
 		// An Operation's response transformation: aimc_main(sources, requestSources).
-		Object requestSources = exchange.getProperty(DataTransformerConfiguration.REQUEST_SOURCES);
+		Object requestSources = exchange.getProperty(TransformerMeta.REQUEST_SOURCES);
 		LuaValue result = requestSources == null ? aimcMain.invoke(sources).arg1()
 				: aimcMain.invoke(sources, LuaJsonCodec.toLua(requestSources)).arg1();
 
@@ -122,9 +122,9 @@ public class LuaProducer extends DefaultProducer {
 		return javaResult;
 	}
 
-	/** The exchange's {@link DataTransformerConfiguration#META}; {@code sources} and {@code sinks} are always tables. */
+	/** The exchange's {@link TransformerMeta#PROPERTY}; {@code sources} and {@code sinks} are always tables. */
 	private static LuaValue meta(Exchange exchange) {
-		Object meta = exchange.getProperty(DataTransformerConfiguration.META);
+		Object meta = exchange.getProperty(TransformerMeta.PROPERTY);
 		LuaValue table = meta instanceof Map<?, ?> ? LuaJsonCodec.toLua(meta) : LuaValue.tableOf();
 		for (String part : new String[] { "sources", "sinks" })
 			if (!table.get(part).istable()) table.set(part, LuaValue.tableOf());

@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -247,11 +247,11 @@ class OpcUaStructuresTest {
 		}
 	}
 
-	private RoutesConfiguration compile(FakeAasRepository repository, int aasPort, String lua) throws Exception {
+	private RoutePlan compile(FakeAasRepository repository, int aasPort, String lua) throws Exception {
 		return compile(repository, aasPort, lua, null);
 	}
 
-	private RoutesConfiguration compile(FakeAasRepository repository, int aasPort, String lua, String field) throws Exception {
+	private RoutePlan compile(FakeAasRepository repository, int aasPort, String lua, String field) throws Exception {
 		return compile(repository, aasPort, lua, field, "ns=1;s=CurrentRecipe", true);
 	}
 
@@ -306,7 +306,7 @@ class OpcUaStructuresTest {
 	}
 
 	/** The opcua-read fixture (Pressure → KPI/Out) with Pressure observing the Recipe variable. */
-	private RoutesConfiguration compile(FakeAasRepository repository, int aasPort, String lua, String field,
+	private RoutePlan compile(FakeAasRepository repository, int aasPort, String lua, String field,
 			String node, boolean observed) throws Exception {
 		JsonObject aid = JsonParser.parseString(resource("opcua-read/aid.json")).getAsJsonObject();
 		JsonObject opcua = child(aid, "interface_opcua");
@@ -349,7 +349,7 @@ class OpcUaStructuresTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:" + aasPort)));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().get(0).configuration();
+		return compiled.bundles().get(0).route();
 	}
 
 	private static JsonObject child(JsonObject parent, String name) {

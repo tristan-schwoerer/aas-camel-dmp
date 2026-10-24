@@ -16,8 +16,12 @@ import java.util.Map;
 
 import dk.aau.smartproductionlab.dmp.influxdb2.InfluxSettings;
 import dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.DesiredBundle;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
@@ -36,23 +40,28 @@ class TimeSeriesDiscoveryTest {
 	private static final String DATA_ID = "urn:fixture/submodels/Data";
 	private static final String SEGMENT = "State.Station.Segments.Live";
 	private static final InfluxSettings INFLUX = new InfluxSettings(URI.create("http://influxdb:8086"), "ap2030", "token");
+	/** An InfluxDB endpoint binds nothing; a URI is resolved without a bundle. */
+	private static final BundleResources RESOURCES = new BundleResources() {
+		@Override public <T extends ManagedRouteResource> T own(T resource) { return resource; }
+	};
 
 	@Test
 	void aSegmentSinkWritesTheSeriesRecordToItsMeasurement() throws Exception {
 		try (var repository = fixture(variables())) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), bundle.issues().toString());
-			var sink = assertInstanceOf(InfluxDb2DataSinkConfiguration.class, bundle.bundle().configuration().getDatasinks()
-					.values().stream().filter(InfluxDb2DataSinkConfiguration.class::isInstance).findFirst().orElseThrow());
-			assertEquals("Live", sink.getSinkId());
-			assertEquals("station_state", sink.getMeasurement());
-			assertEquals("ap2030", sink.getBucket());
-			assertEquals(Map.of("asset", "imaDispensing"), sink.getTags());
+			Sink sink = influxSink(bundle);
+			var target = (InfluxDb2Endpoint) sink.endpoint();
+			assertEquals("Live", sink.sinkId());
+			assertEquals("station_state", target.measurement());
+			assertEquals("ap2030", target.bucket());
+			assertEquals(Map.of("asset", "imaDispensing"), target.tags());
 			assertEquals(List.of(new RecordColumn("PackMLState", "xs:string"), new RecordColumn("Count", "xs:long"),
 					new RecordColumn("Position.X", "xs:double"), new RecordColumn("Location.x", "xs:double"),
-					new RecordColumn("Location.y", "xs:double")), sink.getColumns(), "a reference counts as if declared inline");
-			assertTrue(sink.getConnectionURI().startsWith("dmp-influxdb2:station_state?"), sink.getConnectionURI());
-			assertFalse(sink.getConnectionURI().contains("token"));
+					new RecordColumn("Location.y", "xs:double")), target.columns(), "a reference counts as if declared inline");
+			String uri = target.uri(RESOURCES);
+			assertTrue(uri.startsWith("dmp-influxdb2:station_state?"), uri);
+			assertFalse(uri.contains("token"));
 			assertTrue(bundle.desired().dependencies().contains(new MappingPlanCompiler.Dependency("series", VARIABLES, "State.Station")),
 					bundle.desired().dependencies().toString());
 			assertTrue(bundle.desired().dependencies().contains(new MappingPlanCompiler.Dependency("submodel", PARAMETERS, "Location")),
@@ -98,13 +107,11 @@ class TimeSeriesDiscoveryTest {
 		try (var repository = fixture(withSkill).put(skills())) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), issues(bundle));
-			var sink = bundle.bundle().configuration().getDatasinks().values().stream()
-					.filter(InfluxDb2DataSinkConfiguration.class::isInstance).map(InfluxDb2DataSinkConfiguration.class::cast)
-					.findFirst().orElseThrow();
+			var sink = (InfluxDb2Endpoint) influxSink(bundle).endpoint();
 			assertEquals(List.of(new RecordColumn("Occupy.Uuid", "xs:string"), new RecordColumn("Occupy.Target.x", "xs:double"),
 					new RecordColumn("Occupy.Waypoints[0]", "xs:int"), new RecordColumn("Occupy.Waypoints[1]", "xs:int"),
 					new RecordColumn("Occupy.State", "xs:string")),
-					sink.getColumns().stream().filter(column -> column.path().startsWith("Occupy.")).toList(),
+					sink.columns().stream().filter(column -> column.path().startsWith("Occupy.")).toList(),
 					"input, InOut and output variables in order, collections by idShort, lists by index");
 		}
 	}
@@ -120,13 +127,11 @@ class TimeSeriesDiscoveryTest {
 		try (var repository = fixture(extended)) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), issues(bundle));
-			var sink = bundle.bundle().configuration().getDatasinks().values().stream()
-					.filter(InfluxDb2DataSinkConfiguration.class::isInstance).map(InfluxDb2DataSinkConfiguration.class::cast)
-					.findFirst().orElseThrow();
+			var sink = (InfluxDb2Endpoint) influxSink(bundle).endpoint();
 			assertEquals(List.of(new RecordColumn("Tolerance.min", "xs:double"), new RecordColumn("Tolerance.max", "xs:double"),
 					new RecordColumn("Report", "xs:string"), new RecordColumn("Batch.en", "xs:string"),
 					new RecordColumn("Batch.de", "xs:string"), new RecordColumn("Season", "xs:gYear")),
-					sink.getColumns().subList(5, sink.getColumns().size()));
+					sink.columns().subList(5, sink.columns().size()));
 		}
 	}
 
@@ -159,13 +164,12 @@ class TimeSeriesDiscoveryTest {
 				.put(aimc(segmentRef(), "2", refProperty(DATA_ID, "Value")))) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), issues(bundle));
-			var source = assertInstanceOf(InfluxDb2DataSourceConfiguration.class, bundle.bundle().configuration().getDatasources()
-					.values().stream().filter(InfluxDb2DataSourceConfiguration.class::isInstance).findFirst().orElseThrow());
-			assertEquals("State", source.getSourceId());
-			assertEquals(2000, source.getPollingIntervalMs());
-			assertEquals("sync", source.getDelivery());
-			assertEquals("station_state", source.getMeasurement());
-			assertEquals(Map.of("asset", "imaDispensing"), source.getTags());
+			Source source = influxSource(bundle);
+			assertEquals("State", source.sourceId());
+			assertEquals(2000, source.pollingIntervalMs());
+			assertTrue(source.read());
+			assertEquals("station_state", ((InfluxDb2Endpoint) source.endpoint()).measurement());
+			assertEquals(Map.of("asset", "imaDispensing"), ((InfluxDb2Endpoint) source.endpoint()).tags());
 		}
 	}
 
@@ -194,11 +198,9 @@ class TimeSeriesDiscoveryTest {
 				"2026-10-20T16:00:00+02:00")).put(data()).put(aimc(segmentRef(), "2", refProperty(DATA_ID, "Value")))) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), issues(bundle));
-			var source = bundle.bundle().configuration().getDatasources().values().stream()
-					.filter(InfluxDb2DataSourceConfiguration.class::isInstance).map(InfluxDb2DataSourceConfiguration.class::cast)
-					.findFirst().orElseThrow();
-			assertEquals(java.time.Instant.parse("2026-10-20T06:00:00Z"), source.getStart());
-			assertEquals(java.time.Instant.parse("2026-10-20T14:00:00Z"), source.getEnd());
+			var source = (InfluxDb2Endpoint) influxSource(bundle).endpoint();
+			assertEquals(java.time.Instant.parse("2026-10-20T06:00:00Z"), source.start());
+			assertEquals(java.time.Instant.parse("2026-10-20T14:00:00Z"), source.end());
 		}
 	}
 
@@ -207,11 +209,9 @@ class TimeSeriesDiscoveryTest {
 		try (var repository = fixture(segment(variables(), "InProgress", "2026-10-20T06:00:00Z", null))) {
 			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
 			assertTrue(bundle.valid(), issues(bundle));
-			var sink = bundle.bundle().configuration().getDatasinks().values().stream()
-					.filter(InfluxDb2DataSinkConfiguration.class::isInstance).map(InfluxDb2DataSinkConfiguration.class::cast)
-					.findFirst().orElseThrow();
-			assertEquals(java.time.Instant.parse("2026-10-20T06:00:00Z"), sink.getStart());
-			assertTrue(sink.getConnectionURI().contains("start=RAW(2026-10-20T06:00:00Z)"), sink.getConnectionURI());
+			var sink = (InfluxDb2Endpoint) influxSink(bundle).endpoint();
+			assertEquals(java.time.Instant.parse("2026-10-20T06:00:00Z"), sink.start());
+			assertTrue(sink.uri(RESOURCES).contains("start=RAW(2026-10-20T06:00:00Z)"), sink.uri(RESOURCES));
 		}
 	}
 
@@ -303,6 +303,18 @@ class TimeSeriesDiscoveryTest {
 
 	private static RepositoryDiscovery discovery(FakeAasRepository repository, InfluxSettings influx) {
 		return new RepositoryDiscovery(repository.client(), new ConnectorConfigurationFactory.RuntimeSettings(repository.uri(), influx));
+	}
+
+	/** The bundle's sink on an InfluxDB segment. */
+	private static Sink influxSink(DesiredBundle bundle) {
+		return assertInstanceOf(MappingRoute.class, bundle.bundle().route()).sinks().stream()
+				.filter(sink -> sink.endpoint() instanceof InfluxDb2Endpoint).findFirst().orElseThrow();
+	}
+
+	/** The bundle's source on an InfluxDB segment. */
+	private static Source influxSource(DesiredBundle bundle) {
+		return assertInstanceOf(MappingRoute.class, bundle.bundle().route()).sources().stream()
+				.filter(source -> source.endpoint() instanceof InfluxDb2Endpoint).findFirst().orElseThrow();
 	}
 
 	private static DesiredBundle only(RepositoryDiscovery.Scan scan) {

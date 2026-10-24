@@ -27,7 +27,8 @@ package dk.aau.smartproductionlab.dmp.aas.operation;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SynchronousInvocationAdapter;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseProjectionProcessor;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 
 import java.util.Map;
 
@@ -35,7 +36,6 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import java.net.HttpURLConnection;
 
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
 import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,8 +81,8 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 	private final CamelContext camelContext;
 	private final AffordanceValidation validation;
 	private final OperationReplyValidationProcessor replyValidationProcessor;
-	private final java.util.List<java.util.Map<String, Object>> responseSourceBindings;
-	private final java.util.List<java.util.Map<String, Object>> responseSinkTargets;
+	private final java.util.List<Response.ResponseSource> responseSourceBindings;
+	private final java.util.List<ResponseSinkFanOutProcessor.Target> responseSinkTargets;
 	private final ResponseSinkFanOutProcessor responseFanOut;
 	private final java.util.List<SynchronousInvocationAdapter> invocationAdapters;
 	private final SynchronousInvocationAdapter.InvocationSchema invocationSchema;
@@ -106,24 +106,24 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 
 	public SyncOperationProcessor(CamelContext camelContext, OperationContext context,
 			AffordanceValidation validation, AffordanceValidation responseValidation,
-			java.util.List<java.util.Map<String, Object>> responseSourceBindings,
-			java.util.List<java.util.Map<String, Object>> responseSinkTargets) {
+			java.util.List<Response.ResponseSource> responseSourceBindings,
+			java.util.List<ResponseSinkFanOutProcessor.Target> responseSinkTargets) {
 		this(camelContext, context, validation, responseValidation, responseSourceBindings,
 				responseSinkTargets, context.action);
 	}
 
 	public SyncOperationProcessor(CamelContext camelContext, OperationContext context,
 			AffordanceValidation validation, AffordanceValidation responseValidation,
-			java.util.List<java.util.Map<String, Object>> responseSourceBindings,
-			java.util.List<java.util.Map<String, Object>> responseSinkTargets, String resourceIdentity) {
+			java.util.List<Response.ResponseSource> responseSourceBindings,
+			java.util.List<ResponseSinkFanOutProcessor.Target> responseSinkTargets, String resourceIdentity) {
 		this(camelContext, context, validation, responseValidation, responseSourceBindings,
 				responseSinkTargets, resourceIdentity, null);
 	}
 
 	SyncOperationProcessor(CamelContext camelContext, OperationContext context,
 			AffordanceValidation validation, AffordanceValidation responseValidation,
-			java.util.List<java.util.Map<String, Object>> responseSourceBindings,
-			java.util.List<java.util.Map<String, Object>> responseSinkTargets, String resourceIdentity,
+			java.util.List<Response.ResponseSource> responseSourceBindings,
+			java.util.List<ResponseSinkFanOutProcessor.Target> responseSinkTargets, String resourceIdentity,
 			java.util.List<SynchronousInvocationAdapter> adapters) {
 		this.context = context;
 		this.camelContext = camelContext;
@@ -165,7 +165,7 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 		responseFanOut.drain(timeout);
 	}
 
-	/** The Operation's identity (see {@link ProtocolBridgeRouteConfiguration#getOperationIdentity()}). */
+	/** The Operation's identity (see {@link OperationRoute.Identity#tags()}). */
 	void setOperationIdentity(Map<String, String> identity) {
 		this.operationIdentity = identity == null ? Map.of() : Map.copyOf(identity);
 	}
@@ -186,7 +186,7 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 		exchange.setProperty(INVOCATION, invocation);
 		Map<String, Object> sinks = new java.util.LinkedHashMap<>();
 		for (String sinkId : context.commandSinkIds) sinks.put(sinkId, TransformerMeta.sink(context.commandSinkUri));
-		exchange.setProperty(DataTransformerConfiguration.META, TransformerMeta.of(requestSourcesMeta(exchange), sinks, invocation));
+		exchange.setProperty(TransformerMeta.PROPERTY, TransformerMeta.of(requestSourcesMeta(exchange), sinks, invocation));
 	}
 
 	/**
@@ -195,8 +195,8 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 	 */
 	public void keepRequestSources(Exchange exchange) {
 		@SuppressWarnings("unchecked")
-		Map<String, Object> meta = exchange.getProperty(DataTransformerConfiguration.META, Map.class);
-		if (meta != null) exchange.setProperty(DataTransformerConfiguration.META,
+		Map<String, Object> meta = exchange.getProperty(TransformerMeta.PROPERTY, Map.class);
+		if (meta != null) exchange.setProperty(TransformerMeta.PROPERTY,
 				TransformerMeta.of(requestSourcesMeta(exchange), castMap(meta.get("sinks")), castMap(meta.get("invocation"))));
 		if (!context.explicitResponseMapping) return;
 		exchange.setProperty(REQUEST_SOURCES, dk.aau.smartproductionlab.dmp.core.util.JsonCodec
@@ -234,7 +234,7 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 
 	/** An Operation bound to a property affordance writes it (instead of invoking an action). */
 	private boolean writesProperty() {
-		return Boolean.TRUE.equals(context.targetOptions.get("write"));
+		return context.propertyWrite;
 	}
 
 	/**
@@ -255,7 +255,7 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 				java.util.List.of(invalid.getMessage()));
 		}
 		exchange.setProperty(WRITTEN_VALUE, written);
-		boolean json = Boolean.TRUE.equals(context.targetOptions.get("jsonPayload"));
+		boolean json = context.jsonPayload;
 		Object body = written == null ? dk.aau.smartproductionlab.dmp.core.util.JsonPointer.JSON_NULL : written;
 		if (json && written instanceof String) body = new dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload(written);
 		if (json) exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
@@ -309,11 +309,11 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 			exchange.getMessage().setBody(new java.util.LinkedHashMap<String, Object>());
 			return;
 		}
-		exchange.setProperty(dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration.REQUEST_SOURCES,
+		exchange.setProperty(dk.aau.smartproductionlab.dmp.core.util.TransformerMeta.REQUEST_SOURCES,
 				exchange.getProperty(REQUEST_SOURCES));
 		exchange.getMessage().setBody(ResponseProjectionProcessor.project(exchange.getProperty(COMMAND_REPLY),
 				responseSourceBindings));
-		exchange.setProperty(DataTransformerConfiguration.META, TransformerMeta.of(sourcesMeta(exchange),
+		exchange.setProperty(TransformerMeta.PROPERTY, TransformerMeta.of(sourcesMeta(exchange),
 				responseSinksMeta(), finished(exchange, "Succeeded", null)));
 	}
 
@@ -332,9 +332,9 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 		if (failure == null) failure = exchange.getException();
 		Map<String, Object> error = TransformerMeta.error(failure, "DMP_OPERATION_FAILED");
 		Object requestSources = exchange.getProperty(REQUEST_SOURCES);
-		exchange.setProperty(DataTransformerConfiguration.REQUEST_SOURCES,
+		exchange.setProperty(TransformerMeta.REQUEST_SOURCES,
 				requestSources == null ? new java.util.LinkedHashMap<String, Object>() : requestSources);
-		exchange.setProperty(DataTransformerConfiguration.META, TransformerMeta.of(Map.of(), responseSinksMeta(),
+		exchange.setProperty(TransformerMeta.PROPERTY, TransformerMeta.of(Map.of(), responseSinksMeta(),
 				finished(exchange, "Failed", error)));
 		exchange.getMessage().setBody(new java.util.LinkedHashMap<String, Object>());
 	}
@@ -373,7 +373,7 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 	/** Each SourceId of the body with the time it was acquired: kept from an earlier step, otherwise now. */
 	private static Map<String, Object> sourcesMeta(Exchange exchange) {
 		@SuppressWarnings("unchecked")
-		Map<String, Object> meta = exchange.getProperty(DataTransformerConfiguration.META, Map.class);
+		Map<String, Object> meta = exchange.getProperty(TransformerMeta.PROPERTY, Map.class);
 		Map<String, Object> known = meta == null ? Map.of() : castMap(meta.get("sources"));
 		Map<String, Object> sources = new java.util.LinkedHashMap<>();
 		if (exchange.getMessage().getBody() instanceof Map<?, ?> values)
@@ -387,8 +387,8 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 	/** The ResponseSinks: the ones the DMP writes with their connector's kind, the caller's as {@code operation}. */
 	private Map<String, Object> responseSinksMeta() {
 		Map<String, Object> sinks = new java.util.LinkedHashMap<>();
-		for (Map<String, Object> target : responseSinkTargets)
-			sinks.put(String.valueOf(target.get("sinkId")), TransformerMeta.sink(String.valueOf(target.get("endpoint"))));
+		for (ResponseSinkFanOutProcessor.Target target : responseSinkTargets)
+			sinks.put(target.sinkId(), TransformerMeta.sink(target.endpoint()));
 		if (context.callerReplySinkId != null) sinks.put(context.callerReplySinkId, Map.of("kind", "operation"));
 		context.callerReplyBindings.keySet().forEach(sinkId -> sinks.put(sinkId, Map.of("kind", "operation")));
 		return sinks;

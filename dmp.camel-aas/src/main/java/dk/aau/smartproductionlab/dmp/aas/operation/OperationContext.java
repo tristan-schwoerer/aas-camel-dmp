@@ -35,6 +35,11 @@ public final class OperationContext {
 	public final boolean explicitResponseMapping;
 	public final Set<String> parameterRequired;
 	public final Set<String> responseRequired;
+	/** The Operation writes a property instead of invoking an action; the written value is its reply. */
+	public final boolean propertyWrite;
+	/** A written property's value is sent as JSON text (HTTP and MQTT with a JSON schema). */
+	public final boolean jsonPayload;
+	/** The connector's invocation options ({@code SynchronousInvocationAdapter.InvocationSchema}). */
 	public final Map<String, Object> targetOptions;
 
 	private OperationContext(Builder builder) {
@@ -55,6 +60,8 @@ public final class OperationContext {
 		this.explicitResponseMapping = builder.explicitResponseMapping;
 		this.parameterRequired = Set.copyOf(builder.parameterRequired);
 		this.responseRequired = Set.copyOf(builder.responseRequired);
+		this.propertyWrite = builder.propertyWrite;
+		this.jsonPayload = builder.jsonPayload;
 		this.targetOptions = Map.copyOf(builder.targetOptions);
 		if (callerInputSourcePaths.isEmpty())
 			throw new IllegalArgumentException("operation " + action + " has no Source on the Operation");
@@ -85,6 +92,8 @@ public final class OperationContext {
 		private boolean explicitResponseMapping;
 		private List<String> parameterRequired = List.of();
 		private List<String> responseRequired = List.of();
+		private boolean propertyWrite;
+		private boolean jsonPayload;
 		private Map<String, Object> targetOptions = Map.of();
 
 		private Builder(String action, String commandSinkUri) {
@@ -107,6 +116,8 @@ public final class OperationContext {
 		public Builder explicitResponseMapping(boolean explicit) { this.explicitResponseMapping = explicit; return this; }
 		public Builder parameterRequired(List<String> names) { this.parameterRequired = names; return this; }
 		public Builder responseRequired(List<String> names) { this.responseRequired = names; return this; }
+		public Builder propertyWrite(boolean write) { this.propertyWrite = write; return this; }
+		public Builder jsonPayload(boolean json) { this.jsonPayload = json; return this; }
 		public Builder targetOptions(Map<String, Object> options) { this.targetOptions = options; return this; }
 
 		public OperationContext build() { return new OperationContext(this); }

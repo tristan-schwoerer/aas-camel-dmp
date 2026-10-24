@@ -25,6 +25,7 @@
 package dk.aau.smartproductionlab.dmp.executable.regression;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -42,12 +43,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 
-import dk.aau.smartproductionlab.dmp.aas.operation.ProtocolBridgeRouteConfiguration;
+import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
@@ -74,22 +74,8 @@ class ManagedBridgeLifecycleTest {
 			});
 		}
 	}
-	private static final class FixedTransformer extends DataTransformerConfiguration {
-		FixedTransformer() { super("request-transform"); }
-		@Override public String getConnectionURI() { return "direct:managed-request-transform"; }
-	}
-
-	private static final class FixedSink extends DataSinkConfiguration {
-		private final String uri;
-		FixedSink(String id) { this(id, "direct:managed-command-sink"); }
-		FixedSink(String id, String uri) { super(id); setSinkId(id); this.uri = uri; }
-		@Override public String getConnectionURI() { return uri; }
-	}
-
-	private static RoutesConfiguration operationWithReply(String id, String path, String replyEndpoint) {
-		RoutesConfiguration result = operation(id, path);
-		result.setDatasinks(Map.of("command", new FixedSink("command"), "reply", new FixedSink("reply", replyEndpoint)));
-		return result;
+	private static OperationRoute operationWithReply(String id, String path, String replyEndpoint) {
+		return operation(id, path, replyEndpoint);
 	}
 
 	@Test
@@ -113,6 +99,7 @@ class ManagedBridgeLifecycleTest {
 				@Override public void configure() {
 					from("direct:managed-request-transform").process(exchange ->
 							exchange.getMessage().setBody(Map.of("command", exchange.getMessage().getBody(Map.class).get("Action"))));
+					from("direct:managed-response-transform").process(exchange -> { });
 					from("direct:managed-command-sink").process(exchange -> {
 						commands.incrementAndGet();
 						if (Boolean.TRUE.equals(exchange.getMessage().getBody(Map.class).get("slow"))) {
@@ -131,16 +118,16 @@ class ManagedBridgeLifecycleTest {
 				}
 			});
 			var old = runtime.installBundle(runtime.stageBundle("A", runtime.nextBundleGeneration("A"),
-					() -> operationWithReply("operation-A", "/draining/A", "direct:old-reply")));
+					operationWithReply("operation-A", "/draining/A", "direct:old-reply")));
 			var sibling = runtime.installBundle(runtime.stageBundle("B", runtime.nextBundleGeneration("B"),
-					() -> operationWithReply("operation-B", "/draining/B", "direct:sibling-reply")));
+					operationWithReply("operation-B", "/draining/B", "direct:sibling-reply")));
 			var siblingRoute = runtime.context().getRoute("operation-B");
 			{
 				var request = caller.sendAsync(post(port, "/draining/A", "{\"slow\":true}"),
 						java.net.http.HttpResponse.BodyHandlers.ofString());
 				assertTrue(commandEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
 				var candidate = runtime.stageBundle("A", runtime.nextBundleGeneration("A"),
-						() -> operationWithReply("operation-A", "/draining/A", "direct:new-reply"));
+						operationWithReply("operation-A", "/draining/A", "direct:new-reply"));
 				var replace = pool.submit(() -> runtime.replaceBundle(old, candidate));
 				long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
 				while (old.active()) {
@@ -199,6 +186,7 @@ class ManagedBridgeLifecycleTest {
 				@Override public void configure() {
 					from("direct:managed-request-transform").process(exchange ->
 							exchange.getMessage().setBody(Map.of("command", exchange.getMessage().getBody(Map.class).get("Action"))));
+					from("direct:managed-response-transform").process(exchange -> { });
 					from("direct:managed-command-sink").setBody(constant(Map.of("reply", "accepted")));
 					from("direct:churn-reply").process(exchange -> writes.incrementAndGet());
 				}
@@ -215,17 +203,17 @@ class ManagedBridgeLifecycleTest {
 			int templates = runtime.context().hasServices(org.apache.camel.ProducerTemplate.class).size();
 			int executors = executorCount(runtime);
 			for (int i = 0; i < 6; i++) {
-				var first = runtime.installBundle(runtime.stageBundle("A", runtime.nextBundleGeneration("A"), () -> operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
-				var second = runtime.installBundle(runtime.stageBundle("B", runtime.nextBundleGeneration("B"), () -> operationWithReply("operation-B", "/churn/B", "direct:churn-reply")));
+				var first = runtime.installBundle(runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
+				var second = runtime.installBundle(runtime.stageBundle("B", runtime.nextBundleGeneration("B"), operationWithReply("operation-B", "/churn/B", "direct:churn-reply")));
 				template.requestBody("direct:operation-A", Map.of("value", 1));
 				template.requestBody("direct:operation-B", Map.of("value", 1));
-				try (var conflict = runtime.stageBundle("A", runtime.nextBundleGeneration("A"), () -> operation("operation-A", "/churn/B"))) {
+				try (var conflict = runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operation("operation-A", "/churn/B"))) {
 					assertThrows(IllegalStateException.class, () -> runtime.replaceBundle(first, conflict));
 					assertSame(first, runtime.managedBundle("A"));
 					assertTrue(first.active());
 					assertSame(second, runtime.managedBundle("B"));
 				}
-				var replaced = runtime.replaceBundle(first, runtime.stageBundle("A", runtime.nextBundleGeneration("A"), () -> operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
+				var replaced = runtime.replaceBundle(first, runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
 				template.requestBody("direct:operation-A", Map.of("value", 1));
 				runtime.removeBundle(replaced);
 				assertTrue(second.active());
@@ -259,8 +247,11 @@ class ManagedBridgeLifecycleTest {
 			dmp.startComponent();
 			var first = dmp.installBundle("operation-A", operation("operation-A", "/managed/A"));
 			var second = dmp.installBundle("operation-B", operation("operation-B", "/managed/B"));
-		assertEquals(Set.of("operation-A", "operation-A-rest-consumer", "operation-A-response-write", "operation-A-command"), first.routeIds());
-		assertEquals(Set.of("operation-B", "operation-B-rest-consumer", "operation-B-response-write", "operation-B-command"), second.routeIds());
+		// An explicit response mapping has a ResponseTransformation, which a failed call also runs for the ResponseSinks.
+		assertEquals(Set.of("operation-A", "operation-A-rest-consumer", "operation-A-response-write", "operation-A-command",
+				"operation-A-failure-response"), first.routeIds());
+		assertEquals(Set.of("operation-B", "operation-B-rest-consumer", "operation-B-response-write", "operation-B-command",
+				"operation-B-failure-response"), second.routeIds());
 			assertEquals(Set.of(new DmpRouteBuilder.RestReservation("POST", "/managed/A")), first.restReservations());
 			assertSame(second, dmp.managedBundle("operation-B"));
 
@@ -316,8 +307,8 @@ class ManagedBridgeLifecycleTest {
 					case "http-operation" -> "Restart";
 					default -> "Move";
 				};
-				assertEquals("bridge",bundle.configuration().getRoutes().get(0).getRouteTrigger(),name);
-				var installedBundle=dmp.installBundle(bundle.bundleId(),bundle.configuration());
+				assertInstanceOf(OperationRoute.class,bundle.route(),name);
+				var installedBundle=dmp.installBundle(bundle.bundleId(),bundle.route());
 				assertTrue(installedBundle.restReservations().stream().anyMatch(reservation ->
 						reservation.path().equals("/operations/contract/"+action)),name);
 				Set<String> installedRouteIds=installedBundle.routeIds();
@@ -325,7 +316,7 @@ class ManagedBridgeLifecycleTest {
 
 				var replacement=new ConnectorConfigurationFactory().createBundles(plan.value(),
 						new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas-server:8081")));
-				var readded=dmp.installBundle(replacement.bundles().get(0).bundleId(),replacement.bundles().get(0).configuration());
+				var readded=dmp.installBundle(replacement.bundles().get(0).bundleId(),replacement.bundles().get(0).route());
 				assertEquals(installedRouteIds,readded.routeIds(),name);
 				dmp.removeBundle(readded);
 			}
@@ -350,27 +341,23 @@ class ManagedBridgeLifecycleTest {
 		exchange.close();
 	}
 
-	private static RoutesConfiguration operation(String routeId, String path) {
-		RouteConfiguration base = new RouteConfiguration("bridge", List.of(),
-				List.of("request-transform"), List.of("command"));
-		ProtocolBridgeRouteConfiguration operation = new ProtocolBridgeRouteConfiguration(base);
-		operation.setRouteId(routeId);
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.REST_PATH, path);
-		operation.getTriggerData().put("action", "Action");
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.CALLER_INPUT_SOURCE_PATHS, Map.of("Action", "$"));
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.COMMAND_SINK_IDS, List.of("command"));
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.COMMAND_SINK_BINDINGS,
-				List.of(Map.of("sinkId", "command", "dataSinkId", "command")));
+	private static OperationRoute operation(String routeId, String path) {
+		return operation(routeId, path, "direct:managed-command-sink");
+	}
+
+	private static OperationRoute operation(String routeId, String path, String replyEndpoint) {
+		var command = new OperationRoute.Command(new Sink("command", "command", Endpoint.of("direct:managed-command-sink")),
+				List.of(new OperationRoute.Command.Member("command", null)), false, Map.of(), List.of(), Map.of(),
+				List.of(), null, Map.of());
 		// The whole device reply is the ResponseSource reply; it is both the Operation's output
-		// reply (caller SinkId reply) and the value written to the reply sink.
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING, true);
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SOURCE_BINDINGS,
-				List.of(Map.of("sourceId", "reply")));
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.CALLER_REPLY_SINK_ID, "reply");
-		operation.getTriggerData().put("callerOutputOrder", List.of("reply"));
-		operation.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SINK_BINDINGS,
-				List.of(Map.of("sinkId", "reply", "dataSinkId", "reply")));
-		return new RoutesConfiguration(Map.of(), Map.of("request-transform", new FixedTransformer()),
-				Map.of("command", new FixedSink("command"), "reply", new FixedSink("reply")), List.of(operation));
+		// reply (caller SinkId reply) and the value written to the reply sink. The response
+		// transformation passes it on unchanged.
+		var caller = new OperationRoute.Caller(Map.of("Action", "$"), Map.of(), Map.of(), Map.of(), List.of("reply"),
+				Map.of(), "reply");
+		var response = new Response(Endpoint.of("direct:managed-response-transform"),
+				List.of(new Response.ResponseSource("reply", null, null)),
+				List.of(new Sink("reply", "reply", Endpoint.of(replyEndpoint))));
+		return new OperationRoute(routeId, new OperationRoute.Identity(path, "Action", null, null),
+				Endpoint.of("direct:managed-request-transform"), List.of(), command, caller, response);
 	}
 }

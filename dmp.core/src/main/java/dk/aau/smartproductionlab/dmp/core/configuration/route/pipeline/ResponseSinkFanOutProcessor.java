@@ -14,7 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.model.ProcessorDefinition;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
@@ -46,7 +46,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 	private final int workerCount;
 	private final int queueCapacity;
 	private final String correlationId;
-	private final List<SinkBinding> bindings;
+	private final List<Target> bindings;
 	private final Map<String, AffordanceValidation> memberValidators;
 	private final Map<String, AffordanceValidation> payloadValidators;
 	private final Map<String, AffordanceValidation> singlePayloadValidators;
@@ -55,19 +55,17 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 	private volatile boolean acceptingWrites = true;
 	private volatile boolean closed;
 
-	public ResponseSinkFanOutProcessor(CamelContext context, String correlationId,
-			List<Map<String, Object>> rawBindings) {
-		this(context, correlationId, rawBindings, DEFAULT_WORKERS, DEFAULT_QUEUE_CAPACITY);
+	public ResponseSinkFanOutProcessor(CamelContext context, String correlationId, List<Target> targets) {
+		this(context, correlationId, targets, DEFAULT_WORKERS, DEFAULT_QUEUE_CAPACITY);
 	}
 
 	/** Response writes made in order within the evaluation ({@link #configureOrderedDispatch}); no executor. */
-	public static ResponseSinkFanOutProcessor ordered(CamelContext context, String correlationId,
-			List<Map<String, Object>> rawBindings) {
-		return new ResponseSinkFanOutProcessor(context, correlationId, rawBindings, 0, 0);
+	public static ResponseSinkFanOutProcessor ordered(CamelContext context, String correlationId, List<Target> targets) {
+		return new ResponseSinkFanOutProcessor(context, correlationId, targets, 0, 0);
 	}
 
 	ResponseSinkFanOutProcessor(CamelContext context, String correlationId,
-			List<Map<String, Object>> rawBindings, int workers, int queueCapacity) {
+			List<Target> targets, int workers, int queueCapacity) {
 		this.camelContext = context;
 		this.workerCount = workers;
 		this.queueCapacity = queueCapacity;
@@ -81,13 +79,10 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 		if (workers > 0) LOGGER.info("mapping {} response sink writes use bounded executor (workers={}, queueCapacity={}, rejection=Abort)",
 				correlationId, workers, queueCapacity);
 		this.correlationId = correlationId;
-		List<SinkBinding> resolvedBindings = new ArrayList<>();
 		this.memberValidators = new LinkedHashMap<>();
 		this.payloadValidators = new LinkedHashMap<>();
 		this.singlePayloadValidators = new LinkedHashMap<>();
-		for (Map<String, Object> raw : rawBindings) {
-			SinkBinding binding = SinkBinding.from(raw);
-			resolvedBindings.add(binding);
+		for (Target binding : targets) {
 			if (binding.schema != null) {
 				memberValidators.put(binding.sinkId,
 						new AffordanceValidation(binding.schema, "response sink " + binding.sinkId));
@@ -103,7 +98,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 								"response sink payload " + binding.sinkId));
 			}
 		}
-		this.bindings = List.copyOf(resolvedBindings);
+		this.bindings = List.copyOf(targets);
 		this.responseExecutor = workers <= 0 ? null : context.getExecutorServiceManager().newThreadPool(
 				this, "response-sink-writes-" + correlationId, profile);
 	}
@@ -147,7 +142,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 	public void configureWrite(ProcessorDefinition<?> route) {
 		var attempt = route.process(ResponseSinkFanOutProcessor::toWriteMessage).doTry();
 		var endpoints = attempt.choice();
-		for (String endpoint : bindings.stream().map(SinkBinding::endpoint).distinct().toList())
+		for (String endpoint : bindings.stream().map(Target::endpoint).distinct().toList())
 			endpoints.when(exchange -> endpoint.equals(exchange.getMessage().getHeader(WRITE_ENDPOINT_HEADER, String.class)))
 					.to(endpoint);
 		endpoints.otherwise().process(exchange -> {
@@ -214,7 +209,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 		Map<String, Group> groups = new LinkedHashMap<>();
 		List<DispatchJob> jobs = new ArrayList<>();
 		java.util.Set<String> incompleteGroups = new java.util.HashSet<>();
-		for (SinkBinding binding : bindings) {
+		for (Target binding : bindings) {
 			if (!values.containsKey(binding.sinkId)) {
 				if (warnOmitted) LOGGER.warn("mapping {} response Lua omitted SinkId {}; skipping response sink",
 						correlationId, binding.sinkId);
@@ -241,14 +236,14 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 	}
 
 	private DispatchJob dispatch(Group group) {
-		SinkBinding first = group.bindings.get(0);
+		Target first = group.bindings.get(0);
 		Object payload;
 		boolean assembleMembers = group.bindings.size() > 1 || first.valuePath != null;
 		try {
 			if (assembleMembers) {
 				Map<String, Object> keyed = new LinkedHashMap<>();
 				Map<String, String> paths = new LinkedHashMap<>();
-				for (SinkBinding binding : group.bindings) {
+				for (Target binding : group.bindings) {
 					keyed.put(binding.sinkId, group.values.get(binding.sinkId));
 					if (binding.valuePath != null) paths.put(binding.sinkId, binding.valuePath);
 					validateMember(binding, group.values.get(binding.sinkId));
@@ -349,13 +344,6 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 		return responseExecutor;
 	}
 
-	private static boolean isJsonSchema(Map<String, Object> schema) {
-		if (schema == null || schema.isEmpty()) return false;
-		return schema.containsKey("type") || schema.containsKey("properties") || schema.containsKey("items")
-				|| schema.containsKey("const") || schema.containsKey("enum") || schema.containsKey("oneOf")
-				|| schema.containsKey("anyOf") || schema.containsKey("allOf");
-	}
-
 	public long rejectedWriteCount() {
 		return rejectedWrites.get();
 	}
@@ -368,7 +356,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 
 	public int queueCapacity() { return queueCapacity; }
 
-	private void validateMember(SinkBinding binding, Object value) {
+	private void validateMember(Target binding, Object value) {
 		AffordanceValidation validator = memberValidators.get(binding.sinkId);
 		if (validator != null) validator.outgoing(value);
 	}
@@ -376,7 +364,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 	private static final class Group {
 		private final String payloadGroup;
 		private final boolean jsonPayload;
-		private final List<SinkBinding> bindings = new ArrayList<>();
+		private final List<Target> bindings = new ArrayList<>();
 		private final Map<String, Object> values = new LinkedHashMap<>();
 
 		private Group(String payloadGroup, boolean jsonPayload) {
@@ -384,7 +372,7 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 			this.jsonPayload = jsonPayload;
 		}
 
-		private void add(SinkBinding binding, Object value) {
+		private void add(Target binding, Object value) {
 			bindings.add(binding);
 			values.put(binding.sinkId, value == null ? JsonPointer.JSON_NULL : value);
 		}
@@ -392,29 +380,11 @@ public final class ResponseSinkFanOutProcessor implements ManagedRouteResource {
 
 	public record DispatchJob(String endpoint, Object body, String sinkLabel, boolean jsonPayload) { }
 
-	private record SinkBinding(String sinkId, String endpoint, String payloadGroup,
-			String valuePath, Map<String, Object> payloadSchema, Map<String, Object> schema,
-			boolean jsonPayload) {
-		private static SinkBinding from(Map<String, Object> raw) {
-			Map<String, Object> payloadSchema = asSchema(raw.get("payloadSchema"));
-			Map<String, Object> schema = asSchema(raw.get("schema"));
-			boolean jsonPayload = raw.containsKey("jsonPayload")
-					? Boolean.TRUE.equals(raw.get("jsonPayload"))
-					: isJsonSchema(payloadSchema) || isJsonSchema(schema);
-			return new SinkBinding(string(raw.get("sinkId")), string(raw.get("endpoint")),
-				string(raw.get("payloadGroup")), string(raw.get("valuePath")),
-						payloadSchema, schema, jsonPayload);
-		}
-
-		private static String string(Object value) {
-			return value == null ? null : String.valueOf(value);
-		}
-
-		private static Map<String, Object> asSchema(Object value) {
-			if (!(value instanceof Map<?, ?> map)) return null;
-			Map<String, Object> result = new LinkedHashMap<>();
-			map.forEach((key, schemaValue) -> result.put(String.valueOf(key), schemaValue));
-			return result;
-		}
+	/**
+	 * A ResponseSink as written: its {@code endpoint}, and where its value goes in the payload ({@code valuePath},
+	 * {@code payloadGroup}); {@code jsonPayload} when the payload is sent as JSON text.
+	 */
+	public record Target(String sinkId, String endpoint, String payloadGroup, String valuePath,
+			Map<String, Object> payloadSchema, Map<String, Object> schema, boolean jsonPayload) {
 	}
 }

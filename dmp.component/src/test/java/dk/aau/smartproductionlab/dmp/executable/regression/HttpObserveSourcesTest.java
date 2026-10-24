@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -105,7 +105,7 @@ class HttpObserveSourcesTest {
 
 	// ---- models: the http-poll fixture with Pressure observed by sse, or replaced by a long-polled event ----
 
-	private RoutesConfiguration compile(boolean event, String lua) throws Exception {
+	private RoutePlan compile(boolean event, String lua) throws Exception {
 		JsonObject aid = json(resource("http-poll/aid.json")).getAsJsonObject();
 		JsonObject http = child(aid, "interface_http");
 		child(child(http, "EndpointMetadata"), "base").addProperty("value", "http://127.0.0.1:" + device.getAddress().getPort() + "/");
@@ -148,7 +148,7 @@ class HttpObserveSourcesTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:" + aas.getAddress().getPort())));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().get(0).configuration();
+		return compiled.bundles().get(0).route();
 	}
 
 	/** An event affordance whose notifications are numbers, subscribed by long polling {@code alarms}. */

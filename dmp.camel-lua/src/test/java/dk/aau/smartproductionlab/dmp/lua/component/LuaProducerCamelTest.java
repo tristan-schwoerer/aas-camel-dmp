@@ -39,7 +39,7 @@ import java.util.stream.IntStream;
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import org.junit.jupiter.api.Test;
@@ -114,7 +114,7 @@ class LuaProducerCamelTest extends CamelTestSupport {
 
 		template.send("direct:start", exchange -> {
 			exchange.getMessage().setBody(Map.of("Result", Map.of("ok", true)));
-			exchange.setProperty(dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration.REQUEST_SOURCES, Map.of("Target", Map.of("id", "station-3")));
+			exchange.setProperty(dk.aau.smartproductionlab.dmp.core.util.TransformerMeta.REQUEST_SOURCES, Map.of("Target", Map.of("id", "station-3")));
 		});
 		template.sendBody("direct:start", Map.of("Result", Map.of("ok", true)));
 		var exchanges = getMockEndpoint("mock:result").getExchanges();
@@ -247,10 +247,10 @@ class LuaProducerCamelTest extends CamelTestSupport {
 		assertEquals("function aimc_main(sources) return { answer = 42 } end",
 				new String(source.bytes(), StandardCharsets.UTF_8));
 
-		LuaTransformerConfiguration configuration = new LuaTransformerConfiguration("managed", source);
+		LuaBinding configuration = new LuaBinding(source);
 		configuration.bind(context);
 		try {
-			String uri = configuration.getConnectionURI();
+			String uri = configuration.uri();
 			assertTrue(uri.startsWith("lua:managed:lua-source-"));
 			assertTrue(!uri.contains("function aimc_main"));
 			context.getRouteDefinitions().clear();
@@ -285,8 +285,8 @@ class LuaProducerCamelTest extends CamelTestSupport {
 
 	@Test
 	void concurrentManagedVersionsStayBoundToTheirOwnRoutes() throws Exception {
-		LuaTransformerConfiguration oldConfig = managedConfiguration("old", "old-generation");
-		LuaTransformerConfiguration newConfig = managedConfiguration("new", "new-generation");
+		LuaBinding oldConfig = managedConfiguration("old", "old-generation");
+		LuaBinding newConfig = managedConfiguration("new", "new-generation");
 		try {
 			oldConfig.bind(context);
 			newConfig.bind(context);
@@ -294,8 +294,8 @@ class LuaProducerCamelTest extends CamelTestSupport {
 			context.addRoutes(new RouteBuilder() {
 				@Override
 				public void configure() {
-					from("direct:old").to(oldConfig.getConnectionURI());
-					from("direct:new").to(newConfig.getConnectionURI());
+					from("direct:old").to(oldConfig.uri());
+					from("direct:new").to(newConfig.uri());
 				}
 			});
 			context.start();
@@ -324,11 +324,11 @@ class LuaProducerCamelTest extends CamelTestSupport {
 		}
 	}
 
-	private LuaTransformerConfiguration managedConfiguration(String id, String version) {
+	private LuaBinding managedConfiguration(String id, String version) {
 		String script = "function aimc_main(sources) return { version = '" + version + "' } end";
 		LuaCompiledSource source = LuaCompiledSource.fromBytes(script.getBytes(StandardCharsets.UTF_8),
 				"mapping:" + id, 256);
-		return new LuaTransformerConfiguration(id, source);
+		return new LuaBinding(source);
 	}
 
 	private void addRoute(String luaUri) throws Exception {

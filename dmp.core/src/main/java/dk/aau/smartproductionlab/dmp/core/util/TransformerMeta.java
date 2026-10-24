@@ -13,6 +13,14 @@ import java.util.Map;
  * {@code dmp-influxdb2}).
  */
 public final class TransformerMeta {
+	/** Exchange property: what a transformation knows besides the values, Lua's global {@code meta}. */
+	public static final String PROPERTY = "dmp.transformer.meta";
+	/**
+	 * Exchange property: a SourceId-keyed map a transformation receives beside its sources. Set for a response
+	 * transformation: the values its request transformation received.
+	 */
+	public static final String REQUEST_SOURCES = "dmp.transformer.requestSources";
+
 	private TransformerMeta() { }
 
 	public static Map<String, Object> of(Map<String, Object> sources, Map<String, Object> sinks,

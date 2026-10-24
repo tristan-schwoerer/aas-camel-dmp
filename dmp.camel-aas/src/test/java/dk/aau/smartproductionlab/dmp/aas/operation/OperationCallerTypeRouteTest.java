@@ -11,10 +11,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.Test;
 
@@ -33,7 +34,7 @@ class OperationCallerTypeRouteTest {
 		AtomicInteger sends = new AtomicInteger();
 		AtomicInteger responseTransforms = new AtomicInteger();
 		try (var camel = new DefaultCamelContext()) {
-			var lua = new LuaTransformerConfiguration("caller-types", LuaCompiledSource.fromBytes((
+			var lua = new LuaBinding(LuaCompiledSource.fromBytes((
 					"function aimc_main(sources) "
 					+ "assert(type(sources.Device.Count) == 'number') "
 					+ "return { Reply = { Count = string.format('%03d', sources.Device.Count), "
@@ -46,27 +47,16 @@ class OperationCallerTypeRouteTest {
 						int port;
 						try (var probe = new java.net.ServerSocket(0)) { port = probe.getLocalPort(); }
 						restConfiguration().component("jetty").host("localhost").port(port).inlineRoutes(false);
-						var routes = new RoutesConfiguration(List.of(), List.of(
-								new ProtocolBridgeRouteCreatorTest.FixedTransformer("request", "direct:types-request"),
-								new ProtocolBridgeRouteCreatorTest.FixedTransformer("response", "direct:types-response")),
-								List.of(new ProtocolBridgeRouteCreatorTest.FixedSink("command", "direct:types-device")), List.of());
-						var bridge = new ProtocolBridgeRouteConfiguration(new RouteConfiguration(
-								"bridge", List.of(), List.of("request"), List.of("command")));
-						bridge.setRouteId("caller-types");
-						var data = bridge.getTriggerData();
-						data.put("restPath", "/caller-types");
-						data.put("action", "Invoke");
-						data.put("callerInputSourcePaths", Map.of("Request", "$"));
-						data.put("commandSinkIds", List.of("command"));
-						data.put("commandSinkBindings", List.of(Map.of("sinkId", "Command", "dataSinkId", "command")));
-						data.put("callerReplySinkId", "Reply");
-						data.put("explicitResponseMapping", true);
-						data.put("responseTransformer", "response");
-						data.put("responseTypes", Map.of("Count", "integer", "DeviceFlag", "string"));
-						data.put("callerResponseTypes", Map.of("Count", "xs:string", "Display", "xs:double", "Flag", "xs:boolean"));
-						data.put("callerOutputOrder", List.of("Flag", "Count", "Display"));
-						data.put("responseSourceBindings", List.of(Map.of("sourceId", "Device")));
-						new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(bridge);
+						var command = new OperationRoute.Command(new Sink("command", null, Endpoint.of("direct:types-device")),
+								List.of(new OperationRoute.Command.Member("Command", null)), false, Map.of(), List.of(),
+								Map.of("Count", "integer", "DeviceFlag", "string"), List.of(), null, Map.of());
+						var caller = new OperationRoute.Caller(Map.of("Request", "$"), Map.of(), Map.of(),
+								Map.of("Count", "xs:string", "Display", "xs:double", "Flag", "xs:boolean"),
+								List.of("Flag", "Count", "Display"), Map.of(), "Reply");
+						new OperationRoute("caller-types", new OperationRoute.Identity("/caller-types", "Invoke", null, null),
+								Endpoint.of("direct:types-request"), List.of(), command, caller,
+								new Response(Endpoint.of("direct:types-response"),
+										List.of(new Response.ResponseSource("Device", null, null)), List.of())).build(this);
 						from("direct:types-request").setBody().constant(Map.of("Command", Map.of("argument", 1L)));
 						from("direct:types-device").process(exchange -> {
 							sends.incrementAndGet();
@@ -74,7 +64,7 @@ class OperationCallerTypeRouteTest {
 							exchange.getMessage().setBody(Map.of("Count", 7L, "DeviceFlag", "true"));
 						});
 						from("direct:types-response").process(exchange -> responseTransforms.incrementAndGet())
-								.to(lua.getConnectionURI());
+								.to(lua.uri());
 					}
 				});
 				camel.start();

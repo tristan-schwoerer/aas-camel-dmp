@@ -16,7 +16,6 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 import java.util.function.Consumer;
 
 import org.slf4j.Logger;
@@ -24,19 +23,13 @@ import org.slf4j.LoggerFactory;
 
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent.ManagedBundle;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
+import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
 import dk.aau.smartproductionlab.dmp.influxdb2.InfluxValues;
-import dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
+import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.DesiredBundle;
-import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.RuntimeSettings;
 import dk.aau.smartproductionlab.dmp.management.compiler.EffectiveFingerprint;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
-import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.MappingPlan;
-import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.Plan;
 import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery.MappingCandidate;
 import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery.MappingKey;
 import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery.Scan;
@@ -50,7 +43,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 	public enum State { INSTALLED, BLOCKED, STALE, FAILED, REMOVED }
 	/** Supplies complete authoritative desired state; repository scans also revalidate installed membership. */
 	@FunctionalInterface public interface ScanProvider { Scan scan(); }
-	@FunctionalInterface public interface DefinitionFactory { Supplier<RoutesConfiguration> freshDefinition(MappingCandidate candidate); }
 	/**
 	 * One mapping's reconciliation state. {@code generation} is the installed bundle's fence, drawn from a sequence
 	 * shared by all bundles; {@code revision} counts this mapping's installations since the DMP started (1 for the
@@ -86,7 +78,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 	private final java.util.function.Function<Set<String>, Scan> trackedScanProvider;
 	private final java.util.function.Predicate<AasControlEvent> relevance;
 	private RepositoryDiscovery discovery;
-	private final DefinitionFactory definitions;
 	private final int maxMappings;
 	private final int maxQueuedInvalidations;
 	private final long retryMillis;
@@ -119,28 +110,27 @@ public final class MappingReconciliationService implements AutoCloseable {
 	private boolean heldOverflow;
 	private static final int MAX_HELD_EVENTS = 10_000;
 
-	public MappingReconciliationService(DmpComponent component, RepositoryDiscovery discovery, RuntimeSettings runtime,
+	public MappingReconciliationService(DmpComponent component, RepositoryDiscovery discovery,
 			int maxMappings, int maxQueuedInvalidations, long retryMillis) {
-		this(component, discovery::scan, defaultDefinitions(runtime), maxMappings, maxQueuedInvalidations, retryMillis,
+		this(component, discovery::scan, maxMappings, maxQueuedInvalidations, retryMillis,
 				changed -> changed == null ? discovery.scan() : discovery.refresh(changed), discovery::relevant);
 		this.discovery = discovery;
 	}
 
 	/** Every scan is a full scan and every event is relevant; for tests and simple providers. */
 	public MappingReconciliationService(DmpComponent component, ScanProvider scanProvider,
-			DefinitionFactory definitions, int maxMappings, int maxQueuedInvalidations, long retryMillis) {
-		this(component, scanProvider, definitions, maxMappings, maxQueuedInvalidations, retryMillis, null, event -> true);
+			int maxMappings, int maxQueuedInvalidations, long retryMillis) {
+		this(component, scanProvider, maxMappings, maxQueuedInvalidations, retryMillis, null, event -> true);
 	}
 
 	private MappingReconciliationService(DmpComponent component, ScanProvider scanProvider,
-			DefinitionFactory definitions, int maxMappings, int maxQueuedInvalidations, long retryMillis,
+			int maxMappings, int maxQueuedInvalidations, long retryMillis,
 			java.util.function.Function<Set<String>, Scan> trackedScanProvider,
 			java.util.function.Predicate<AasControlEvent> relevance) {
 		this.component = Objects.requireNonNull(component);
 		this.scanProvider = Objects.requireNonNull(scanProvider);
 		this.trackedScanProvider = trackedScanProvider;
 		this.relevance = Objects.requireNonNull(relevance);
-		this.definitions = Objects.requireNonNull(definitions);
 		if (maxMappings < 1 || maxMappings > 8192) throw new IllegalArgumentException("maxMappings must be 1..8192");
 		if (maxQueuedInvalidations < 1 || maxQueuedInvalidations > 65_536)
 			throw new IllegalArgumentException("maxQueuedInvalidations must be 1..65536");
@@ -149,20 +139,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 		this.maxMappings = maxMappings;
 		this.maxQueuedInvalidations = maxQueuedInvalidations;
 		this.retryMillis = retryMillis;
-	}
-
-	private static DefinitionFactory defaultDefinitions(RuntimeSettings runtime) {
-		ConnectorConfigurationFactory factory = new ConnectorConfigurationFactory();
-		return candidate -> {
-			MappingPlan mapping = candidate.desired().desired().plan();
-			Plan plan = new Plan(candidate.key().aimcId(), mapping == null ? List.of() : List.of(mapping));
-			return () -> {
-				var result = factory.createBundles(plan, runtime);
-				if (!result.issues().isEmpty() || result.bundles().size() != 1)
-					throw new IllegalStateException("validated mapping definition could not be reconstructed");
-				return result.bundles().get(0).configuration();
-			};
-		};
 	}
 
 	/** Starts processing invalidations; a scan runs now only when one is pending or the last pass must be retried. */
@@ -373,11 +349,12 @@ public final class MappingReconciliationService implements AutoCloseable {
 				}
 				try {
 					String bundleId = candidate.desired().bundle().bundleId();
-					Supplier<RoutesConfiguration> definition = definitions.freshDefinition(candidate);
 					if (superseded(epoch, candidate.key(), dependencies)) { superseded = true; continue; }
 					publishPendingDependencies(bundleId, dependencyIds(candidate));
 					long generation = component.nextBundleGeneration(bundleId);
-					DmpComponent.StagedBundle staged = component.stageBundle(bundleId, generation, definition);
+					// The compiled plan itself is staged: it was compiled once, when the scan found it.
+					DmpComponent.StagedBundle staged = component.stageBundle(bundleId, generation,
+							candidate.desired().bundle().route());
 					if (superseded(epoch, candidate.key(), dependencies)) {
 						staged.close();
 						if (previous == null) component.abandonUninstalledBundle(bundleId);
@@ -500,13 +477,9 @@ public final class MappingReconciliationService implements AutoCloseable {
 		Map<String, List<MappingKey>> reservations = new LinkedHashMap<>();
 		for (MappingCandidate candidate : candidates) {
 			if (!candidate.desired().valid() || candidate.desired().bundle() == null) continue;
-			for (RouteConfiguration route : candidate.desired().bundle().configuration().getRoutes()) {
-				if (!"bridge".equals(route.getRouteTrigger()) || route.getTriggerData() == null) continue;
-				Object path = route.getTriggerData().get("restPath");
-				if (path instanceof String restPath && !restPath.isBlank()) {
-					String reservation = "POST " + restPath;
-					reservations.computeIfAbsent(reservation, ignored -> new ArrayList<>()).add(candidate.key());
-				}
+			if (candidate.desired().bundle().route() instanceof OperationRoute operation) {
+				String reservation = "POST " + operation.identity().restPath();
+				reservations.computeIfAbsent(reservation, ignored -> new ArrayList<>()).add(candidate.key());
 			}
 		}
 		Map<MappingKey, List<Diagnostic>> conflicts = new LinkedHashMap<>();
@@ -535,19 +508,10 @@ public final class MappingReconciliationService implements AutoCloseable {
 		Map<String, Map<String, Set<MappingKey>>> types = new LinkedHashMap<>();
 		for (MappingCandidate candidate : candidates) {
 			if (!candidate.desired().valid() || candidate.desired().bundle() == null) continue;
-			var configuration = candidate.desired().bundle().configuration();
-			List<Object> endpoints = new ArrayList<>(configuration.getDatasinks().values());
-			endpoints.addAll(configuration.getDatasources().values());
-			for (Object endpoint : endpoints) {
-				String bucket, measurement;
-				List<RecordColumn> columns;
-				if (endpoint instanceof InfluxDb2DataSinkConfiguration sink) {
-					bucket = sink.getBucket(); measurement = sink.getMeasurement(); columns = sink.getColumns();
-				} else if (endpoint instanceof InfluxDb2DataSourceConfiguration source) {
-					bucket = source.getBucket(); measurement = source.getMeasurement(); columns = source.getColumns();
-				} else continue;
-				for (var column : columns)
-					types.computeIfAbsent(bucket + "/" + measurement + "/" + column.path(), ignored -> new LinkedHashMap<>())
+			for (Endpoint endpoint : candidate.desired().bundle().route().endpoints()) {
+				if (!(endpoint instanceof InfluxDb2Endpoint series)) continue;
+				for (var column : series.columns())
+					types.computeIfAbsent(series.bucket() + "/" + series.measurement() + "/" + column.path(), ignored -> new LinkedHashMap<>())
 							.computeIfAbsent(InfluxValues.kind(column.valueType()).name()
 									+ " (" + column.valueType() + ")", ignored -> new LinkedHashSet<>())
 							.add(candidate.key());

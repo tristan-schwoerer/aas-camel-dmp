@@ -69,12 +69,22 @@ flowchart LR
 | Module | Responsibility |
 | --- | --- |
 | `dmp.management` | Repository client, AIMC/AID wire projection, mapping compiler, fingerprints, reconciliation, Kafka/MQTT event routes, value feed |
-| `dmp.core` | Route model, execution-policy route creator, fan-in/fan-out, payload assembly, affordance validation, bundle lifecycle |
+| `dmp.core` | Route plans (`core.plan`), the mapping route creator, fan-in/fan-out, payload assembly, affordance validation, bundle lifecycle |
 | `dmp.camel-lua` | `lua:` component and sandbox |
 | `dmp.camel-aas` | AAS element read/write, `aas-event:` source, Operation bridge |
 | `dmp.camel-paho`, `-opcua`, `-http`, `-plc4x`, `-snmp` | Connectors reachable from AID bindings, including the DMP Camel components (§9) |
 | `dmp.camel-influxdb2` | `dmp-influxdb2:`, TimeSeries LinkedSegments on InfluxDB 2 (§5.5) |
 | `dmp.component` | Executable, settings, `/health`, `/management/status`; the root `Dockerfile` builds it into the image |
+
+**Threads.** No mapping has a thread of its own. Evaluations, polls and
+event-sourced AAS sources run on one pool of workers (`dmp.workerThreads`,
+32 by default; created on demand, ended after a minute idle), each owner's
+work in order through a queue of its own; one scheduler thread only ticks the
+polls and connector watchdogs. A connector's thread (Paho's callback, Milo's
+notifications, the value feed) only accepts a value. MQTT sources, sinks and
+actions share one connection per broker and credentials, PLC4X endpoints one
+connection per device. What still has threads per endpoint: HTTP observation
+(a request loop per source).
 
 ## 4. Discovery and lifecycle
 
@@ -141,10 +151,17 @@ value from it, so batch updates reach event-sourced sources too.
 
 ### 4.4 Compilation and installation
 
-- Each mapping compiles to one plan with a fingerprint over its effective
-  inputs: of an AAS element target its structure without values, and of a
-  Source on an Operation variable the whole Operation (its delegation URL and
-  variables). An unchanged fingerprint keeps the installed bundle.
+- Each mapping compiles once, when a pass finds it changed, to one plan with a
+  fingerprint over its effective inputs: of an AAS element target its structure
+  without values, and of a Source on an Operation variable the whole Operation
+  (its delegation URL and variables). An unchanged fingerprint keeps the
+  installed bundle.
+- The plan is a typed, immutable value: a mapping route (sources, sinks, the
+  transformation, the response half) or an Operation route (the caller, the
+  command, the response half), whose endpoints are the connectors' own records.
+  It is what gets staged; each staging builds its routes and binds what the
+  bundle owns (credentials, compiled Lua, caches) afresh, so the same plan also
+  restores a bundle whose replacement failed.
 - A changed mapping is staged as an inactive candidate and swapped in under a
   generation fence; in-flight requests on the old bundle drain, and calls during
   the swap receive "unavailable" (the new bundle's REST listener starts first,
@@ -602,12 +619,19 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   (`readproperty`, an AAS element, a TimeSeries segment): an MQTT topic, an
   event or a form that only observes (an HTTP subprotocol) blocks the mapping,
   and an observable OPC UA variable is read, not monitored.
-- A mapping evaluates one at a time: an evaluation snapshots the cache when it
-  starts, runs Lua once against that immutable snapshot and dispatches its
-  sinks before the next one starts. A later evaluation therefore never starts
-  from an older cache, and its writes never precede an earlier one's. While an
-  evaluation runs, a source arriving on another thread waits; its value is
-  already in the cache. `meta.sources` times belong to the same snapshot.
+- A source's consumer only accepts its value: it updates the cache and, when
+  the value triggers and the gate is open, admits an evaluation with a
+  snapshot of the cache taken then. Evaluations run on the shared workers
+  (§3), one at a time per mapping and in the order they were admitted: each
+  runs Lua once against its own immutable snapshot and dispatches its sinks
+  before the next one starts. Each update is therefore evaluated with its own
+  value, a later evaluation never starts from an older cache, and its writes
+  never precede an earlier one's. A slow sink delays only its own mapping.
+  `meta.sources` times belong to the same snapshot. A mapping holds at most
+  1024 waiting evaluations (`dmp.pendingEvaluations`); one more is merged into
+  the newest (its triggers added, the newer snapshot kept), with a warning. A
+  failed evaluation is logged and recorded (§10); the source's message is not
+  failed.
   An evaluation runs on a message of its own: no header or property of a
   source's message (a Read's node list, an HTTP response's headers) reaches the
   transformation or a sink.
@@ -615,8 +639,10 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   the same affordance or AAS element: each gets its own monitored item,
   subscription, listener or poll at its own authored interval, and never sees
   another mapping's samples. Connections are shared where the connector allows
-  it (one OPC UA session per server configuration); an MQTT client is per
-  mapping. Only an Operation is exclusive: one mapping answers it.
+  it: one OPC UA session per server configuration, one MQTT connection per
+  broker and credentials (a topic filter several sources share is subscribed
+  once), one PLC4X connection per device. Only an Operation is exclusive: one
+  mapping answers it.
 - Sinks are dispatched sequentially in authored order; each starts from restored
   headers and body. A SinkId missing from the Lua result is an error for that
   sink; it is not silently skipped.
@@ -694,11 +720,15 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
    - **OPC UA**: Method call; arguments are matched by name to the server's
      `InputArguments`/`OutputArguments`, outputs must match the declared basic
      type and rank; structured arguments are objects (§5.2);
-   - **MQTT 5**: `paho-mqtt5-inout:` publishes with ResponseTopic and
-     CorrelationData; the first reply on the declared reply topic that carries
-     the request's correlation data is the terminal reply, whatever its
-     payload. A device publishes progress or other messages without that
-     correlation data. Timeout 30 s. An action without `mqv_responseTopic`
+   - **MQTT 5**: `dmp-paho-mqtt5:` subscribes the declared reply topic (its
+     SUBACK confirmed on the current connection before anything is
+     published), then publishes with ResponseTopic and fresh CorrelationData;
+     the first reply on the reply topic that carries the request's
+     correlation data is the terminal reply, whatever its payload. A device
+     publishes progress or other messages without that correlation data.
+     Timeout 30 s for subscription, publication and reply together. A command
+     is published at most once: neither its timeout nor a reconnect sends it
+     again (connections start clean). An action without `mqv_responseTopic`
      only invokes: the command is published one way and the call returns once
      the broker accepted it (`mqv_qos` 1 or 2; 0 or none blocks the mapping). Such an
      action has no `output`; one that declares an output needs the response
@@ -814,7 +844,7 @@ end
   | --- | --- | --- |
   | `meta.sources.<SourceId>.time` | each Source: when its value was acquired (ISO-8601 UTC) | each ResponseSource: when the reply arrived |
   | `meta.sources.<SourceId>.trigger` | `true` on the Sources whose new value caused the evaluation (an Operation's own Sources for a call); absent otherwise | absent |
-  | `meta.sinks.<SinkId>.kind` | each Sink: the connector it writes through, its endpoint scheme (`aas`, `dmp-influxdb2`, `paho-mqtt5`, …) | each ResponseSink: its connector, or `operation` for one answering the caller |
+  | `meta.sinks.<SinkId>.kind` | each Sink: the connector it writes through, its endpoint scheme (`aas`, `dmp-influxdb2`, `dmp-paho-mqtt5`, …) | each ResponseSink: its connector, or `operation` for one answering the caller |
   | `meta.invocation.id`, `.started` | the evaluation or call: a UUID, and when it started (ISO-8601 UTC) | the same |
   | `meta.invocation.caller`, `.skill`, `.aas`, `.submodel`, `.path`, `.restPath` | an Operation call only: who called (`basyx` or `rest`) and the Operation | the same |
   | `meta.invocation.durationMs` | — | from the start to the end of the sinks or the device's reply |
@@ -865,8 +895,9 @@ end
 | SNMP (v1, v2c) | Read (GET, polled), Write (SET) | Traps, SNMPv3, tables |
 | BACnet | — (rejected: the PLC4X 0.13.1 `bacnet-ip` driver neither reads nor writes; it only listens for COV notifications) | Read, Write, Observe |
 
-Data-plane MQTT clients are one per endpoint. Credentials of every connector
-are bound in the Camel registry per bundle and referenced by name in URIs.
+MQTT sources, sinks and actions share one connection per broker and
+credentials (`dmp-paho-mqtt5:`). Credentials of every connector are bound in the Camel registry
+per bundle and referenced by name in URIs.
 
 Where an upstream Camel component lacks a behaviour the DMP needs, the DMP
 ships a component that extends it under its own scheme (registered through
@@ -875,10 +906,11 @@ any component, and the upstream component stays usable unchanged:
 
 | Scheme | Extends | Adds |
 | --- | --- | --- |
-| `dmp-plc4x:` | camel-plc4x | acknowledged writes and checked reads (failures raise instead of being logged or read as `{}`); the body is the tag value |
+| `dmp-plc4x:` | camel-plc4x | acknowledged writes and checked reads (failures raise instead of being logged or read as `{}`); the body is the tag value; one connection per device, one request at a time (camel-plc4x opens one per endpoint, so per tag) |
+| `dmp-paho-mqtt5:` | camel-paho-mqtt5 | sources (subscriptions), sinks (publishes) and actions (MQTT 5 request/reply with correlation, or a one-way publish) on one shared connection per broker and credentials, reconnected with its subscriptions; an unreachable broker fails no installation, the connection is retried and publications fail until it is up (camel-paho-mqtt5 opens a client with threads of its own per endpoint, allows one consumer per endpoint and has no request/reply); a source new to a topic filter others already subscribed gets its retained message |
+| `dmp-poll:` | — (in place of `timer:`) | a fixed-rate tick from the one scheduler, run on a worker, skipped while the previous poll lasts (`timer:` keeps a thread per timer) |
 | `dmp-milo-client:` | camel-milo client | a Method producer that answers with the Call's result (camel-milo 4.22 drops it); a consumer whose monitored item has its own subscription and a sample queue (camel-milo shares one subscription per server, created with the first endpoint's publishing interval, and keeps only the latest sample); event monitored items with an EventFilter (options `eventFields`, `eventType`; camel-milo has only data-change filters); a Write producer that waits for the server, fails on a Bad status and writes scalars as the variable's DataType (camel-milo ignores the status); structures decoded and encoded with the server's DataTypes (§5.2) |
 | `dmp-snmp:` | camel-snmp (SNMP4J) | checked GET (error status, missing object and timeout raise) and SET of the object's own SMI type; camel-snmp has no SET |
-| `paho-mqtt5-inout:` | camel-paho-mqtt5 | MQTT 5 request/reply with correlation; owns its reply consumer and publish producer |
 | `dmp-http-observe:` | — (camel-http has no consumer) | observing an HTTP resource by long polling or server-sent events (§5.2) |
 | `dmp-influxdb2:` | camel-influxdb2 (influxdb-client-java) | blocking writes whose rejection or failure fails the exchange (camel-influxdb2 writes through the asynchronous batching API, whose errors never reach the exchange); typed points from a Record row; a polling consumer reading the latest row with Flux (camel-influxdb2 has no consumer); no creation of orgs or buckets (camel-influxdb2 creates them by default); one client for the configured InfluxDB, its token outside every URI |
 
@@ -901,7 +933,8 @@ The Java Flight Recorder records an ordinary mapping's evaluations, off
 unless a recording is started (`-XX:StartFlightRecording` or `jcmd <pid>
 JFR.start`): `dk.aau.smartproductionlab.dmp.Evaluation` spans one evaluation,
 Lua and every sink, with its `mapping`, `triggers` and `waitedNanos` (from the
-triggering source's arrival to the evaluation's start);
+triggering source's arrival to the evaluation's start, its wait for a
+worker and in the mapping's queue included);
 `dk.aau.smartproductionlab.dmp.SinkWrite` spans one sink's send until its
 connector acknowledged it, with its `sink` and `kind`.
 

@@ -16,8 +16,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.security.Credentials;
+import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcUaEndpoint;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
@@ -144,7 +152,7 @@ class OpcUaSubscriptionSourcesTest {
 
 	@Test
 	void mappingsObservingOneVariableEachGetEveryChange() throws Exception {
-		List<RoutesConfiguration> bundles = compile(false, "function aimc_main(sources) return { Out = sources.Pressure + 1000 } end",
+		List<RoutePlan> bundles = compile(false, "function aimc_main(sources) return { Out = sources.Pressure + 1000 } end",
 				"function aimc_main(sources) return { Out = sources.Pressure + 2000 } end");
 		assertEquals(2, bundles.size());
 		var first = runtime.installBundle("first", bundles.get(0));
@@ -191,11 +199,9 @@ class OpcUaSubscriptionSourcesTest {
 	@Test
 	void aSubscriptionThatCannotBeSetUpIsDeletedNotLeaked() throws Exception {
 		// The path names no node: each attempt creates a subscription, then fails resolving the node.
-		RoutesConfiguration bundle = compile(false, "function aimc_main(sources) return { Out = sources.Pressure } end");
-		for (var source : bundle.getDatasources().values())
-			if (source instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration opcua) {
-				opcua.setNodeInformation("/Root/Objects/1:Missing(1)");
-			}
+		RoutePlan bundle = withOpcUaEndpoints(compile(false, "function aimc_main(sources) return { Out = sources.Pressure } end"),
+				true, false, opcua -> new OpcUaEndpoint(opcua.host(), opcua.port(), opcua.servicePath(),
+						"/Root/Objects/1:Missing(1)", opcua.credentials(), opcua.options()));
 		runtime.installBundle("missing", bundle);
 		Thread.sleep(3_000);
 		assertTrue(server.getSubscriptions().size() <= 1, "subscriptions left on the server: " + server.getSubscriptions().size());
@@ -207,21 +213,40 @@ class OpcUaSubscriptionSourcesTest {
 	 */
 	@Test
 	void aSessionAuthenticatesAsTheBoundUserWithItsPasswordIntact() throws Exception {
-		RoutesConfiguration bundle = compileWrite("function aimc_main(sources) return { Out = sources.Pressure + 1 } end");
-		for (var source : bundle.getDatasources().values())
-			if (source instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration opcua) {
-				opcua.setUsername(USER);
-				opcua.setPassword(PASSWORD);
-				assertTrue(!opcua.getConnectionURI().contains("p@ss"), opcua.getConnectionURI());
-			}
-		for (var sink : bundle.getDatasinks().values())
-			if (sink instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSinkConfiguration opcua) {
-				opcua.setUsername(USER);
-				opcua.setPassword(PASSWORD);
+		UnaryOperator<OpcUaEndpoint> asUser = opcua -> new OpcUaEndpoint(opcua.host(), opcua.port(), opcua.servicePath(),
+				opcua.node(), new Credentials(USER, PASSWORD), opcua.options());
+		RoutePlan bundle = withOpcUaEndpoints(compileWrite("function aimc_main(sources) return { Out = sources.Pressure + 1 } end"),
+				true, true, asUser);
+		for (var source : ((MappingRoute) bundle).sources())
+			if (source.endpoint() instanceof OpcUaEndpoint opcua) {
+				String uri = opcua.uri(RESOURCES);
+				assertTrue(!uri.contains("p@ss"), uri);
 			}
 		runtime.installBundle("user", bundle);
 		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(42).equals(device.setpoint()));
 		assertTrue(authenticated.contains(USER), "the session is the user's, not anonymous: " + authenticated);
+	}
+
+	/** Resources that are only named, never bound: the URI is all the test reads of them. */
+	private static final BundleResources RESOURCES = new BundleResources() {
+		@Override public <T extends ManagedRouteResource> T own(T resource) { return resource; }
+	};
+
+	/** {@code mapping} with its OPC UA source (and sink) endpoints replaced by {@code change} of them. */
+	private static RoutePlan withOpcUaEndpoints(RoutePlan mapping, boolean sources, boolean sinks,
+			UnaryOperator<OpcUaEndpoint> change) {
+		MappingRoute route = (MappingRoute) mapping;
+		return new MappingRoute(route.routeId(),
+				route.sources().stream().map(source -> sources && source.endpoint() instanceof OpcUaEndpoint opcua
+						? new Source(source.id(), source.sourceId(), change.apply(opcua), source.delivery(),
+								source.pollingIntervalMs(), source.evaluation(), source.valuePath(), source.schema())
+						: source).toList(),
+				route.transformation(),
+				route.sinks().stream().map(sink -> sinks && sink.endpoint() instanceof OpcUaEndpoint opcua
+						? new Sink(sink.id(), sink.sinkId(), change.apply(opcua), sink.valuePath(), sink.schema(),
+								sink.payloadSchema(), sink.payloadGroup())
+						: sink).toList(),
+				route.response());
 	}
 
 	/** One variable (Level), a writable one (Setpoint) and the Server object's transition events. */
@@ -292,7 +317,7 @@ class OpcUaSubscriptionSourcesTest {
 	// ---- models: the opcua-read fixture with Pressure observed, or replaced by an event affordance ----
 
 	/** The opcua-read fixture with Pressure read every 50 ms (not observed) and written to the Setpoint variable. */
-	private RoutesConfiguration compileWrite(String lua) throws Exception {
+	private RoutePlan compileWrite(String lua) throws Exception {
 		JsonObject aid = json(resource("opcua-read/aid.json")).getAsJsonObject();
 		JsonObject opcua = child(aid, "interface_opcua");
 		child(child(opcua, "EndpointMetadata"), "base").addProperty("value", "opc.tcp://127.0.0.1:" + devicePort);
@@ -318,12 +343,12 @@ class OpcUaSubscriptionSourcesTest {
 		return bundles(aid, aimc).get(0);
 	}
 
-	private RoutesConfiguration compile(boolean events, String lua) throws Exception {
+	private RoutePlan compile(boolean events, String lua) throws Exception {
 		return compile(events, new String[] { lua }).get(0);
 	}
 
 	/** One AIMC with a mapping per Lua script, all on the same source; one bundle each. */
-	private List<RoutesConfiguration> compile(boolean events, String... luas) throws Exception {
+	private List<RoutePlan> compile(boolean events, String... luas) throws Exception {
 		JsonObject aid = json(resource("opcua-read/aid.json")).getAsJsonObject();
 		JsonObject opcua = child(aid, "interface_opcua");
 		child(child(opcua, "EndpointMetadata"), "base").addProperty("value", "opc.tcp://127.0.0.1:" + devicePort);
@@ -361,7 +386,7 @@ class OpcUaSubscriptionSourcesTest {
 	}
 
 	/** Publishes the models to a fake repository and compiles the AIMC's bundles. */
-	private List<RoutesConfiguration> bundles(JsonObject aid, JsonObject aimc) throws Exception {
+	private List<RoutePlan> bundles(JsonObject aid, JsonObject aimc) throws Exception {
 		if (repository != null) repository.close();
 		repository = new FakeAasRepository();
 		String publishedAimc = PublishedModels.publish(aimc.toString(), "contractAAS", "contract");
@@ -375,7 +400,7 @@ class OpcUaSubscriptionSourcesTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:" + aas.getAddress().getPort())));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().stream().map(bundle -> bundle.configuration()).toList();
+		return compiled.bundles().stream().map(bundle -> bundle.route()).toList();
 	}
 
 	/**

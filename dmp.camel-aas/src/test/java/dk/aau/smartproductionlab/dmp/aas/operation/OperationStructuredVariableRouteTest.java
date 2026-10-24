@@ -23,10 +23,10 @@ import org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultProperty;
 import org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementCollection;
 import org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList;
 import dk.aau.smartproductionlab.dmp.aas.model.Aas;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.Test;
 
@@ -158,37 +158,23 @@ class OperationStructuredVariableRouteTest {
 						int port;
 						try (var probe = new java.net.ServerSocket(0)) { port = probe.getLocalPort(); }
 						restConfiguration().component("jetty").host("localhost").port(port).inlineRoutes(false);
-						var routes = new RoutesConfiguration(List.of(), List.of(
-								new ProtocolBridgeRouteCreatorTest.FixedTransformer("request", "direct:structured-request"),
-								new ProtocolBridgeRouteCreatorTest.FixedTransformer("response", "direct:structured-response")),
-								List.of(new ProtocolBridgeRouteCreatorTest.FixedSink("command", "direct:structured-device")), List.of());
-						var bridge = new ProtocolBridgeRouteConfiguration(new RouteConfiguration(
-								"bridge", List.of(), List.of("request"), List.of("command")));
-						bridge.setRouteId("structured");
-						var data = bridge.getTriggerData();
-						data.put("restPath", "/structured");
-						data.put("operationSubmodelId", "urn:cci");
-						data.put("operationPath", "Skills.Move.operation");
-						data.put("action", "Move");
-						data.put("callerInputSourcePaths", Map.of("Request", "$"));
-						data.put("commandSinkIds", List.of("command"));
-						data.put("commandSinkBindings", List.of(Map.of("sinkId", "Command", "dataSinkId", "command")));
-						data.put("callerReplySinkId", "Reply");
-						data.put("explicitResponseMapping", true);
-						data.put("responseTransformer", "response");
-						data.put("callerResponseTypes", Map.of());
-						data.put("callerOutputOrder", List.of("Plan", "Result"));
-						data.put("callerInputTemplates", Map.of("Target", Aas.write(TARGET), "Codes", Aas.write(CODES),
-								"Plan", Aas.write(PLAN)));
-						data.put("callerOutputTemplates", Map.of("Plan", Aas.write(PLAN), "Result", Aas.write(RESULT)));
-						data.put("responseSourceBindings", List.of(Map.of("sourceId", "Device")));
-						new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(bridge);
-						from("direct:structured-request").to(request.getConnectionURI());
+						var caller = new OperationRoute.Caller(Map.of("Request", "$"),
+								Map.of("Target", Aas.write(TARGET), "Codes", Aas.write(CODES), "Plan", Aas.write(PLAN)),
+								Map.of("Plan", Aas.write(PLAN), "Result", Aas.write(RESULT)), Map.of(),
+								List.of("Plan", "Result"), Map.of(), "Reply");
+						new OperationRoute("structured",
+								new OperationRoute.Identity("/structured", "Move", "urn:cci", "Skills.Move.operation"),
+								Endpoint.of("direct:structured-request"), List.of(),
+								ProtocolBridgeRouteCreatorTest.command("command", "direct:structured-device",
+										new OperationRoute.Command.Member("Command", null)),
+								caller, new Response(Endpoint.of("direct:structured-response"),
+										List.of(new Response.ResponseSource("Device", null, null)), List.of())).build(this);
+						from("direct:structured-request").to(request.uri());
 						from("direct:structured-device").process(exchange -> {
 							command.set(exchange.getMessage().getBody());
 							exchange.getMessage().setBody(Map.of("speed", 5L));
 						});
-						from("direct:structured-response").to(response.getConnectionURI());
+						from("direct:structured-response").to(response.uri());
 					}
 				});
 				camel.start();
@@ -207,8 +193,8 @@ class OperationStructuredVariableRouteTest {
 		}
 	}
 
-	private static LuaTransformerConfiguration lua(DefaultCamelContext camel, String id, String source) throws Exception {
-		var lua = new LuaTransformerConfiguration(id, LuaCompiledSource.fromBytes(source.getBytes(StandardCharsets.UTF_8), id, 4096));
+	private static LuaBinding lua(DefaultCamelContext camel, String id, String source) throws Exception {
+		var lua = new LuaBinding(LuaCompiledSource.fromBytes(source.getBytes(StandardCharsets.UTF_8), id, 4096));
 		lua.bind(camel);
 		return lua;
 	}

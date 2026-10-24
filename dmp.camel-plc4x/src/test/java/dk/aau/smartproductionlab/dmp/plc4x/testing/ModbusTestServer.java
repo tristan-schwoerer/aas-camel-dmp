@@ -54,6 +54,10 @@ public final class ModbusTestServer implements AutoCloseable {
 	/** Called after a write is applied, with {@code coil} or {@code register} and the address. */
 	public void onWrite(BiConsumer<String, Integer> listener) { onWrite = listener; }
 
+	/** TCP connections accepted so far, and those still open. */
+	public int acceptedConnections() { return clients.size(); }
+	public long openConnections() { return clients.stream().filter(client -> !client.isClosed()).count(); }
+
 	/** Answers reads with Modbus exception 4 (slave device failure). */
 	public void failReads(boolean fail) { failReads = fail; }
 

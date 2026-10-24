@@ -1,6 +1,6 @@
 package dk.aau.smartproductionlab.dmp.management.compiler;
 
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation;
+import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -18,22 +18,27 @@ import org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultFile;
 import org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList;
 import dk.aau.smartproductionlab.dmp.aas.model.Aas;
 
-import dk.aau.smartproductionlab.dmp.core.configuration.route.execution.policy.ExecutionPolicyRouteConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASDatasinkConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASPollingDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.operation.ProtocolBridgeRouteConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpObserveDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpPollingDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.paho.configuration.MqttDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.paho.configuration.MqttDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSink;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSource;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventSource;
+import dk.aau.smartproductionlab.dmp.aas.event.AasPropertyEventProcessor;
+import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpObservation;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpPoll;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpWrite;
+import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpEndpoint;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
+import dk.aau.smartproductionlab.dmp.paho.configuration.MqttPublication;
+import dk.aau.smartproductionlab.dmp.paho.configuration.MqttSubscription;
+import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcUaEndpoint;
+import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xEndpoint;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.AidTarget;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.DirectTarget;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.EndpointPlan;
@@ -49,6 +54,11 @@ import dk.aau.smartproductionlab.dmp.management.repository.AasReferenceResolver;
 import org.junit.jupiter.api.Test;
 
 class ConnectorConfigurationFactoryTest {
+	/** The endpoints here only name what they bind, so a URI is resolved without a bundle. */
+	private static final BundleResources RESOURCES = new BundleResources() {
+		@Override public <T extends ManagedRouteResource> T own(T resource) { return resource; }
+	};
+
 	private final ConnectorConfigurationFactory factory = new ConnectorConfigurationFactory();
 
 	@Test
@@ -57,19 +67,18 @@ class ConnectorConfigurationFactoryTest {
 		var result = factory.create(new Plan(List.of(plan)), "owner/mapping-1");
 
 		assertTrue(result.issues().isEmpty());
-		var source = assertInstanceOf(HttpPollingDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		var sink = assertInstanceOf(HttpDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("Source.authored", source.getSourceId());
-		assertEquals("Sink.authored", sink.getSinkId());
-		assertEquals(List.of(source.getUniqueId()), result.configuration().getRoutes().get(0).getDatasources());
-		var route = assertInstanceOf(ExecutionPolicyRouteConfiguration.class, result.configuration().getRoutes().get(0));
-		assertEquals("owner/mapping-1:3", route.getRouteId());
-		var transformer = assertInstanceOf(LuaTransformerConfiguration.class,
-				result.configuration().getTransformers().values().iterator().next());
-		assertTrue(transformer.getConnectionURI().contains("managed:"));
-		assertFalse(transformer.getConnectionURI().contains("aimc_main"));
+		var route = assertInstanceOf(MappingRoute.class, result.routes().get(0));
+		assertEquals(1, route.sources().size());
+		var source = route.sources().get(0);
+		var sink = route.sinks().get(0);
+		assertInstanceOf(HttpPoll.class, source.endpoint());
+		assertInstanceOf(HttpWrite.class, sink.endpoint());
+		assertEquals("Source.authored", source.sourceId());
+		assertEquals("Sink.authored", sink.sinkId());
+		assertEquals("owner/mapping-1:3", route.routeId());
+		String transformer = uri(assertInstanceOf(LuaScript.class, route.transformation()));
+		assertTrue(transformer.contains("managed:"));
+		assertFalse(transformer.contains("aimc_main"));
 	}
 
 	@Test
@@ -88,9 +97,9 @@ class ConnectorConfigurationFactoryTest {
 		assertEquals("map-two",bundles.bundles().get(1).mappingIdentity());
 		assertFalse(bundles.bundles().get(0).bundleId().equals(bundles.bundles().get(1).bundleId()));
 		for(var bundle:bundles.bundles()) {
-			assertEquals(1,bundle.configuration().getRoutes().size());
-			assertEquals(1,bundle.configuration().getDatasources().size());
-			assertEquals(1,bundle.configuration().getDatasinks().size());
+			var route=assertInstanceOf(MappingRoute.class,bundle.route());
+			assertEquals(1,route.sources().size());
+			assertEquals(1,route.sinks().size());
 		}
 	}
 
@@ -100,7 +109,7 @@ class ConnectorConfigurationFactoryTest {
 		assertEquals(2, result.issues().size());
 		assertTrue(result.issues().stream().allMatch(issue -> issue.mappingId().equals("logical-map")));
 		assertTrue(result.issues().stream().allMatch(issue -> issue.path().contains("Sources") || issue.path().contains("Sinks")));
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 	}
 
 	@Test
@@ -118,18 +127,16 @@ class ConnectorConfigurationFactoryTest {
 		var result = factory.create(new Plan("urn:owner/submodels/AIMC", List.of(mapping)), "unit");
 
 		assertTrue(result.issues().isEmpty());
-		var dataSource = assertInstanceOf(MqttDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		var dataSink = assertInstanceOf(MqttDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("broker.example", dataSource.getServerUrl());
-		assertEquals(1883, dataSource.getServerPort());
-		assertEquals("base/state", dataSource.getTopic());
-		assertEquals(0, dataSource.getQos());
-		assertEquals("base/command", dataSink.getTopic());
-		assertEquals(1, dataSink.getQos());
-		assertEquals(true, dataSink.getRetained());
-		assertTrue(dataSource.getConnectionURI().contains("clientId=dmp-"));
+		var dataSource = assertInstanceOf(MqttSubscription.class, sources(result).get(0).endpoint());
+		var dataSink = assertInstanceOf(MqttPublication.class, sinks(result).get(0).endpoint());
+		assertEquals("broker.example", dataSource.host());
+		assertEquals(1883, dataSource.port());
+		assertEquals("base/state", dataSource.topic());
+		assertEquals(0, dataSource.qos());
+		assertEquals("base/command", dataSink.topic());
+		assertEquals(1, dataSink.qos());
+		assertEquals(true, dataSink.retained());
+		assertTrue(uri(dataSource).contains("name=dmp-"));
 	}
 
 	@Test
@@ -140,15 +147,13 @@ class ConnectorConfigurationFactoryTest {
 				"http://api.example:8080/api/v1/","alarm",Map.of(),"POST"));
 		var result=factory.create(new Plan(List.of(mappingWithEndpoints(source,sink))),"route");
 		assertTrue(result.issues().isEmpty());
-		var httpSource=assertInstanceOf(HttpPollingDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		assertEquals("http://api.example:8080/api/v1/temperature",httpSource.getServerUrl());
-		var httpSink=assertInstanceOf(HttpDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("api.example",httpSink.getServerUrl());
-		assertEquals("/api/v1/alarm",httpSink.getPath());
-		assertEquals("POST",httpSink.getMethod());
-		assertTrue(httpSink.getConnectionURI().contains("httpMethod=POST"));
+		var httpSource=assertInstanceOf(HttpPoll.class,sources(result).get(0).endpoint());
+		assertEquals("http://api.example:8080/api/v1/temperature",httpSource.url());
+		var httpSink=assertInstanceOf(HttpWrite.class,sinks(result).get(0).endpoint());
+		assertEquals("api.example",httpSink.host());
+		assertEquals("/api/v1/alarm",httpSink.path());
+		assertEquals("POST",httpSink.method());
+		assertTrue(uri(httpSink).contains("httpMethod=POST"));
 
 		// RFC 3986: a path-absolute href replaces the base path; a write without htv_methodName is a PUT (WoT default).
 		var absolute=polledEndpointPlan("read",protocolTarget(WireModel.ProtocolFamily.HTTP,
@@ -158,8 +163,8 @@ class ConnectorConfigurationFactoryTest {
 		var resolved=factory.create(new Plan(List.of(mappingWithEndpoints(absolute,put))),"route");
 		assertTrue(resolved.issues().isEmpty(),resolved.issues().toString());
 		assertEquals("http://api.example:8080/temperature",
-				assertInstanceOf(HttpPollingDataSourceConfiguration.class,resolved.configuration().getDatasources().values().iterator().next()).getServerUrl());
-		assertEquals("PUT",assertInstanceOf(HttpDataSinkConfiguration.class,resolved.configuration().getDatasinks().values().iterator().next()).getMethod());
+				assertInstanceOf(HttpPoll.class,sources(resolved).get(0).endpoint()).url());
+		assertEquals("PUT",assertInstanceOf(HttpWrite.class,sinks(resolved).get(0).endpoint()).method());
 
 		// A GET cannot write.
 		var getWrite=endpointPlan("write",protocolTarget(WireModel.ProtocolFamily.HTTP,"http://api.example:8080/","alarm",Map.of(),"GET"));
@@ -181,28 +186,20 @@ class ConnectorConfigurationFactoryTest {
 				mappingPlan("mb-map",1,modbusSource,modbusSink)));
 		var result = factory.create(plan, "route");
 		assertTrue(result.issues().isEmpty());
-		var uaDataSource = assertInstanceOf(OpcuaDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().stream()
-						.filter(OpcuaDataSourceConfiguration.class::isInstance).findFirst().orElseThrow());
-		assertEquals("ua.example", uaDataSource.getServerUrl());
-		assertEquals("milo", uaDataSource.getPathToService());
-		assertEquals("ns=2;s=Temperature", uaDataSource.getNodeInformation());
-		var uaDataSink = assertInstanceOf(OpcuaDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().stream()
-						.filter(OpcuaDataSinkConfiguration.class::isInstance).findFirst().orElseThrow());
-		assertEquals("ns=2;s=Temperature", uaDataSink.getNodeInformation());
-		var plcSource = assertInstanceOf(Plc4xDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().stream()
-						.filter(Plc4xDataSourceConfiguration.class::isInstance).findFirst().orElseThrow());
-		assertEquals("modbus-tcp", plcSource.getDriver());
-		assertEquals("", plcSource.getServicePath());
-		assertEquals("default-unit-identifier", plcSource.getOptions().get(0).getName());
-		assertEquals("2", plcSource.getOptions().get(0).getValue());
-		assertEquals("coil:1", plcSource.getTags().get(0).getValue(), "protocol address 0 is PLC4X coil 1");
-		var plcSink = assertInstanceOf(Plc4xDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().stream()
-						.filter(Plc4xDataSinkConfiguration.class::isInstance).findFirst().orElseThrow());
-		assertEquals("coil:1", plcSink.getTags().get(0).getValue());
+		var uaDataSource = endpoint(sources(result), OpcUaEndpoint.class);
+		assertEquals("ua.example", uaDataSource.host());
+		assertEquals("milo", uaDataSource.servicePath());
+		assertEquals("ns=2;s=Temperature", uaDataSource.node());
+		var uaDataSink = endpoint(sinks(result), OpcUaEndpoint.class);
+		assertEquals("ns=2;s=Temperature", uaDataSink.node());
+		var plcSource = endpoint(sources(result), Plc4xEndpoint.class);
+		assertEquals("modbus-tcp", plcSource.driver());
+		assertEquals("", plcSource.servicePath());
+		assertEquals("default-unit-identifier", plcSource.options().get(0).getName());
+		assertEquals("2", plcSource.options().get(0).getValue());
+		assertEquals("coil:1", plcSource.tags().get(0).getValue(), "protocol address 0 is PLC4X coil 1");
+		var plcSink = endpoint(sinks(result), Plc4xEndpoint.class);
+		assertEquals("coil:1", plcSink.tags().get(0).getValue());
 	}
 
 	@Test
@@ -214,13 +211,14 @@ class ConnectorConfigurationFactoryTest {
 				"/7/20",Map.of("modv_entity","modv:HoldingRegister","modv_type","xsd:unsignedShort"),null));
 		var result=factory.create(new Plan(List.of(mappingPlan("mb-map",0,source,sink))),"route");
 		assertTrue(result.issues().isEmpty(),String.valueOf(result.issues()));
-		var read=assertInstanceOf(Plc4xDataSourceConfiguration.class,result.configuration().getDatasources().values().iterator().next());
-		assertEquals("holding-register:11:DINT[2]",read.getTags().get(0).getValue(),"four registers are two 32-bit values");
+		var polled=sources(result).get(0);
+		var read=assertInstanceOf(Plc4xEndpoint.class,polled.endpoint());
+		assertEquals("holding-register:11:DINT[2]",read.tags().get(0).getValue(),"four registers are two 32-bit values");
 		assertEquals(Map.of("default-unit-identifier","7","default-payload-byte-order","LITTLE_ENDIAN_BYTE_SWAP","request-timeout","500"),
-				read.getOptions().stream().collect(java.util.stream.Collectors.toMap(o -> o.getName(),o -> o.getValue())));
-		assertEquals(1000,read.getPollingIntervalMs(),"the AIMC interval, above modv_pollingTime");
-		var write=assertInstanceOf(Plc4xDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("holding-register:21:UINT",write.getTags().get(0).getValue());
+				read.options().stream().collect(java.util.stream.Collectors.toMap(o -> o.getName(),o -> o.getValue())));
+		assertEquals(1000,polled.pollingIntervalMs(),"the AIMC interval, above modv_pollingTime");
+		var write=assertInstanceOf(Plc4xEndpoint.class,sinks(result).get(0).endpoint());
+		assertEquals("holding-register:21:UINT",write.tags().get(0).getValue());
 	}
 
 	@Test
@@ -231,9 +229,9 @@ class ConnectorConfigurationFactoryTest {
 				"/?id=ns=2;s=Out",Map.of("uav_browsePath","/Root/Objects/2:Tank/2:Out"),null));
 		var result=factory.create(new Plan(List.of(mappingPlan("ua",0,byPath,byId))),"route");
 		assertTrue(result.issues().isEmpty(),String.valueOf(result.issues()));
-		String source=result.configuration().getDatasources().values().iterator().next().getConnectionURI();
+		String source=uri(sources(result).get(0).endpoint());
 		assertTrue(source.contains("browsePath=RAW(/Root/Objects/2:Tank/2:Level)") && !source.contains("node="),source);
-		String sink=result.configuration().getDatasinks().values().iterator().next().getConnectionURI();
+		String sink=uri(sinks(result).get(0).endpoint());
 		assertTrue(sink.contains("node=RAW(ns=2;s=Out)"),"the href's NodeId wins: "+sink);
 
 		var relative=endpointPlan("level",protocolTarget(WireModel.ProtocolFamily.OPCUA,"opc.tcp://ua.example:4840",
@@ -253,12 +251,13 @@ class ConnectorConfigurationFactoryTest {
 				"20",Map.of("modv_entity","HoldingRegister","modv_type","xsd:unsignedShort"),null));
 		var result=factory.create(new Plan(List.of(mappingPlan("mb-map",0,source,sink))),"route");
 		assertTrue(result.issues().isEmpty(),String.valueOf(result.issues()));
-		var read=assertInstanceOf(Plc4xDataSourceConfiguration.class,result.configuration().getDatasources().values().iterator().next());
-		assertEquals("holding-register:10:INT[2]",read.getTags().get(0).getValue(),"one-based 10 is protocol address 9, PLC4X 10");
-		assertEquals("7",read.getOptions().get(0).getValue());
-		assertEquals(250,read.getPollingIntervalMs(),"the device's polling rate bounds the AIMC interval");
-		var write=assertInstanceOf(Plc4xDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("holding-register:21:UINT",write.getTags().get(0).getValue());
+		var polled=sources(result).get(0);
+		var read=assertInstanceOf(Plc4xEndpoint.class,polled.endpoint());
+		assertEquals("holding-register:10:INT[2]",read.tags().get(0).getValue(),"one-based 10 is protocol address 9, PLC4X 10");
+		assertEquals("7",read.options().get(0).getValue());
+		assertEquals(250,polled.pollingIntervalMs(),"the device's polling rate bounds the AIMC interval");
+		var write=assertInstanceOf(Plc4xEndpoint.class,sinks(result).get(0).endpoint());
+		assertEquals("holding-register:21:UINT",write.tags().get(0).getValue());
 	}
 
 	@Test
@@ -269,10 +268,8 @@ class ConnectorConfigurationFactoryTest {
 		var command=new EndpointPlan("Command",reference(),mqttTarget(endpointMetadata,mqttForm("cmd","1",null),"Command"));
 		var result=factory.create(new Plan(List.of(mappingPlan("topics",0,events,command))),"route");
 		assertTrue(result.issues().isEmpty(),String.valueOf(result.issues()));
-		assertEquals("site//alarms/#",assertInstanceOf(MqttDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next()).getTopic());
-		assertEquals("site/cmd",assertInstanceOf(MqttDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next()).getTopic());
+		assertEquals("site//alarms/#",assertInstanceOf(MqttSubscription.class,sources(result).get(0).endpoint()).topic());
+		assertEquals("site/cmd",assertInstanceOf(MqttPublication.class,sinks(result).get(0).endpoint()).topic());
 
 		// mqv_controlPacket describes the consumer: a form whose packet is publish cannot be subscribed to.
 		Map<String,String> terms=Map.of("mqv_qos","1","mqv_controlPacket","publish");
@@ -289,16 +286,18 @@ class ConnectorConfigurationFactoryTest {
 		var sink=endpointPlan("write",protocolTarget(WireModel.ProtocolFamily.HTTP,"http://api.example:8080/","alarm",Map.of(),"POST"));
 		var sse=factory.create(new Plan(List.of(mappingWithEndpoints(endpointPlan("read",httpObserved("property","sse",true)),sink))),"route");
 		assertTrue(sse.issues().isEmpty(),sse.issues().toString());
-		var observed=assertInstanceOf(HttpObserveDataSourceConfiguration.class,sse.configuration().getDatasources().values().iterator().next());
-		assertEquals("async",observed.getDelivery());
+		var observed=sources(sse).get(0);
+		assertInstanceOf(HttpObservation.class,observed.endpoint());
+		assertEquals(Source.Delivery.OBSERVED,observed.delivery());
 		// Headers (and Basic credentials) are a registry binding the URI names.
-		assertTrue(observed.getConnectionURI().startsWith("dmp-http-observe:sse?url=RAW(http://api.example:8080/temperature)"
-				+ "&contentType=RAW(application/json)&headers=#bean:dmp-http-"),observed.getConnectionURI());
+		String observedUri=uri(observed.endpoint());
+		assertTrue(observedUri.startsWith("dmp-http-observe:sse?url=RAW(http://api.example:8080/temperature)"
+				+ "&contentType=RAW(application/json)&headers=#bean:dmp-http-"),observedUri);
 
 		var event=factory.create(new Plan(List.of(mappingWithEndpoints(endpointPlan("read",httpObserved("event","longpoll",false)),sink))),"route");
 		assertTrue(event.issues().isEmpty(),event.issues().toString());
-		assertTrue(assertInstanceOf(HttpObserveDataSourceConfiguration.class,event.configuration().getDatasources().values().iterator().next())
-				.getConnectionURI().startsWith("dmp-http-observe:longpoll?"));
+		assertTrue(uri(assertInstanceOf(HttpObservation.class,sources(event).get(0).endpoint()))
+				.startsWith("dmp-http-observe:longpoll?"));
 
 		for(var rejected:List.of(
 				Map.entry(httpObserved("event",null,false),"subscribed through subprotocol"),
@@ -336,14 +335,14 @@ class ConnectorConfigurationFactoryTest {
 				"/1.3.6.1.4.1.9999.1.0",Map.of("snmpv_pduType","snmpv:SetRequestPDU","snmpv_version","SNMPv1"),null));
 		var result=factory.create(new Plan(List.of(mappingWithEndpoints(read,write))),"route");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var source=assertInstanceOf(SnmpDataSourceConfiguration.class,result.configuration().getDatasources().values().iterator().next());
-		assertEquals("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.2.1.1.3.0&version=SNMPv2c",source.getConnectionURI());
-		assertEquals("sync",source.getDelivery());
-		var sink=assertInstanceOf(SnmpDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
+		var source=sources(result).get(0);
+		assertEquals("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.2.1.1.3.0&version=SNMPv2c",uri(assertInstanceOf(SnmpEndpoint.class,source.endpoint())));
+		assertEquals(Source.Delivery.READ,source.delivery());
+		String sink=uri(assertInstanceOf(SnmpEndpoint.class,sinks(result).get(0).endpoint()));
 		// The community is a credential: the URI names its registry binding, never the value.
-		assertTrue(sink.getConnectionURI().startsWith("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.4.1.9999.1.0&version=SNMPv1&community=#bean:dmp-credential-"),
-				sink.getConnectionURI());
-		assertFalse(sink.getConnectionURI().contains("private"),sink.getConnectionURI());
+		assertTrue(sink.startsWith("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.4.1.9999.1.0&version=SNMPv1&community=#bean:dmp-credential-"),
+				sink);
+		assertFalse(sink.contains("private"),sink);
 
 		for(var rejected:List.of(
 				Map.entry(protocolTarget(WireModel.ProtocolFamily.SNMP,"snmp://10.0.0.5/","sysDescr",Map.of(),null),"snmp://{address}:{port}/{oid}"),
@@ -362,11 +361,11 @@ class ConnectorConfigurationFactoryTest {
 		var write=endpointPlan("write",httpWithHeaders("PUT",null,header("Authorization","Bearer token-1")));
 		var result=factory.create(new Plan(List.of(mappingWithEndpoints(poll,write))),"route");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var source=assertInstanceOf(HttpPollingDataSourceConfiguration.class,result.configuration().getDatasources().values().iterator().next());
-		assertTrue(source.getConnectionURI().contains("httpClientConfigurer=#bean:dmp-http-"),source.getConnectionURI());
-		assertFalse(source.getConnectionURI().contains("s3cret"));
-		var sink=assertInstanceOf(HttpDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
-		assertFalse(sink.getConnectionURI().contains("token-1"));
+		String source=uri(assertInstanceOf(HttpPoll.class,sources(result).get(0).endpoint()));
+		assertTrue(source.contains("httpClientConfigurer=#bean:dmp-http-"),source);
+		assertFalse(source.contains("s3cret"));
+		String sink=uri(assertInstanceOf(HttpWrite.class,sinks(result).get(0).endpoint()));
+		assertFalse(sink.contains("token-1"));
 
 		for(var rejected:List.of(
 				Map.entry(httpWithHeaders("GET",null,header("Content-Type","text/plain")),"set by the connector"),
@@ -425,7 +424,7 @@ class ConnectorConfigurationFactoryTest {
 			var write=endpointPlan("out",protocolTarget(WireModel.ProtocolFamily.MODBUS,"modbus+tcp://plc.example:502",form.getKey(),form.getValue(),null));
 			var result=factory.create(new Plan(List.of(mappingPlan("mb-map",0,read,write))),"route");
 			assertFalse(result.issues().isEmpty(),form+" must be rejected");
-			assertTrue(result.configuration().getRoutes().isEmpty());
+			assertTrue(result.routes().isEmpty());
 		}
 		var legacy=endpointPlan("in",protocolTarget(WireModel.ProtocolFamily.MODBUS,"tcp://plc.example:502","/1/1",Map.of(),null));
 		assertTrue(factory.create(new Plan(List.of(mappingWithEndpoints(legacy,legacy))),"route").issues().stream()
@@ -439,7 +438,7 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(new Plan(List.of(mappingWithEndpoints(modbus,modbus))),"route");
 		assertFalse(result.issues().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.path().contains("modv_function")));
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 	}
 
 	@Test
@@ -449,7 +448,7 @@ class ConnectorConfigurationFactoryTest {
 		var sink=endpointPlan("present-value",protocolTarget(WireModel.ProtocolFamily.BACNET,
 				"bacnet://5", "/1,2/85", Map.of(), null));
 		var result=factory.create(new Plan(List.of(mappingPlan("bacnet-map",0,source,sink))),"route");
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("BACnet is not supported")),
 				String.valueOf(result.issues()));
 	}
@@ -462,10 +461,8 @@ class ConnectorConfigurationFactoryTest {
 				"http://iolink.example:8080/api", "/output",Map.of(),"POST"));
 		var result=factory.create(new Plan(List.of(mappingPlan("iolink-map",0,source,sink))),"route");
 		assertTrue(result.issues().isEmpty());
-		assertInstanceOf(HttpPollingDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		assertInstanceOf(HttpDataSinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
+		assertInstanceOf(HttpPoll.class,sources(result).get(0).endpoint());
+		assertInstanceOf(HttpWrite.class,sinks(result).get(0).endpoint());
 	}
 
 	@Test
@@ -478,23 +475,23 @@ class ConnectorConfigurationFactoryTest {
 		var sink=new EndpointPlan("OccupationState",reference,target);
 		var plan=new Plan(List.of(mappingPlan("aas-map",0,source,sink)));
 		var noServer=factory.create(plan,"route");
-		assertTrue(noServer.configuration().getRoutes().isEmpty());
+		assertTrue(noServer.routes().isEmpty());
 		assertTrue(noServer.issues().stream().anyMatch(issue -> issue.message().contains("explicit repository runtime settings")));
 
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(
 				URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty());
-		var ds=assertInstanceOf(AASPollingDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
+		var polled=sources(result).get(0);
+		var ds=assertInstanceOf(AasElementSource.class,polled.endpoint());
 		String encoded=java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
 				"urn:owner/submodels/Variables".getBytes(StandardCharsets.UTF_8));
-		assertEquals("http://aas.example:8081/submodels/"+encoded,ds.getSubmodelEndpoint());
-		assertEquals("State",ds.getIdShortPath());
-		assertEquals(2000,ds.getPollingIntervalMs(),"an authored PollingInterval keeps polling");
-		var sinkConfig=assertInstanceOf(AASDatasinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("OccupationState",sinkConfig.getSinkId());
-		assertEquals("OccupationState",sinkConfig.getValuePath());
+		assertEquals("http://aas.example:8081/submodels/"+encoded,ds.submodelEndpoint());
+		assertEquals("State",ds.idShortPath());
+		assertEquals(2000,polled.pollingIntervalMs(),"an authored PollingInterval keeps polling");
+		var sinkConfig=sinks(result).get(0);
+		assertInstanceOf(AasElementSink.class,sinkConfig.endpoint());
+		assertEquals("OccupationState",sinkConfig.sinkId());
+		assertEquals("OccupationState",sinkConfig.valuePath());
 	}
 
 	@Test
@@ -507,17 +504,17 @@ class ConnectorConfigurationFactoryTest {
 				new EndpointPlan("OccupationState",reference,target))));
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var ds=assertInstanceOf(dk.aau.smartproductionlab.dmp.aas.configuration.AasEventDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		assertEquals("urn:owner/submodels/Variables",ds.getSubmodelId());
-		assertEquals("Status.State",ds.getIdShortPath());
-		assertEquals("async",ds.getDelivery());
-		assertEquals("aas-element-event",ds.getSourceKind());
-		assertTrue(ds.getConnectionURI().startsWith("aas-event:"));
+		var source=sources(result).get(0);
+		var ds=assertInstanceOf(AasEventSource.class,source.endpoint());
+		assertEquals("urn:owner/submodels/Variables",ds.submodelId());
+		assertEquals("Status.State",ds.idShortPath());
+		assertEquals(Source.Delivery.OBSERVED,source.delivery());
+		assertInstanceOf(AasPropertyEventProcessor.class,ds.normalizer(source),"repository events are read as element events");
+		assertTrue(uri(ds).startsWith("aas-event:"));
 		String encoded=java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
 				"urn:owner/submodels/Variables".getBytes(StandardCharsets.UTF_8));
-		assertEquals("http://aas.example:8081/submodels/"+encoded+"/submodel-elements/Status.State",ds.getEventFilter().get("readUrl"));
-		assertEquals(Map.of("type","string"),ds.getSchema());
+		assertEquals("http://aas.example:8081/submodels/"+encoded+"/submodel-elements/Status.State",ds.readUrl());
+		assertEquals(Map.of("type","string"),source.schema());
 	}
 
 	@Test
@@ -539,15 +536,15 @@ class ConnectorConfigurationFactoryTest {
 				Presence.of(List.of(written)),Presence.of(List.of(lastWrite)),lua,List.of());
 		var result=factory.create(new Plan(List.of(mapping)),"route",runtime);
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var route=result.configuration().getRoutes().get(0);
-		var binding=route.getResponseSourceBindings().get(0);
-		assertEquals("Written",binding.get("sourceId"));
-		assertEquals("Setpoint",binding.get("sinkId"),"the ResponseSource projects the value Setpoint was sent");
-		assertEquals(null,binding.get("valuePath"));
-		assertEquals("LastWrite",route.getResponseSinkBindings().get(0).get("sinkId"));
-		assertTrue(route.getResponseTransformer()!=null && !route.getTransformers().contains(route.getResponseTransformer()),
+		var route=assertInstanceOf(MappingRoute.class,result.routes().get(0));
+		var binding=route.response().sources().get(0);
+		assertEquals("Written",binding.sourceId());
+		assertEquals("Setpoint",binding.sinkId(),"the ResponseSource projects the value Setpoint was sent");
+		assertEquals(null,binding.valuePath());
+		assertEquals("LastWrite",route.response().sinks().get(0).sinkId());
+		assertTrue(route.response().transformation()!=null && route.response().transformation()!=route.transformation(),
 				"the response Lua is the response half's, not a request transformer");
-		assertEquals(1,route.getDatasinks().size(),"ResponseSinks are not written by the request half");
+		assertEquals(1,route.sinks().size(),"ResponseSinks are not written by the request half");
 
 		// a member of a collection the mapping writes: the member of what was sent
 		var whole=new EndpointPlan("Status",AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementCollection","Status"),
@@ -556,9 +553,9 @@ class ConnectorConfigurationFactoryTest {
 				Presence.of(List.of(written)),Presence.of(List.of(lastWrite)),lua,List.of());
 		var member=factory.create(new Plan(List.of(nested)),"route",runtime);
 		assertTrue(member.issues().isEmpty(),member.issues().toString());
-		var memberBinding=member.configuration().getRoutes().get(0).getResponseSourceBindings().get(0);
-		assertEquals("Status",memberBinding.get("sinkId"));
-		assertEquals("$.Setpoint",memberBinding.get("valuePath"));
+		var memberBinding=assertInstanceOf(MappingRoute.class,member.routes().get(0)).response().sources().get(0);
+		assertEquals("Status",memberBinding.sinkId());
+		assertEquals("$.Setpoint",memberBinding.valuePath());
 
 		var reads=new EndpointPlan("Reads",state.reference(),state.target());
 		var notASink=new MappingPlan("logged",0,List.of(state),List.of(setpoint),Presence.absent(),Presence.absent(),
@@ -586,11 +583,11 @@ class ConnectorConfigurationFactoryTest {
 		// an observed trigger and a GET read at each evaluation: no interval needed
 		var result=factory.create(new Plan(List.of(mapping.apply(List.of(source.apply("mqtt","OnChange"),source.apply("read","ReadAtEvaluation"))))),"route");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var configured=result.configuration().getDatasources().values().stream().toList();
-		assertEquals(Evaluation.ON_CHANGE,configured.get(0).getEvaluation());
-		assertEquals(Evaluation.READ_AT_EVALUATION,configured.get(1).getEvaluation());
-		assertEquals("sync",configured.get(1).getDelivery());
-		assertEquals(0,configured.get(1).getPollingIntervalMs());
+		var configured=sources(result);
+		assertEquals(Evaluation.ON_CHANGE,configured.get(0).evaluation());
+		assertEquals(Evaluation.READ_AT_EVALUATION,configured.get(1).evaluation());
+		assertEquals(Source.Delivery.READ,configured.get(1).delivery());
+		assertEquals(0,configured.get(1).pollingIntervalMs());
 
 		for(var rejected:List.of(
 				Map.entry(List.of(source.apply("mqtt","Cached"),source.apply("read","ReadAtEvaluation")),"no Source triggers the mapping"),
@@ -627,8 +624,7 @@ class ConnectorConfigurationFactoryTest {
 				new EndpointPlan("OccupationState",reference,target)),"2")));
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		assertInstanceOf(dk.aau.smartproductionlab.dmp.aas.configuration.AasEventDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
+		assertInstanceOf(AasEventSource.class,sources(result).get(0).endpoint());
 	}
 
 	@Test
@@ -641,12 +637,10 @@ class ConnectorConfigurationFactoryTest {
 				new EndpointPlan("Location_x",reference,target))));
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var ds=assertInstanceOf(AASPollingDataSourceConfiguration.class,
-				result.configuration().getDatasources().values().iterator().next());
-		assertEquals("Location.x",ds.getIdShortPath());
-		var sink=assertInstanceOf(AASDatasinkConfiguration.class,
-				result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("Location.x",sink.getIdShortPath());
+		var ds=assertInstanceOf(AasElementSource.class,sources(result).get(0).endpoint());
+		assertEquals("Location.x",ds.idShortPath());
+		var sink=assertInstanceOf(AasElementSink.class,sinks(result).get(0).endpoint());
+		assertEquals("Location.x",sink.idShortPath());
 	}
 
 	@Test
@@ -659,8 +653,8 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(new Plan(List.of(mappingPlan("aas-collection",0,new EndpointPlan("In",reference,whole,Presence.of("2")),
 				new EndpointPlan("Location",reference,whole)))),"route",runtime);
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var sink=assertInstanceOf(AASDatasinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
-		assertTrue(sink.getConnectionURI().contains("&elementType=SubmodelElementCollection"),sink.getConnectionURI());
+		String sink=uri(assertInstanceOf(AasElementSink.class,sinks(result).get(0).endpoint()));
+		assertTrue(sink.contains("&elementType=SubmodelElementCollection"),sink);
 
 		var list=new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder().idShort("Items")
 				.typeValueListElement(org.eclipse.digitaltwin.aas4j.v3.model.AasSubmodelElements.PROPERTY)
@@ -677,8 +671,8 @@ class ConnectorConfigurationFactoryTest {
 	void bridgeRestPathIsTheDelegationQualifierPathAndAMissingQualifierBlocksTheMapping() {
 		var result=factory.create(explicitResponsePlan("aid-command"),"bridge",new ConnectorConfigurationFactory.RuntimeSettings(
 				URI.create("http://aas.example:8081")));
-		var bridge=assertInstanceOf(ProtocolBridgeRouteConfiguration.class,result.configuration().getRoutes().get(0));
-		assertEquals("/operations/asset%20one/Move",bridge.getTriggerData().get(ProtocolBridgeRouteConfiguration.REST_PATH));
+		var bridge=assertInstanceOf(OperationRoute.class,result.routes().get(0));
+		assertEquals("/operations/asset%20one/Move",bridge.identity().restPath());
 
 		var plan=explicitResponsePlan("aid-command");
 		var operation=(org.eclipse.digitaltwin.aas4j.v3.model.Operation)((DirectTarget)plan.mappings().get(0).sources().get(0).target())
@@ -687,7 +681,7 @@ class ConnectorConfigurationFactoryTest {
 				"http://dmp:8080/" }) {
 			operation.setQualifiers(invalid==null?List.of():List.of(AasFixtures.delegation(invalid)));
 			var blocked=factory.create(plan,"bridge",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
-			assertTrue(blocked.configuration().getRoutes().isEmpty(),String.valueOf(invalid));
+			assertTrue(blocked.routes().isEmpty(),String.valueOf(invalid));
 			assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("invocationDelegation")),String.valueOf(invalid));
 		}
 	}
@@ -707,8 +701,7 @@ class ConnectorConfigurationFactoryTest {
 				AasFixtures.reference("Submodel","urn:owner/submodels/Variables","Property","Out"),out))));
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		assertEquals(Map.of("type","array","items",Map.of("type","number")),
-				result.configuration().getDatasources().values().iterator().next().getSchema());
+		assertEquals(Map.of("type","array","items",Map.of("type","number")),sources(result).get(0).schema());
 	}
 
 	@Test void mqttBasicTakesTheBrokersCredentialsAsBoundReferences() {
@@ -724,7 +717,7 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(new Plan(List.of(mapping)),"route",
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"),null,credentials));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		String uri=result.configuration().getDatasources().values().iterator().next().getConnectionURI();
+		String uri=uri(sources(result).get(0).endpoint());
 		assertTrue(uri.contains("#bean:dmp-credential-") && !uri.contains("s3cret"),uri);
 	}
 
@@ -767,12 +760,12 @@ class ConnectorConfigurationFactoryTest {
 				{"endpoints":{"http://device:8080":{"username":"dmp","password":"p@ss","bearerToken":"t0ken","apiKey":"k3y"}}}""");
 		var withBasic=secured(basic,credentials);
 		assertTrue(withBasic.issues().isEmpty(),withBasic.issues().toString());
-		var source=withBasic.configuration().getDatasources().values().iterator().next();
-		assertFalse(source.getConnectionURI().contains("p@ss") || source.getConnectionURI().contains("dmp:"),source.getConnectionURI());
+		String source=uri(sources(withBasic).get(0).endpoint());
+		assertFalse(source.contains("p@ss") || source.contains("dmp:"),source);
 
 		var apikey=secured(securedHttp(List.of("apikey_sc"),scheme("apikey_sc","apikey",property("name","key"))),credentials);
 		assertTrue(apikey.issues().isEmpty(),apikey.issues().toString());
-		String uri=apikey.configuration().getDatasources().values().iterator().next().getConnectionURI();
+		String uri=uri(sources(apikey).get(0).endpoint());
 		assertFalse(uri.contains("k3y"),"an API key in the query is bound, not written into the URI: "+uri);
 
 		var bearer=secured(securedHttp(List.of("bearer_sc"),scheme("bearer_sc","bearer")),credentials);
@@ -830,8 +823,8 @@ class ConnectorConfigurationFactoryTest {
 				map.transformation(),map.responseSources(),map.responseSinks(),map.responseTransformation(),map.qualifiers());
 		var result=factory.create(new Plan(List.of(map)),"route");
 		assertTrue(result.issues().isEmpty());
-		var configured=result.configuration().getDatasources().values().iterator().next();
-		assertEquals("async",configured.getDelivery());assertEquals(0,configured.getPollingIntervalMs());
+		var configured=sources(result).get(0);
+		assertEquals(Source.Delivery.OBSERVED,configured.delivery());assertEquals(0,configured.pollingIntervalMs());
 	}
 
 	@Test void aSourceWithoutAPositiveIntervalIsEventBasedAndOneThatCanOnlyBeReadIsBlocked() {
@@ -850,13 +843,13 @@ class ConnectorConfigurationFactoryTest {
 		}
 		var paced=factory.create(new Plan(List.of(withDefaultPollingInterval(mappingPlan("default",0,endpointPlan("read",get),sink),"2"))),"route");
 		assertTrue(paced.issues().isEmpty(),String.valueOf(paced.issues()));
-		assertEquals(2000,paced.configuration().getDatasources().values().iterator().next().getPollingIntervalMs());
+		assertEquals(2000,sources(paced).get(0).pollingIntervalMs());
 
 		var mqtt=new EndpointPlan("state",reference(),protocolTarget(WireModel.ProtocolFamily.MQTT,"mqtt://broker.example:1883","/state",
 				Map.of("mqv_retain","true"),null),Presence.of("0"));
 		var observed=factory.create(new Plan(List.of(mappingPlan("mqtt",0,mqtt,sink))),"route");
 		assertTrue(observed.issues().isEmpty(),"a PollingInterval of 0 observes: "+observed.issues());
-		assertEquals("async",observed.configuration().getDatasources().values().iterator().next().getDelivery());
+		assertEquals(Source.Delivery.OBSERVED,sources(observed).get(0).delivery());
 	}
 
 	private static MappingPlan withDefaultPollingInterval(MappingPlan map,String seconds) {
@@ -888,22 +881,22 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(plan,"bridge",new ConnectorConfigurationFactory.RuntimeSettings(
 				URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=assertInstanceOf(ProtocolBridgeRouteConfiguration.class,result.configuration().getRoutes().get(0));
-		assertTrue(bridge.isExplicitResponseMapping());
-		assertEquals("Reply",bridge.getCallerReplySinkId());
-		assertEquals(List.of(Map.of("sourceId","Body,&#","valuePath","$.Count")),bridge.getResponseSourceBindings());
-		assertEquals(1,bridge.getTransformers().size(),"response Lua must not execute in the request chain");
-		assertEquals(2,result.configuration().getTransformers().size());
-		assertFalse(bridge.getTransformers().contains(bridge.getResponseTransformer()));
-		var request=(LuaTransformerConfiguration)result.configuration().getTransformers().get(bridge.getTransformers().get(0));
-		var response=(LuaTransformerConfiguration)result.configuration().getTransformers().get(bridge.getResponseTransformer());
-		assertEquals(Map.of("Count","integer"),bridge.getResponseTypes());
-		assertEquals(Map.of("Count","xs:string"),bridge.getTriggerData().get("callerResponseTypes"));
-		assertEquals(2,bridge.getResponseSinkBindings().size(),"caller Operation is a reply, not another device write");
-		assertEquals(bridge.getResponseSinkBindings().get(0).get("payloadGroup"),bridge.getResponseSinkBindings().get(1).get("payloadGroup"));
-		assertEquals("$.x",bridge.getResponseSinkBindings().get(0).get("valuePath"));
-		assertEquals("$.y",bridge.getResponseSinkBindings().get(1).get("valuePath"));
-		assertEquals(3,result.configuration().getDatasinks().size(),"one action target plus grouped response members");
+		var bridge=assertInstanceOf(OperationRoute.class,result.routes().get(0));
+		assertTrue(bridge.response()!=null);
+		assertEquals("Reply",bridge.caller().replySinkId());
+		assertEquals(List.of(new Response.ResponseSource("Body,&#",null,"$.Count")),bridge.response().sources());
+		assertEquals(2,bridge.endpoints().stream().filter(LuaScript.class::isInstance).count());
+		assertTrue(bridge.requestTransformation()!=bridge.response().transformation(),"response Lua must not execute in the request chain");
+		assertInstanceOf(LuaScript.class,bridge.requestTransformation());
+		assertInstanceOf(LuaScript.class,bridge.response().transformation());
+		assertEquals(Map.of("Count","integer"),bridge.command().responseTypes());
+		assertEquals(Map.of("Count","xs:string"),bridge.caller().responseTypes());
+		var responseSinks=bridge.response().sinks();
+		assertEquals(2,responseSinks.size(),"caller Operation is a reply, not another device write");
+		assertEquals(responseSinks.get(0).payloadGroup(),responseSinks.get(1).payloadGroup());
+		assertEquals("$.x",responseSinks.get(0).valuePath());
+		assertEquals("$.y",responseSinks.get(1).valuePath());
+		assertEquals(3,1+responseSinks.size(),"one action target plus grouped response members");
 	}
 
 	@Test void scalarCciInoutputsAreCallerInputsAndOutputs() {
@@ -912,10 +905,10 @@ class ConnectorConfigurationFactoryTest {
 				AasFixtures.variable(limit));
 		var result=factory.create(explicitResponsePlan("aid-command",inoutputs),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
+		var bridge=(OperationRoute)result.routes().get(0);
 		assertEquals(Map.of("Uuid","xs:string","Trace","xs:string","Limit","xs:int","Count","xs:string"),
-				bridge.getTriggerData().get("callerResponseTypes"));
-		assertEquals(List.of("Uuid","Trace","Limit","Count"),bridge.getTriggerData().get("callerOutputOrder"));
+				bridge.caller().responseTypes());
+		assertEquals(List.of("Uuid","Trace","Limit","Count"),bridge.caller().outputOrder());
 	}
 
 	@Test void structuredCciVariablesAreDeclaredTemplates() {
@@ -929,14 +922,14 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(explicitResponsePlan("aid-command",
 				List.of(AasFixtures.variable(position),AasFixtures.variable(waypoints),AasFixtures.variable(codes))),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
-		assertEquals(List.of("Target","Waypoints","Codes","Count"),bridge.getTriggerData().get("callerOutputOrder"));
-		assertEquals(Map.of("Count","xs:string"),bridge.getTriggerData().get("callerResponseTypes"),
+		var bridge=(OperationRoute)result.routes().get(0);
+		assertEquals(List.of("Target","Waypoints","Codes","Count"),bridge.caller().outputOrder());
+		assertEquals(Map.of("Count","xs:string"),bridge.caller().responseTypes(),
 				"only scalar Properties have a scalar caller type");
-		assertEquals(Set.of("Target","Waypoints","Codes"),bridge.getCallerInputTemplates().keySet());
-		assertEquals(Set.of("Target","Waypoints","Codes","Count"),bridge.getCallerOutputTemplates().keySet());
-		assertEquals(position,bridge.getCallerOutputTemplates().get("Target"));
-		assertEquals(waypoints,bridge.getCallerInputTemplates().get("Waypoints"));
+		assertEquals(Set.of("Target","Waypoints","Codes"),bridge.caller().inputTemplates().keySet());
+		assertEquals(Set.of("Target","Waypoints","Codes","Count"),bridge.caller().outputTemplates().keySet());
+		assertEquals(position,Aas.read(bridge.caller().outputTemplates().get("Target"),SubmodelElement.class));
+		assertEquals(waypoints,Aas.read(bridge.caller().inputTemplates().get("Waypoints"),SubmodelElement.class));
 	}
 
 	@Test void rejectsUnsupportedStructuredAndDuplicateCciInoutputs() {
@@ -953,7 +946,7 @@ class ConnectorConfigurationFactoryTest {
 				List.of(AasFixtures.variable(duplicateMembers)),List.of(AasFixtures.variable(mixedList)),
 				List.of(AasFixtures.variable(untypedEmptyList)),List.of(AasFixtures.variable(file)),List.of(trace,trace))) {
 			var result=factory.create(explicitResponsePlan("aid-command",inoutputs),"bridge");
-			assertTrue(result.configuration().getRoutes().isEmpty(),inoutputs.toString());
+			assertTrue(result.routes().isEmpty(),inoutputs.toString());
 			assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("CCI inoutput")),
 					"InOut variables must be supported Properties, collections or lists with unique names");
 		}
@@ -978,7 +971,7 @@ class ConnectorConfigurationFactoryTest {
 
 	@Test void identicalRemoteActionShapeCannotSubstituteForExactResponseAnchor() {
 		var result=factory.create(explicitResponsePlan("aid-remote"),"bridge");
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("exact command ACTION anchor")));
 	}
 
@@ -994,7 +987,7 @@ class ConnectorConfigurationFactoryTest {
 		// The device output Count has the same name as the Operation's output Count; that is no mapping.
 		var result=factory.create(withResponse(explicitResponsePlan("aid-command"),Presence.absent(),Presence.absent(),
 				Presence.absent()),"bridge");
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains(
 				"need ResponseSources, a ResponseTransformation and a ResponseSink selecting the Operation")),
 				result.issues().toString());
@@ -1020,8 +1013,8 @@ class ConnectorConfigurationFactoryTest {
 	@Test void anOperationWhoseOutputsAreAllOptionalNeedsNoResponseMapping() {
 		var result=factory.create(withResponse(withOptionalCount("true"),Presence.absent(),Presence.absent(),Presence.absent()),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
-		assertEquals(false,bridge.getTriggerData().get(ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING));
+		var bridge=(OperationRoute)result.routes().get(0);
+		assertEquals(null,bridge.response(),"no explicit response mapping");
 		// A response mapping that only fans out may leave out the caller's ResponseSink too.
 		var base=withOptionalCount("true");
 		var original=base.mappings().get(0);
@@ -1032,7 +1025,7 @@ class ConnectorConfigurationFactoryTest {
 
 	@Test void anUnreadableOptionalQualifierBlocksTheMapping() {
 		var result=factory.create(withOptionalCount("maybe"),"bridge");
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains(
 				"the Optional qualifier needs an xs:boolean value")),result.issues().toString());
 	}
@@ -1051,7 +1044,7 @@ class ConnectorConfigurationFactoryTest {
 				original.responseTransformation()),"bridge");
 		assertTrue(withoutSinks.issues().stream().anyMatch(issue -> issue.message().contains("requires ResponseSinks")),
 				withoutSinks.issues().toString());
-		for(var result:List.of(withoutLua,withoutSources,withoutSinks))assertTrue(result.configuration().getRoutes().isEmpty());
+		for(var result:List.of(withoutLua,withoutSources,withoutSinks))assertTrue(result.routes().isEmpty());
 	}
 
 	@Test void operationOutputsNeedTheResponseSinkSelectingTheOperation() {
@@ -1060,7 +1053,7 @@ class ConnectorConfigurationFactoryTest {
 		// Only the AAS fan-out sinks X and Y, not the caller Operation.
 		var result=factory.create(withResponse(base,original.responseSources(),
 				Presence.of(original.responseSinks().value().subList(1,3)),original.responseTransformation()),"bridge");
-		assertTrue(result.configuration().getRoutes().isEmpty());
+		assertTrue(result.routes().isEmpty());
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("need a ResponseSink selecting the Operation")),
 				result.issues().toString());
 	}
@@ -1075,9 +1068,9 @@ class ConnectorConfigurationFactoryTest {
 				original.responseSinks(),original.responseTransformation(),original.qualifiers());
 		var result=factory.create(new Plan(base.aimcSubmodelId(),List.of(mapping)),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
-		assertEquals(List.of(Map.of("sourceId","Body,&#","valuePath","$.Count"),
-				Map.of("sourceId","reply-count-copy","valuePath","$.Count")),bridge.getResponseSourceBindings());
+		var bridge=(OperationRoute)result.routes().get(0);
+		assertEquals(List.of(new Response.ResponseSource("Body,&#",null,"$.Count"),
+				new Response.ResponseSource("reply-count-copy",null,"$.Count")),bridge.response().sources());
 	}
 
 	@Test void methodArgumentTypesPreserveArrayRankAndTypedPropertySchemas() {
@@ -1108,32 +1101,41 @@ class ConnectorConfigurationFactoryTest {
 				Presence.of(List.of(original.responseSinks().value().get(0))),original.responseTransformation(),original.qualifiers());
 		var result=factory.create(new Plan(base.aimcSubmodelId(),List.of(mapping)),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
+		var bridge=(OperationRoute)result.routes().get(0);
 		assertEquals(Map.of("Count","integer","Samples","array<integer>","Matrix","array<array<integer>>",
-				"Label","string"),bridge.getResponseTypes());
+				"Label","string"),bridge.command().responseTypes());
 	}
 
 	@Test void compiledResponseLuaAndRealFanOutBoundaryEmitOneCompletePayload() throws Exception {
 		var result=factory.create(explicitResponsePlan("aid-command"),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=(ProtocolBridgeRouteConfiguration)result.configuration().getRoutes().get(0);
-		var lua=(LuaTransformerConfiguration)result.configuration().getTransformers().get(bridge.getResponseTransformer());
+		var bridge=(OperationRoute)result.routes().get(0);
 		var writes=new java.util.concurrent.atomic.AtomicInteger();
 		var payload=new java.util.concurrent.atomic.AtomicReference<Object>();
+		List<ManagedRouteResource> owned=new ArrayList<>();
 		try(var context=new org.apache.camel.impl.DefaultCamelContext()) {
 			context.addRoutes(new org.apache.camel.builder.RouteBuilder() {
 				@Override public void configure() {
 					from("direct:response-write").process(exchange -> { writes.incrementAndGet();payload.set(exchange.getMessage().getBody()); });
 				}
 			});
-			lua.bind(context);context.start();
-			List<Map<String,Object>> bindings=bridge.getResponseSinkBindings().stream().map(binding -> {
-				Map<String,Object> copy=new java.util.LinkedHashMap<>(binding);copy.put("endpoint","direct:response-write");return copy;
-			}).toList();
-			try(var template=context.createProducerTemplate();var fanout=new dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor(context,"compiled-response",bindings)) {
+			// The response Lua binds its compiled source in the context, as a bundle would.
+			String lua=bridge.response().transformation().uri(new BundleResources() {
+				@Override public <T extends ManagedRouteResource> T own(T resource) {
+					try { resource.bind(context); } catch (Exception e) { throw new IllegalStateException(e); }
+					owned.add(resource);
+					return resource;
+				}
+			});
+			context.start();
+			List<dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor.Target> targets=
+					bridge.response().sinks().stream().map(sink -> new dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline
+							.ResponseSinkFanOutProcessor.Target(sink.sinkId(),"direct:response-write",sink.payloadGroup(),sink.valuePath(),
+							sink.payloadSchema(),sink.schema(),sink.endpoint().jsonWire())).toList();
+			try(var template=context.createProducerTemplate();var fanout=new dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor(context,"compiled-response",targets)) {
 				Object projected=dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseProjectionProcessor.project(
-						Map.of("Count",42),bridge.getResponseSourceBindings());
-				Map<?,?> transformed=template.requestBody(lua.getConnectionURI(),projected,Map.class);
+						Map.of("Count",42),bridge.response().sources());
+				Map<?,?> transformed=template.requestBody(lua,projected,Map.class);
 				assertEquals(Map.of("Count","42"),transformed.get("Reply"));
 				var exchange=new org.apache.camel.support.DefaultExchange(context);exchange.getMessage().setBody(transformed);
 				var jobs=fanout.prepareJobs(exchange);assertEquals(1,jobs.size());
@@ -1145,8 +1147,31 @@ class ConnectorConfigurationFactoryTest {
 				assertEquals(1,writes.get());assertEquals(Map.of("x",1L,"y",2L),payload.get());
 				exchange.getMessage().setBody(Map.of("X",1));assertTrue(fanout.prepareJobs(exchange).isEmpty());
 				assertEquals(1,writes.get(),"missing group members must not emit a partial payload");
-			} finally { context.stop();lua.close(); }
+			} finally { context.stop();for(var resource:owned)resource.close(); }
 		}
+	}
+
+	/** {@code endpoint}'s Camel URI. */
+	private static String uri(Endpoint endpoint) {
+		return endpoint.uri(RESOURCES);
+	}
+
+	/** The sources of the ordinary mappings {@code result} compiled, in order. */
+	private static List<Source> sources(ConnectorConfigurationFactory.Result result) {
+		return result.routes().stream().filter(MappingRoute.class::isInstance).map(MappingRoute.class::cast)
+				.flatMap(route -> route.sources().stream()).toList();
+	}
+
+	/** The sinks of the ordinary mappings {@code result} compiled, in order. */
+	private static List<Sink> sinks(ConnectorConfigurationFactory.Result result) {
+		return result.routes().stream().filter(MappingRoute.class::isInstance).map(MappingRoute.class::cast)
+				.flatMap(route -> route.sinks().stream()).toList();
+	}
+
+	/** The first endpoint of {@code type} among those of {@code sourcesOrSinks}. */
+	private static <T extends Endpoint> T endpoint(List<?> sourcesOrSinks,Class<T> type) {
+		return sourcesOrSinks.stream().map(each -> each instanceof Source source?source.endpoint():((Sink)each).endpoint())
+				.filter(type::isInstance).map(type::cast).findFirst().orElseThrow();
 	}
 
 	private static Plan explicitResponsePlan(String responseAnchor) {
@@ -1189,10 +1214,10 @@ class ConnectorConfigurationFactoryTest {
 		var mapping=variableOperationMapping(false);
 		var result=factory.create(new Plan("aimc",List.of(mapping)),"bridge");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
-		var bridge=assertInstanceOf(ProtocolBridgeRouteConfiguration.class,result.configuration().getRoutes().get(0));
-		assertEquals(Map.of("x-source","$.Position.x","y-source","$.Position.y"),bridge.getCallerInputSourcePaths());
-		assertEquals(Map.of("count-sink","$.Count"),bridge.getCallerReplyBindings());
-		assertEquals(1,result.configuration().getDatasinks().size(),"caller variable sinks are assembled into the one operation reply");
+		var bridge=assertInstanceOf(OperationRoute.class,result.routes().get(0));
+		assertEquals(Map.of("x-source","$.Position.x","y-source","$.Position.y"),bridge.caller().inputSourcePaths());
+		assertEquals(Map.of("count-sink","$.Count"),bridge.caller().replyBindings());
+		assertEquals(List.of(),bridge.response().sinks(),"caller variable sinks are assembled into the one operation reply");
 	}
 
 	@Test

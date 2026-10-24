@@ -12,13 +12,12 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import org.apache.camel.model.ProcessorDefinition;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,130 +31,86 @@ class AffordancePipelineTest extends CamelTestSupport {
 								"Mode", Map.of("type", "string"))),
 				"Count", Map.of("type", "integer")));
 
-	static final class Sink extends DataSinkConfiguration {
-		private final String uri;
-		Sink(String id, String key, String path, String group, Object memberSchema, Object payloadSchema,
-				String uri) {
-			super(id);
-			setSinkId(key);
-			setValuePath(path);
-			setPayloadGroup(group);
-			setSchema(memberSchema);
-			setPayloadSchema(payloadSchema);
-			this.uri = uri;
-		}
-		@Override public String getConnectionURI() { return uri; }
+	private static Sink sink(String id, String key, String path, String group, Map<String, Object> memberSchema,
+			Map<String, Object> payloadSchema, String uri) {
+		return new Sink(id, key, Endpoint.of(uri), path, memberSchema, payloadSchema, group);
 	}
 
-	static final class Source extends DataSourceConfiguration {
-		Source() { super("source", "", 0); setSourceId("Reading"); setValuePath("$.Reading");
-			setSchema(Map.of("type", "integer")); }
-		@Override public String getConnectionURI() { return "direct:source"; }
+	private static Sink sink(String id, String key, String path, String group, Map<String, Object> schema) {
+		return sink(id, key, path, group, schema, NESTED, "mock:device");
 	}
 
-	static final class TriggerSource extends DataSourceConfiguration {
-		TriggerSource(String endpointId, String sourceId, Evaluation evaluation) {
-			super(endpointId, "", 0);
-			setSourceId(sourceId);
-			setEvaluation(evaluation);
-		}
-		@Override public String getConnectionURI() { return "direct:" + getUniqueId(); }
+	private static Source source() {
+		return new Source("source", "Reading", Endpoint.of("direct:source"), Source.Delivery.OBSERVED, 0,
+				Evaluation.ON_UPDATE, "$.Reading", Map.of("type", "integer"));
 	}
 
-	private static Sink sink(String id, String key, String path, String group, Object schema) {
-		return new Sink(id, key, path, group, schema, NESTED, "mock:device");
+	private static Source triggerSource(String endpointId, String sourceId, Evaluation evaluation) {
+		return new Source(endpointId, sourceId, Endpoint.of("direct:" + endpointId), Source.Delivery.OBSERVED, 0)
+				.withEvaluation(evaluation);
+	}
+
+	private final Map<String, Sink> sinks = new java.util.LinkedHashMap<>();
+
+	/** The sinks {@code ids}, fanned out from {@code route}. */
+	private void fanOut(ProcessorDefinition<?> route, String routeId, AffordanceValidation.Mode mode, String... ids) {
+		List<Sink> selected = java.util.Arrays.stream(ids).map(sinks::get).toList();
+		FanOut.apply(route, selected, new String[0],
+				selected.stream().map(sink -> ((Endpoint.Fixed) sink.endpoint()).uri()).toArray(String[]::new), routeId, mode);
 	}
 
 	@Override
 	protected RouteBuilder createRouteBuilder() {
 		return new RouteBuilder() {
 			@Override public void configure() {
-				RoutesConfiguration configs = new RoutesConfiguration(List.of(), List.of(), List.of(
+				List.of(
 						sink("uuid", "Uuid", "$.Part.Uuid", "device/action",
 								Map.of("type", "string")),
 						sink("mode", "Mode", "$.Part.Mode", "device/action",
 								Map.of("type", "string")),
 						sink("count", "Count", "$.Count", "device/action",
 								Map.of("type", "integer")),
-						new Sink("other", "Other", null, null, null, null, "mock:other"),
+						sink("other", "Other", null, null, null, null, "mock:other"),
 						sink("solo", "Uuid", "$.Part.Uuid", "device/solo",
 								Map.of("type", "string")),
-						new Sink("whole", "Whole", null, "device/action", NESTED, NESTED,
+						sink("whole", "Whole", null, "device/action", NESTED, NESTED,
 								"mock:whole"),
-						new Sink("wholeGroup", "Whole", null, "device/action", NESTED, NESTED,
+						sink("wholeGroup", "Whole", null, "device/action", NESTED, NESTED,
 								"mock:device"),
-						new Sink("arrayWhole", "WholeArray", null, "device/array", Map.of(), Map.of(),
+						sink("arrayWhole", "WholeArray", null, "device/array", Map.of(), Map.of(),
 								"mock:array"),
-						new Sink("arrayMember", "First", "$.values[0]", "device/array",
+						sink("arrayMember", "First", "$.values[0]", "device/array",
 								Map.of(), Map.of(), "mock:array"),
-						new Sink("arraySecond", "Last", "$.values[2]", "device/array",
+						sink("arraySecond", "Last", "$.values[2]", "device/array",
 								Map.of(), Map.of(), "mock:array"),
-						new Sink("unrelatedGroup", "Other", "$.value", "device/unrelated",
+						sink("unrelatedGroup", "Other", "$.value", "device/unrelated",
 								Map.of(), Map.of(), "mock:unrelatedGroup"),
-						new Sink("numericString", "Text", null, null, Map.of("type", "string"),
+						sink("numericString", "Text", null, null, Map.of("type", "string"),
 								null, "mock:numeric"),
-						new Sink("mutator", "First", null, null, null, null, "direct:mutatingSink"),
-						new Sink("observer", "Second", null, null, null, null, "direct:observingSink"),
-						new Sink("order1", "One", null, null, null, null, "mock:ordered"),
-						new Sink("order2", "Two", null, null, null, null, "mock:ordered"),
-						new Sink("order3", "Three", null, null, null, null, "mock:ordered")), List.of());
-				RouteConfiguration complete = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("uuid", "other", "mode", "count"));
-				FanOut.apply(from("direct:complete"), configs, complete, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, complete.getDatasinks(), "complete"),
-						"complete", AffordanceValidation.Mode.ON);
+						sink("mutator", "First", null, null, null, null, "direct:mutatingSink"),
+						sink("observer", "Second", null, null, null, null, "direct:observingSink"),
+						sink("order1", "One", null, null, null, null, "mock:ordered"),
+						sink("order2", "Two", null, null, null, null, "mock:ordered"),
+						sink("order3", "Three", null, null, null, null, "mock:ordered")).forEach(sink -> sinks.put(sink.id(), sink));
+				fanOut(from("direct:complete"), "complete", AffordanceValidation.Mode.ON, "uuid", "other", "mode", "count");
 
-				RouteConfiguration incomplete = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("solo"));
-				FanOut.apply(from("direct:incomplete"), configs, incomplete, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, incomplete.getDatasinks(), "incomplete"),
-						"incomplete", AffordanceValidation.Mode.ON);
-				FanOut.apply(from("direct:report"), configs, incomplete, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, incomplete.getDatasinks(), "report"),
-						"report", AffordanceValidation.Mode.REPORT);
-				RouteConfiguration whole = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("whole"));
-				FanOut.apply(from("direct:whole"), configs, whole, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, whole.getDatasinks(), "whole"),
-						"whole", AffordanceValidation.Mode.ON);
-				RouteConfiguration numeric = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("numericString"));
-				FanOut.apply(from("direct:numeric"), configs, numeric, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, numeric.getDatasinks(), "numeric"),
-						"numeric", AffordanceValidation.Mode.ON);
-				RouteConfiguration wholeAndMember = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("wholeGroup", "uuid"));
-				FanOut.apply(from("direct:wholeAndMember"), configs, wholeAndMember, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, wholeAndMember.getDatasinks(), "wholeAndMember"),
-						"wholeAndMember", AffordanceValidation.Mode.ON);
-					RouteConfiguration nullArrayOverlap = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("arrayWhole", "arrayMember"));
-				FanOut.apply(from("direct:nullArrayOverlap"), configs, nullArrayOverlap, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, nullArrayOverlap.getDatasinks(), "nullArrayOverlap"),
-						"nullArrayOverlap", AffordanceValidation.Mode.ON);
-				RouteConfiguration arrayMembers = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("arraySecond", "unrelatedGroup", "arrayMember"));
+				fanOut(from("direct:incomplete"), "incomplete", AffordanceValidation.Mode.ON, "solo");
+				fanOut(from("direct:report"), "report", AffordanceValidation.Mode.REPORT, "solo");
+				fanOut(from("direct:whole"), "whole", AffordanceValidation.Mode.ON, "whole");
+				fanOut(from("direct:numeric"), "numeric", AffordanceValidation.Mode.ON, "numericString");
+				fanOut(from("direct:wholeAndMember"), "wholeAndMember", AffordanceValidation.Mode.ON, "wholeGroup", "uuid");
+				fanOut(from("direct:nullArrayOverlap"), "nullArrayOverlap", AffordanceValidation.Mode.ON, "arrayWhole", "arrayMember");
 				for (AffordanceValidation.Mode mode : AffordanceValidation.Mode.values()) {
 					String routeId = "arrayMembers" + mode;
-					FanOut.apply(from("direct:" + routeId), configs, arrayMembers, new String[0],
-							RouteCreatorHelper.getDataSinkEndpoints(configs, arrayMembers.getDatasinks(), routeId),
-							routeId, mode);
+					fanOut(from("direct:" + routeId), routeId, mode, "arraySecond", "unrelatedGroup", "arrayMember");
 				}
-				RouteConfiguration memberAndWhole = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("uuid", "wholeGroup", "other"));
-				FanOut.apply(from("direct:memberAndWhole"), configs, memberAndWhole, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, memberAndWhole.getDatasinks(), "memberAndWhole"),
-						"memberAndWhole", AffordanceValidation.Mode.ON);
-				RouteConfiguration isolated = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("mutator", "observer"));
+				fanOut(from("direct:memberAndWhole"), "memberAndWhole", AffordanceValidation.Mode.ON, "uuid", "wholeGroup", "other");
 				var isolatedRoute = from("direct:isolated")
 						.setHeader("branch", constant("source"))
 						.setProperty("branch", constant("source"))
 						.setProperty("branchMeta").constant(new java.util.LinkedHashMap<>(Map.of("value", "source")))
 						.setBody().constant(Map.of("First", 1, "Second", 2));
-				FanOut.apply(isolatedRoute, configs, isolated, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, isolated.getDatasinks(), "isolated"),
-						"isolated", AffordanceValidation.Mode.ON);
+				fanOut(isolatedRoute, "isolated", AffordanceValidation.Mode.ON, "mutator", "observer");
 				from("direct:mutatingSink").process(exchange -> {
 					exchange.getMessage().setHeader("branch", "poison");
 					exchange.setProperty("branch", "poison");
@@ -170,20 +125,12 @@ class AffordancePipelineTest extends CamelTestSupport {
 						+ exchange.getProperty("branch", String.class) + ":"
 						+ exchange.getMessage().getBody(String.class) + ":"
 						+ exchange.getProperty("branchMeta", Map.class).get("value")));
-				RouteConfiguration ordered = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("order1", "order2", "order3"));
-				FanOut.apply(from("direct:ordered"), configs, ordered, new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, ordered.getDatasinks(), "ordered"),
-						"ordered", AffordanceValidation.Mode.ON);
+				fanOut(from("direct:ordered"), "ordered", AffordanceValidation.Mode.ON, "order1", "order2", "order3");
 
-				RoutesConfiguration triggerConfigs = new RoutesConfiguration(
-						List.of(new TriggerSource("position", "Position", Evaluation.CACHED),
-								new TriggerSource("invoke", "Invoke", Evaluation.ON_UPDATE),
-								new TriggerSource("state", "State", Evaluation.ON_CHANGE)), List.of(), List.of(), List.of());
-				RouteConfiguration triggerRoute = new RouteConfiguration("execution-policy",
-						List.of("position", "invoke", "state"), List.of(), List.of());
-				triggerFanIn = new FanIn(triggerRoute, triggerConfigs, AffordanceValidation.Mode.OFF);
-				for (String endpointId : triggerRoute.getDatasources()) {
+				triggerFanIn = new FanIn("trigger", List.of(triggerSource("position", "Position", Evaluation.CACHED),
+						triggerSource("invoke", "Invoke", Evaluation.ON_UPDATE),
+						triggerSource("state", "State", Evaluation.ON_CHANGE)), Map.of(), AffordanceValidation.Mode.OFF);
+				for (String endpointId : List.of("position", "invoke", "state")) {
 					from("direct:" + endpointId)
 						.process(triggerFanIn.disassemble(List.of(endpointId)))
 						.filter(triggerFanIn::contributed)
@@ -363,11 +310,9 @@ class AffordancePipelineTest extends CamelTestSupport {
 
 	@Test
 	void invalidIncomingIsNotCachedButReportAllowsIt() throws Exception {
-		RoutesConfiguration configs = new RoutesConfiguration(List.of(new Source()), List.of(), List.of(), List.of());
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of("source"), List.of(), List.of());
 		try (var context = new DefaultCamelContext();
-				FanIn on = new FanIn(route, configs, AffordanceValidation.Mode.ON);
-				FanIn report = new FanIn(route, configs, AffordanceValidation.Mode.REPORT)) {
+				FanIn on = new FanIn("route", List.of(source()), Map.of(), AffordanceValidation.Mode.ON);
+				FanIn report = new FanIn("route", List.of(source()), Map.of(), AffordanceValidation.Mode.REPORT)) {
 			var invalid = new DefaultExchange(context);
 			invalid.getMessage().setHeader(org.apache.camel.Exchange.CONTENT_TYPE, "application/json");
 			invalid.getMessage().setBody("{\"Reading\":\"wrong\"}");
@@ -386,10 +331,8 @@ class AffordancePipelineTest extends CamelTestSupport {
 
 	@Test
 	void acceptedTriggerUsesItsAtomicSnapshotAfterLaterContributions() throws Exception {
-		RoutesConfiguration configs = new RoutesConfiguration(List.of(new Source()), List.of(), List.of(), List.of());
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of("source"), List.of(), List.of());
 		try (var context = new DefaultCamelContext();
-				FanIn fanIn = new FanIn(route, configs, AffordanceValidation.Mode.OFF)) {
+				FanIn fanIn = new FanIn("route", List.of(source()), Map.of(), AffordanceValidation.Mode.OFF)) {
 			var trigger = new DefaultExchange(context);
 			trigger.getMessage().setHeader(org.apache.camel.Exchange.CONTENT_TYPE, "application/json");
 			trigger.getMessage().setBody("{\"Reading\":2}");
@@ -431,7 +374,7 @@ class AffordancePipelineTest extends CamelTestSupport {
 		assertEquals(11.0, second.get("Position"));
 		assertEquals(1.0, first.get("Invoke"));
 		assertEquals(2.0, second.get("Invoke"));
-		Map<?, ?> meta = executed.getExchanges().get(1).getProperty(DataTransformerConfiguration.META, Map.class);
+		Map<?, ?> meta = executed.getExchanges().get(1).getProperty(TransformerMeta.PROPERTY, Map.class);
 		assertEquals(Boolean.TRUE, ((Map<?, ?>) ((Map<?, ?>) meta.get("sources")).get("Invoke")).get("trigger"));
 		assertFalse(((Map<?, ?>) ((Map<?, ?>) meta.get("sources")).get("Position")).containsKey("trigger"),
 				"only the triggering source is marked");

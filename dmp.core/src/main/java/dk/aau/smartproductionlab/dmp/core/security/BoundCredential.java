@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 import org.apache.camel.CamelContext;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 
 /**
  * Credentials kept out of endpoint URIs. They are bound in the Camel registry under an opaque name while the

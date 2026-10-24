@@ -12,43 +12,15 @@ import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import org.junit.jupiter.api.Test;
 
 class FanOutTest extends CamelTestSupport {
 	private final AtomicInteger sharedTransforms = new AtomicInteger();
 
-	static final class Sink extends DataSinkConfiguration {
-		private final String uri;
-
-		Sink(String uniqueId, String key, String uri) {
-			super(uniqueId);
-			setSinkId(key);
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
-	}
-
-	static final class Transformer extends DataTransformerConfiguration {
-		private final String uri;
-
-		Transformer(String uniqueId, String uri) {
-			super(uniqueId);
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
+	private static Sink sink(String id, String key, String uri) {
+		return new Sink(id, key, Endpoint.of(uri));
 	}
 
 	@Override
@@ -56,35 +28,21 @@ class FanOutTest extends CamelTestSupport {
 		return new RouteBuilder() {
 			@Override
 			public void configure() {
-				RoutesConfiguration configs = new RoutesConfiguration(List.of(),
-						List.of(new Transformer("shared", "direct:shared")),
-						List.of(new Sink("left", "Left", "mock:left"),
-								new Sink("right", "Right", "mock:right"),
-								new Sink("throwing", null, "mock:throwing"),
-				new Sink("payloadSink", null, "mock:payloadSink"),
-								new Sink("faultTolerant", null, "mock:faultTolerant")), List.of());
+				Sink left = sink("left", "Left", "mock:left");
+				Sink right = sink("right", "Right", "mock:right");
+				Sink throwing = sink("throwing", null, "mock:throwing");
+				Sink payloadSink = sink("payloadSink", null, "mock:payloadSink");
+				Sink faultTolerant = sink("faultTolerant", null, "mock:faultTolerant");
 
-				RouteConfiguration shared = new RouteConfiguration("execution-policy", List.of(),
-						List.of("shared"), List.of("left", "right"));
-				FanOut.apply(from("direct:sharedInput").routeId("sharedRoute"), configs, shared,
-						RouteCreatorHelper.getDataTransformerEndpoints(configs, shared.getTransformers(), "sharedRoute"),
-						RouteCreatorHelper.getDataSinkEndpoints(configs, shared.getDatasinks(), "sharedRoute"),
-						"sharedRoute");
+				FanOut.apply(from("direct:sharedInput").routeId("sharedRoute"), List.of(left, right),
+						new String[] {"direct:shared"}, new String[] {"mock:left", "mock:right"}, "sharedRoute");
 
-				RouteConfiguration payload = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("payloadSink"));
-				FanOut.apply(from("direct:payloadInput").routeId("payloadRoute"), configs, payload,
-						new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, payload.getDatasinks(), "payloadRoute"),
-						"payloadRoute");
+				FanOut.apply(from("direct:payloadInput").routeId("payloadRoute"), List.of(payloadSink),
+						new String[0], new String[] {"mock:payloadSink"}, "payloadRoute");
 
 				// a failing sink must not stop its sibling
-				RouteConfiguration fault = new RouteConfiguration("execution-policy", List.of(),
-						List.of(), List.of("throwing", "faultTolerant"));
-				FanOut.apply(from("direct:faultInput").routeId("faultRoute"), configs, fault,
-						new String[0],
-						RouteCreatorHelper.getDataSinkEndpoints(configs, fault.getDatasinks(), "faultRoute"),
-						"faultRoute");
+				FanOut.apply(from("direct:faultInput").routeId("faultRoute"), List.of(throwing, faultTolerant),
+						new String[0], new String[] {"mock:throwing", "mock:faultTolerant"}, "faultRoute");
 
 				from("direct:shared").process(exchange -> sharedTransforms.incrementAndGet());
 			}

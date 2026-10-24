@@ -19,6 +19,11 @@
 	</properties>
 
 	<dependencies>
+		<dependency>
+			<groupId>org.awaitility</groupId>
+			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
 		<!-- AAS metamodel v3 and its JSON serialization (the format BaSyx v2 serves). -->
 		<dependency>
 			<groupId>org.eclipse.digitaltwin.aas4j</groupId>

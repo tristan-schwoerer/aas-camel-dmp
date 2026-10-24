@@ -17,7 +17,6 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.aas.event.AasEventComponent;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import org.eclipse.paho.mqttv5.common.util.MqttTopicValidator;
 import dk.aau.smartproductionlab.dmp.paho.testing.Mqtt5TestBroker;
 import org.junit.jupiter.api.Test;
@@ -76,8 +75,7 @@ class MqttControlEventRouteBuilderTest {
 
 	private static MappingReconciliationService reconciliation() {
 		return new MappingReconciliationService(new DmpComponent(),
-				() -> new RepositoryDiscovery.Scan(true, "", Set.of(), Set.of(), Map.of(), Map.of(), List.of()),
-				candidate -> RoutesConfiguration::new, 8, 8, 1000);
+				() -> new RepositoryDiscovery.Scan(true, "", Set.of(), Set.of(), Map.of(), Map.of(), List.of()), 8, 8, 1000);
 	}
 
 	private static void await(BooleanSupplier condition) throws InterruptedException {

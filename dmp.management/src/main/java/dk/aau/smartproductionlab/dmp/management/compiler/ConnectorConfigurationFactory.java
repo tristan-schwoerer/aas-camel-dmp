@@ -17,39 +17,37 @@ import java.util.Objects;
 import java.util.OptionalLong;
 import java.util.Set;
 
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.security.BasicCredential;
-import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.execution.policy.ExecutionPolicyRouteConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASDatasinkConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASPollingDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Response.ResponseSource;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.security.Credentials;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSink;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSource;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventSource;
+import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
 import dk.aau.smartproductionlab.dmp.aas.operation.OperationVariableValues;
 import dk.aau.smartproductionlab.dmp.aas.operation.OptionalQualifier;
-import dk.aau.smartproductionlab.dmp.aas.operation.ProtocolBridgeRouteConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpObserveDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpObservation;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpPoll;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpRequestOptions;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpWrite;
 import dk.aau.smartproductionlab.dmp.influxdb2.InfluxSettings;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint;
 import dk.aau.smartproductionlab.dmp.management.model.TimeSeriesProjection;
-import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpPollingDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpEndpoint;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
-import dk.aau.smartproductionlab.dmp.paho.configuration.MqttDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.paho.configuration.MqttDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.paho.configuration.MqttAction;
+import dk.aau.smartproductionlab.dmp.paho.configuration.MqttPublication;
+import dk.aau.smartproductionlab.dmp.paho.configuration.MqttSubscription;
+import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcUaEndpoint;
 import dk.aau.smartproductionlab.dmp.plc4x.configuration.Option;
-import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xEndpoint;
 import dk.aau.smartproductionlab.dmp.plc4x.configuration.Tag;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.AidTarget;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.DirectTarget;
@@ -73,11 +71,13 @@ import dk.aau.smartproductionlab.dmp.management.model.WireModel;
 import dk.aau.smartproductionlab.dmp.management.model.WireModel.DataSchema;
 import dk.aau.smartproductionlab.dmp.management.model.WireModel.Presence;
 import dk.aau.smartproductionlab.dmp.management.model.WireModel.Form;
-import dk.aau.smartproductionlab.dmp.management.configuration.MqttV5OperationDataSinkConfiguration;
 import dk.aau.smartproductionlab.dmp.management.repository.AasReferenceResolver;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 
-/** Compiles resolved wire plans into existing runtime connector configuration classes. */
+/**
+ * Compiles resolved mapping plans into route plans ({@link MappingRoute}, {@link OperationRoute}): immutable values
+ * of the connectors' endpoints, staged as they are.
+ */
 public final class ConnectorConfigurationFactory {
 	private static final long MAX_LUA_BYTES = 1_048_576;
 	// Two scripts per mapping, covering installed, desired and staged generations at the 8192-mapping limit.
@@ -130,11 +130,12 @@ public final class ConnectorConfigurationFactory {
 	}
 
 	public record Issue(String path, String mappingId, String message) { }
-	public record Result(RoutesConfiguration configuration, List<Issue> issues) {
-		public Result { issues = List.copyOf(issues); }
+	public record Result(List<RoutePlan> routes, List<Issue> issues) {
+		public Result { routes = List.copyOf(routes); issues = List.copyOf(issues); }
 	}
+	/** One mapping's routes, compiled once: the fingerprint compares them, and the reconciliation stages them. */
 	public record CompiledBundle(String mappingIdentity,int listIndex,String bundleId,String routeId,
-			RoutesConfiguration configuration, EffectiveFingerprint fingerprint) { }
+			RoutePlan route, EffectiveFingerprint fingerprint) { }
 	public record BundleResult(List<CompiledBundle> bundles,List<Issue> issues) {
 		public BundleResult { bundles=List.copyOf(bundles);issues=List.copyOf(issues); }
 	}
@@ -164,102 +165,88 @@ public final class ConnectorConfigurationFactory {
 		return create(plan,routeId,null);
 	}
 
+	/** Each mapping's routes; a mapping's route ID is {@code routeId:<listIndex>}. */
 	public Result create(Plan plan, String routeId, RuntimeSettings runtime) {
 		Objects.requireNonNull(plan, "plan");
 		if (routeId == null || routeId.isBlank()) throw new IllegalArgumentException("routeId is required");
-		RoutesConfiguration output = new RoutesConfiguration();
+		List<RoutePlan> routes = new ArrayList<>();
 		List<Issue> issues = new ArrayList<>();
 		for (MappingPlan mapping : plan.mappings()) {
-			int issueStart = issues.size();
-			validateCapabilities(mapping,issues);
-			if(issues.size()!=issueStart)continue;
-			if (operationMapping(mapping)) {
-				compileBridgeMapping(mapping,plan,routeId,runtime,output,issues);
-				continue;
-			}
-			List<DataSourceConfiguration> sources = new ArrayList<>();
-			List<DataSinkConfiguration> sinks = new ArrayList<>();
-			List<String> sourceIds = new ArrayList<>();
-			List<String> sinkIds = new ArrayList<>();
-			Map<DataSourceConfiguration,Integer> sourcePositions = new java.util.IdentityHashMap<>();
-			for (int i = 0; i < mapping.sources().size(); i++) {
-				EndpointPlan endpoint = mapping.sources().get(i);
-				Evaluation evaluation = evaluation(endpoint);
-				DataSourceConfiguration source = evaluation == Evaluation.READ_AT_EVALUATION
-						? readSource(endpoint, mapping, i, plan, routeId, runtime, issues)
-						: source(endpoint, mapping, i, plan, routeId, runtime, issues);
-				if (source != null) {
-					source.setEvaluation(evaluation);
-					sources.add(source); sourceIds.add(source.getUniqueId()); sourcePositions.put(source, i);
-				}
-			}
-			if (mapping.sources().stream().noneMatch(endpoint -> evaluation(endpoint).triggers())) issue(issues, mapping,
-					"MappingConfigurations/value/" + mapping.listIndex() + "/Sources",
-					"no Source triggers the mapping; one needs the Evaluation OnUpdate (the default) or OnChange");
-			for (int i = 0; i < mapping.sinks().size(); i++) {
-				EndpointPlan endpoint = mapping.sinks().get(i);
-				DataSinkConfiguration sink = sink(endpoint, mapping, i, plan, routeId, runtime, issues);
-				if(sink!=null)payloadBinding(sink,endpoint,mapping,issues);
-				if (sink != null) { sinks.add(sink); sinkIds.add(sink.getUniqueId()); }
-			}
-			// A read source is polled at its PollingInterval, else at the mapping's DefaultPollingInterval
-			// (IDTA AIMC; ignored for asynchronous sources). Without a positive one (none, or 0) the source
-			// is event-based, and one its binding can only read blocks the mapping: no interval is assumed.
-			java.util.function.Predicate<DataSourceConfiguration> unpaced = source -> source.getEvaluation() != Evaluation.READ_AT_EVALUATION
-					&& "sync".equalsIgnoreCase(source.getDelivery()) && source.getPollingIntervalMs()<=0;
-			java.util.function.Predicate<DataSourceConfiguration> ownInterval = source ->
-					mapping.sources().get(sourcePositions.get(source)).pollingInterval().present();
-			boolean fallback = sources.stream().anyMatch(unpaced.and(ownInterval.negate()));
-			OptionalLong pollingMillis = fallback ? pollingMillis(mapping, issues) : OptionalLong.empty();
-			if (pollingMillis.isPresent()) sources.stream().filter(unpaced.and(ownInterval.negate()))
-					.forEach(source -> source.setPollingIntervalMs(pollingMillis.getAsLong()));
-			sources.stream().filter(unpaced).forEach(source -> issue(issues, mapping,
-					endpointPath(mapping, "Sources", sourcePositions.get(source)),
-					"the source can only be read, not observed; it needs a positive PollingInterval or DefaultPollingInterval"));
-			if (mapping.qualifiers().stream().anyMatch(ConnectorConfigurationFactory::behaviorQualifier)) issue(issues, mapping,
-					"MappingConfigurations/value/" + mapping.listIndex() + "/qualifiers",
-					"mapping qualifier semantics are not represented by the runtime route API");
-
-			List<DataTransformerConfiguration> transformers = new ArrayList<>();
-			if (mapping.transformation().present()) {
-				WireModel.Blob blob = mapping.transformation().value();
-				if (blob == null) issue(issues, mapping,
-						"MappingConfigurations/value/" + mapping.listIndex() + "/Transformation",
-						"authored Lua Blob is null");
-				else {
-					try {
-						String id = entityId(mapping, "transform", 0);
-						LuaCompiledSource compiled = compiledLua(blob.bytes(), mapping.identity());
-						transformers.add(new LuaTransformerConfiguration(id,compiled));
-					} catch (RuntimeException failure) {
-						issue(issues, mapping, "MappingConfigurations/value/" + mapping.listIndex() + "/Transformation",
-								"Lua source cannot be compiled: " + failure.getMessage());
-					}
-				}
-			}
-
-			Map<String, Object> triggerData = new LinkedHashMap<>();
-			List<DataSinkConfiguration> responseDestinations = new ArrayList<>();
-			if (mapping.responseSources().present() || mapping.responseSinks().present()
-					|| mapping.responseTransformation().present())
-				compileOrdinaryResponse(mapping, plan, routeId, runtime, triggerData, responseDestinations, transformers, issues);
-
-			// A mapping is atomic: never return a route with only a subset of its endpoints.
-			if (issues.size() != issueStart) continue;
-			output.addDatasources(sources);
-			output.addDatasinks(sinks);
-			output.addDatasinks(responseDestinations);
-			output.addTransformers(transformers);
-			// The route's transformers are the request side's; the response Lua is named in the trigger data.
-			Object responseTransformer = triggerData.get(RouteConfiguration.RESPONSE_TRANSFORMER);
-			RouteConfiguration route = new RouteConfiguration(ExecutionPolicyRouteConfiguration.ROUTE_TRIGGER,
-					sourceIds, transformers.stream().map(DataTransformerConfiguration::getUniqueId)
-							.filter(id -> !id.equals(responseTransformer)).toList(), sinkIds);
-			route.setRouteId(routeId + ":" + mapping.listIndex());
-			if (!triggerData.isEmpty()) route.setTriggerData(triggerData);
-			output.addRoute(new ExecutionPolicyRouteConfiguration(route));
+			RoutePlan route = compileMapping(mapping, plan, routeId, routeId + ":" + mapping.listIndex(), runtime, issues);
+			if (route != null) routes.add(route);
 		}
-		return new Result(output, issues);
+		return new Result(routes, issues);
+	}
+
+	/**
+	 * One mapping's route plan named {@code mappingRouteId}, or null after an issue: a mapping is atomic, never a
+	 * route with only a subset of its endpoints. {@code routeId} is the ownership identity its client IDs derive from.
+	 */
+	private RoutePlan compileMapping(MappingPlan mapping, Plan plan, String routeId, String mappingRouteId,
+			RuntimeSettings runtime, List<Issue> issues) {
+		int issueStart = issues.size();
+		validateCapabilities(mapping,issues);
+		if(issues.size()!=issueStart)return null;
+		if (operationMapping(mapping)) return compileBridgeMapping(mapping,plan,routeId,mappingRouteId,runtime,issues);
+		List<Source> sources = new ArrayList<>();
+		List<Integer> sourcePositions = new ArrayList<>();
+		for (int i = 0; i < mapping.sources().size(); i++) {
+			EndpointPlan endpoint = mapping.sources().get(i);
+			Evaluation evaluation = evaluation(endpoint);
+			Source source = evaluation == Evaluation.READ_AT_EVALUATION
+					? readSource(endpoint, mapping, i, plan, routeId, runtime, issues)
+					: source(endpoint, mapping, i, plan, routeId, runtime, issues);
+			if (source != null) {
+				sources.add(source.withEvaluation(evaluation));
+				sourcePositions.add(i);
+			}
+		}
+		if (mapping.sources().stream().noneMatch(endpoint -> evaluation(endpoint).triggers())) issue(issues, mapping,
+				"MappingConfigurations/value/" + mapping.listIndex() + "/Sources",
+				"no Source triggers the mapping; one needs the Evaluation OnUpdate (the default) or OnChange");
+		List<Sink> sinks = new ArrayList<>();
+		for (int i = 0; i < mapping.sinks().size(); i++) {
+			EndpointPlan endpoint = mapping.sinks().get(i);
+			Sink sink = sink(endpoint, mapping, i, plan, routeId, runtime, issues);
+			if (sink != null) sinks.add(payloadBinding(sink,endpoint,mapping,issues));
+		}
+		// A read source is polled at its PollingInterval, else at the mapping's DefaultPollingInterval
+		// (IDTA AIMC; ignored for asynchronous sources). Without a positive one (none, or 0) the source
+		// is event-based, and one its binding can only read blocks the mapping: no interval is assumed.
+		java.util.function.Predicate<Source> unpaced = source -> source.evaluation() != Evaluation.READ_AT_EVALUATION
+				&& source.read() && source.pollingIntervalMs()<=0;
+		java.util.function.IntPredicate ownInterval = k -> mapping.sources().get(sourcePositions.get(k)).pollingInterval().present();
+		boolean fallback = java.util.stream.IntStream.range(0, sources.size())
+				.anyMatch(k -> unpaced.test(sources.get(k)) && !ownInterval.test(k));
+		OptionalLong pollingMillis = fallback ? pollingMillis(mapping, issues) : OptionalLong.empty();
+		if (pollingMillis.isPresent()) for (int k = 0; k < sources.size(); k++)
+			if (unpaced.test(sources.get(k)) && !ownInterval.test(k))
+				sources.set(k, sources.get(k).withPollingIntervalMs(pollingMillis.getAsLong()));
+		for (int k = 0; k < sources.size(); k++) if (unpaced.test(sources.get(k))) issue(issues, mapping,
+				endpointPath(mapping, "Sources", sourcePositions.get(k)),
+				"the source can only be read, not observed; it needs a positive PollingInterval or DefaultPollingInterval");
+		if (mapping.qualifiers().stream().anyMatch(ConnectorConfigurationFactory::behaviorQualifier)) issue(issues, mapping,
+				"MappingConfigurations/value/" + mapping.listIndex() + "/qualifiers",
+				"mapping qualifier semantics are not represented by the runtime route API");
+
+		Endpoint transformation = null;
+		if (mapping.transformation().present()) {
+			WireModel.Blob blob = mapping.transformation().value();
+			if (blob == null) issue(issues, mapping,
+					"MappingConfigurations/value/" + mapping.listIndex() + "/Transformation",
+					"authored Lua Blob is null");
+			else transformation = lua(blob.bytes(), mapping.identity(), mapping,
+					"MappingConfigurations/value/" + mapping.listIndex() + "/Transformation", issues);
+		}
+
+		Response response = null;
+		if (mapping.responseSources().present() || mapping.responseSinks().present()
+				|| mapping.responseTransformation().present())
+			response = compileOrdinaryResponse(mapping, plan, routeId, runtime, issues);
+
+		// A mapping is atomic: never return a route with only a subset of its endpoints.
+		if (issues.size() != issueStart) return null;
+		return new MappingRoute(mappingRouteId, sources, transformation, sinks, response);
 	}
 
 	private static boolean operationMapping(MappingPlan mapping) {
@@ -329,8 +316,8 @@ public final class ConnectorConfigurationFactory {
 		return names;
 	}
 
-	private void compileBridgeMapping(MappingPlan mapping,Plan plan,String routeId,RuntimeSettings runtime,
-			RoutesConfiguration output,List<Issue> issues) {
+	private OperationRoute compileBridgeMapping(MappingPlan mapping,Plan plan,String routeId,String mappingRouteId,
+			RuntimeSettings runtime,List<Issue> issues) {
 		int issueStart=issues.size();
 		String root="MappingConfigurations/value/"+mapping.listIndex();
 		Map<String, EndpointPlan> operationAnchors=new LinkedHashMap<>();
@@ -338,7 +325,7 @@ public final class ConnectorConfigurationFactory {
 			operationAnchors.putIfAbsent(operationIdentity(endpoint),endpoint);
 		if(operationAnchors.size()!=1) {
 			issue(issues,mapping,root+"/Sources","bridge mappings require Sources from exactly one declared CCI Operation");
-			return;
+			return null;
 		}
 		EndpointPlan operation=operationAnchors.values().iterator().next();
 		Operation cci=(Operation)operationModel(operation);
@@ -348,8 +335,8 @@ public final class ConnectorConfigurationFactory {
 			if(!(extra.target() instanceof DirectTarget))
 				issue(issues,mapping,root+"/Sources/"+extra.id(),"an operation mapping fans in AAS elements only; the device is reached through its Sinks");
 		String action=operationAction(operation.reference());
-		if(action==null || action.isBlank()) { issue(issues,mapping,root+"/Sources","Operation reference does not identify an exact parent skill/action");return; }
-		if(mapping.sinks().isEmpty()) { issue(issues,mapping,root+"/Sinks","bridge Operation requires at least one declared command binding");return; }
+		if(action==null || action.isBlank()) { issue(issues,mapping,root+"/Sources","Operation reference does not identify an exact parent skill/action");return null; }
+		if(mapping.sinks().isEmpty()) { issue(issues,mapping,root+"/Sinks","bridge Operation requires at least one declared command binding");return null; }
 		if(mapping.qualifiers().stream().anyMatch(ConnectorConfigurationFactory::behaviorQualifier)) issue(issues,mapping,root+"/qualifiers","mapping qualifiers are not represented by the bridge route schema");
 		// The Operation is its mapping's only trigger; its further sources are read at the call.
 		for(EndpointPlan source:mapping.sources()) {
@@ -381,28 +368,24 @@ public final class ConnectorConfigurationFactory {
 			else if(!sameAction(actionTarget,target)) issue(issues,mapping,root+"/Sinks/"+sink.id(),
 					"grouped command members must share one AID action endpoint");
 		}
-		if(actionTarget==null && propertyTarget==null || issues.size()!=issueStart) return;
+		if(actionTarget==null && propertyTarget==null || issues.size()!=issueStart) return null;
 		boolean write=propertyTarget!=null;
 		AidTarget commandTarget=write?propertyTarget:actionTarget;
 		if(mapping.responseTransformation().present() && mapping.responseTransformation().value()==null) {
-			issue(issues,mapping,root+"/ResponseTransformation","response transformation Blob is explicitly null");return;
+			issue(issues,mapping,root+"/ResponseTransformation","response transformation Blob is explicitly null");return null;
 		}
 		String commandId=entityId(mapping,"command",0);
-		Map<String,Object> targetOptions=new LinkedHashMap<>();
-		DataSinkConfiguration commandSink=write
-				?propertyWriteSink(mapping.sinks().get(0),mapping,plan,routeId,runtime,targetOptions,issues)
-				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,targetOptions,runtime,issues,root+"/Sinks");
-		if(commandSink==null || issues.size()!=issueStart) return;
-		List<DataSourceConfiguration> fanInReads=new ArrayList<>();
-		List<Map<String,Object>> fanInBindings=new ArrayList<>();
+		Map<String,Object> connectorOptions=new LinkedHashMap<>();
+		Sink commandSink=write
+				?sink(mapping.sinks().get(0),mapping,0,plan,routeId,runtime,issues)
+				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,connectorOptions,runtime,issues,root+"/Sinks");
+		if(commandSink==null || issues.size()!=issueStart) return null;
+		List<Source> fanInReads=new ArrayList<>();
 		for(int i=0;i<fanIn.size();i++) {
-			DataSourceConfiguration read=aasReadSource(fanIn.get(i),mapping,500000+i,(DirectTarget)fanIn.get(i).target(),runtime,issues);
-			if(read==null)continue;
-			read.setEvaluation(Evaluation.READ_AT_EVALUATION);
-			fanInReads.add(read);
-			fanInBindings.add(Map.of("sourceId",fanIn.get(i).id(),"dataSourceId",read.getUniqueId()));
+			Source read=aasReadSource(fanIn.get(i),mapping,500000+i,(DirectTarget)fanIn.get(i).target(),runtime,issues);
+			if(read!=null)fanInReads.add(read.withEvaluation(Evaluation.READ_AT_EVALUATION));
 		}
-		if(issues.size()!=issueStart) return;
+		if(issues.size()!=issueStart) return null;
 		DataSchema input=write?null:actionTarget.resolved().affordance().input().present()
 				?actionTarget.resolved().affordance().input().value():null;
 		DataSchema response=write?null:actionTarget.resolved().affordance().output().present()
@@ -412,17 +395,12 @@ public final class ConnectorConfigurationFactory {
 		List<String> parameterRequired=schemaRequired(input);
 		List<String> responseRequired=schemaRequired(response);
 		String restPath=delegationPath(cci);
-		if(restPath==null) { issue(issues,mapping,root+"/Sources","CCI Operation needs an invocationDelegation qualifier whose URL names the DMP path");return; }
-		Map<String,Object> trigger=new LinkedHashMap<>();
-		trigger.put(ProtocolBridgeRouteConfiguration.REST_PATH,restPath);
-		trigger.put("action",action);
+		if(restPath==null) { issue(issues,mapping,root+"/Sources","CCI Operation needs an invocationDelegation qualifier whose URL names the DMP path");return null; }
 		// The Operation's AAS identity (submodel ID, idShort path), passed to Lua as meta.invocation.
 		List<Key> operationKeys=operationKeys(operation);
-		if(!operationKeys.isEmpty()) {
-			trigger.put(ProtocolBridgeRouteConfiguration.OPERATION_SUBMODEL_ID,operationKeys.get(0).getValue());
-			trigger.put(ProtocolBridgeRouteConfiguration.OPERATION_PATH,String.join(".",
-					operationKeys.subList(1,operationKeys.size()).stream().map(Key::getValue).toList()));
-		}
+		OperationRoute.Identity identity=new OperationRoute.Identity(restPath,action,
+				operationKeys.isEmpty()?null:operationKeys.get(0).getValue(),
+				operationKeys.isEmpty()?null:String.join(".",operationKeys.subList(1,operationKeys.size()).stream().map(Key::getValue).toList()));
 		Map<String,String> callerInputSourcePaths=new LinkedHashMap<>();
 		for(EndpointPlan endpoint:mapping.sources()) if(operationModel(endpoint)!=null) {
 			if(isWholeOperation(endpoint)) callerInputSourcePaths.put(endpoint.id(), "$");
@@ -432,23 +410,9 @@ public final class ConnectorConfigurationFactory {
 				else callerInputSourcePaths.put(endpoint.id(),valuePath);
 			}
 		}
-		trigger.put(ProtocolBridgeRouteConfiguration.CALLER_INPUT_SOURCE_PATHS,Map.copyOf(callerInputSourcePaths));
-		trigger.put(ProtocolBridgeRouteConfiguration.FAN_IN_SOURCES,List.copyOf(fanInBindings));
-		trigger.put(ProtocolBridgeRouteConfiguration.COMMAND_SINK_IDS,List.of(commandSink.getUniqueId()));
-		List<Map<String,Object>> bindings=new ArrayList<>();
-		for(EndpointPlan sink:mapping.sinks()) {
-			AidTarget endpointTarget=(AidTarget)sink.target();
-			Map<String,Object> binding=new LinkedHashMap<>();
-			binding.put("sinkId",sink.id());
-			binding.put("dataSinkId",commandSink.getUniqueId());
-			binding.put("valuePath",jsonPointer(endpointTarget.resolved().schemaPath()));
-			bindings.add(binding);
-		}
-		trigger.put(ProtocolBridgeRouteConfiguration.COMMAND_SINK_BINDINGS,List.copyOf(bindings));
-		trigger.put(ProtocolBridgeRouteConfiguration.PARAMETER_TYPES,parameterTypes);
-		trigger.put("parameterRequired",parameterRequired);
-		trigger.put(ProtocolBridgeRouteConfiguration.RESPONSE_TYPES,responseTypes);
-		trigger.put("responseRequired",responseRequired);
+		List<OperationRoute.Command.Member> members=new ArrayList<>();
+		for(EndpointPlan sink:mapping.sinks())
+			members.add(new OperationRoute.Command.Member(sink.id(),jsonPointer(((AidTarget)sink.target()).resolved().schemaPath())));
 		Map<String,String> callerTypes=new LinkedHashMap<>();
 		Map<String,String> inputTemplates=new LinkedHashMap<>();
 		Map<String,String> outputTemplates=new LinkedHashMap<>();
@@ -487,11 +451,8 @@ public final class ConnectorConfigurationFactory {
 				}
 			}
 		});
-		trigger.put("callerResponseTypes",Map.copyOf(callerTypes));
-		trigger.put(ProtocolBridgeRouteConfiguration.CALLER_INPUT_TEMPLATES,Map.copyOf(inputTemplates));
-		trigger.put(ProtocolBridgeRouteConfiguration.CALLER_OUTPUT_TEMPLATES,Map.copyOf(outputTemplates));
-		if(!callerOrder.isEmpty())trigger.put("callerOutputOrder",List.copyOf(callerOrder));
-		if(response!=null) trigger.put(ProtocolBridgeRouteConfiguration.RESPONSE_SCHEMA,schema(Presence.of(response)));
+		@SuppressWarnings("unchecked")
+		Map<String,Object> responseSchema=response==null?null:(Map<String,Object>)schema(Presence.of(response));
 		// The caller's outputs are only what the response mapping makes of the reply; nothing is
 		// matched by name. Without a response mapping the Operation answers with no outputs, which
 		// only an Operation whose outputs are all Optional (or that has none) may do.
@@ -499,59 +460,31 @@ public final class ConnectorConfigurationFactory {
 				|| mapping.responseTransformation().present();
 		if(!explicit && !requiredOutputs.isEmpty()) {
 			issue(issues,mapping,root+"/response","the Operation's required output and InOut variables "+requiredOutputs
-					+" need ResponseSources, a ResponseTransformation and a ResponseSink selecting the Operation");return;
+					+" need ResponseSources, a ResponseTransformation and a ResponseSink selecting the Operation");return null;
 		}
-		trigger.put(ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING,explicit);
-		List<DataSinkConfiguration> responseDestinations=new ArrayList<>();
-		if(explicit)compileResponseBindings(mapping,operation,commandTarget,write,!callerOrder.isEmpty(),
-				requiredOutputs,plan,routeId,runtime,trigger,responseDestinations,issues);
-		trigger.put("targetOptions",Map.copyOf(targetOptions));
+		BridgeResponse replies=explicit?compileResponseBindings(mapping,operation,commandTarget,write,!callerOrder.isEmpty(),
+				requiredOutputs,plan,routeId,runtime,issues):new BridgeResponse(List.of(),List.of(),null,Map.of());
 
-		List<DataTransformerConfiguration> transformers=new ArrayList<>();
-		String requestTransformerId=entityId(mapping,"request-transform",0);
 		if(!mapping.transformation().present() || mapping.transformation().value()==null) {
-			issue(issues,mapping,root+"/Transformation","Operation mappings require an authored request Lua transform");return;
+			issue(issues,mapping,root+"/Transformation","Operation mappings require an authored request Lua transform");return null;
 		}
-		byte[] requestBytes=mapping.transformation().value().bytes();
-		addLua(transformers,requestTransformerId,requestBytes,mapping.identity()+":request",mapping,root+"/Transformation",issues);
-		List<String> transformerIds=new ArrayList<>();
-		if(!transformers.isEmpty()) transformerIds.add(requestTransformerId);
-		if(mapping.responseTransformation().present() && mapping.responseTransformation().value()!=null) {
-			String responseTransformerId=entityId(mapping,"response-transform",0);
-			addLua(transformers,responseTransformerId,mapping.responseTransformation().value().bytes(),
+		Endpoint requestTransformation=lua(mapping.transformation().value().bytes(),mapping.identity()+":request",
+				mapping,root+"/Transformation",issues);
+		Endpoint responseTransformation=null;
+		if(mapping.responseTransformation().present() && mapping.responseTransformation().value()!=null)
+			responseTransformation=lua(mapping.responseTransformation().value().bytes(),
 					mapping.identity()+":response",mapping,root+"/ResponseTransformation",issues);
-			if(issues.size()==issueStart) trigger.put(ProtocolBridgeRouteConfiguration.RESPONSE_TRANSFORMER,responseTransformerId);
-		}
-		if(issues.size()!=issueStart) return;
-		output.addDatasources(fanInReads);
-		output.addDatasink(commandSink);
-		output.addDatasinks(responseDestinations);
-		output.addTransformers(transformers);
-		RouteConfiguration base=new RouteConfiguration(ProtocolBridgeRouteConfiguration.ROUTE_TRIGGER,
-				List.of(),transformerIds,java.util.stream.Stream.concat(java.util.stream.Stream.of(commandSink.getUniqueId()),
-						responseDestinations.stream().map(DataSinkConfiguration::getUniqueId)).toList());
-		ProtocolBridgeRouteConfiguration bridge=new ProtocolBridgeRouteConfiguration(base);
-		bridge.setRouteId(routeId+":"+mapping.listIndex());
-		bridge.setTriggerData(trigger);
-		output.addRoute(bridge);
-	}
-
-	/**
-	 * The command of an Operation bound to a property: an ordinary write of that property,
-	 * acknowledged by its connector (PLC4X write response, OPC UA Write status, HTTP response;
-	 * MQTT reaches the broker only).
-	 */
-	private static DataSinkConfiguration propertyWriteSink(EndpointPlan endpoint,MappingPlan mapping,Plan plan,String routeId,
-			RuntimeSettings runtime,Map<String,Object> targetOptions,List<Issue> issues) {
-		DataSinkConfiguration sink=sink(endpoint,mapping,0,plan,routeId,runtime,issues);
-		if(sink==null)return null;
-		targetOptions.put("write",true);
-		targetOptions.put("jsonPayload",sink.requiresJsonWireEncoding());
-		return sink;
+		if(issues.size()!=issueStart) return null;
+		OperationRoute.Command command=new OperationRoute.Command(commandSink,members,write,parameterTypes,
+				parameterRequired,responseTypes,responseRequired,responseSchema,connectorOptions);
+		OperationRoute.Caller caller=new OperationRoute.Caller(callerInputSourcePaths,inputTemplates,outputTemplates,
+				callerTypes,callerOrder,replies.callerBindings(),replies.callerId());
+		return new OperationRoute(mappingRouteId,identity,requestTransformation,fanInReads,command,caller,
+				explicit?new Response(responseTransformation,replies.sources(),replies.sinks()):null);
 	}
 
 	/** An AAS element read once per invocation (fan-in), whatever the source's authored interval. */
-	private static DataSourceConfiguration aasReadSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source aasReadSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			DirectTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if(runtime==null) { issue(issues,mapping,path,"AAS source compilation requires explicit repository runtime settings");return null; }
@@ -559,18 +492,15 @@ public final class ConnectorConfigurationFactory {
 		if(elementPath==null)return null;
 		String submodelEndpoint=submodelEndpoint(target.resolved().submodel().getId(),runtime,mapping,path,issues);
 		if(submodelEndpoint==null)return null;
-		URI base=runtime.aasRepositoryBaseUri();
-		AASPollingDataSourceConfiguration source=new AASPollingDataSourceConfiguration(entityId(mapping,"source",position),
-				base.getHost(),effectivePort(base),elementPath,submodelEndpoint);
-		source.setSourceId(endpoint.id());
-		source.setElementType(Aas.modelType(target.resolved().element()));
-		source.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
-		source.setDelivery("sync");
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				new AasElementSource(submodelEndpoint,elementPath,Aas.modelType(target.resolved().element())),
+				Source.Delivery.READ,0).withSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	private DataSinkConfiguration bridgeCommandSink(MappingPlan mapping,String action,AidTarget target,Plan plan,
-			String routeId,String uniqueId,Map<String,Object> targetOptions,RuntimeSettings runtime,List<Issue> issues,String path) {
+	/** The command of an Operation bound to an AID action; {@code connectorOptions} receives its invocation's options. */
+	private Sink bridgeCommandSink(MappingPlan mapping,String action,AidTarget target,Plan plan,
+			String routeId,String uniqueId,Map<String,Object> connectorOptions,RuntimeSettings runtime,List<Issue> issues,String path) {
 		List<WireModel.ProtocolFamily> families=target.resolved().owner().protocolFamilies();
 		if(families.size()!=1) { issue(issues,mapping,path,"Operation command requires one unambiguous AID binding, found "+families);return null; }
 		DataSchema input=target.resolved().affordance().input().present()?target.resolved().affordance().input().value():null;
@@ -584,13 +514,10 @@ public final class ConnectorConfigurationFactory {
 			if(uri==null || !httpUri(uri,mapping,path,issues))return null;
 			AidSecurity.Applied security=security(target,form,uri,runtime,mapping,path,issues);
 			if(security==null)return null;
-			HttpDataSinkConfiguration sink=new HttpDataSinkConfiguration(uniqueId,uri.getScheme(),uri.getHost(),uri.getPath(),effectivePort(uri));
-			sink.setQuery(uri.getQuery());sink.setSinkId(action);sink.setSchema(schemaOptional(input));
-			if(security.basic())sink.setBasicCredentials(security.username(),security.password());
-			sink.setSecretQuery(security.query());
-			sink.setHeaders(httpHeaders(form,false,security,mapping,path,issues));
-			targetOptions.put("httpMethod",method);targetOptions.put("timeoutSeconds",30);
-			return sink;
+			HttpWrite invoke=new HttpWrite(uri.getScheme(),uri.getHost(),effectivePort(uri),uri.getPath(),uri.getQuery(),null,
+					httpOptions(form,false,security,mapping,path,issues));
+			connectorOptions.put("httpMethod",method);connectorOptions.put("timeoutSeconds",30);
+			return new Sink(uniqueId,action,invoke).withSchema(schemaOptional(input));
 		}
 		if(family==WireModel.ProtocolFamily.OPCUA) {
 			Form form=protocolForm(target,mapping,path,issues);if(form==null)return null;
@@ -600,11 +527,10 @@ public final class ConnectorConfigurationFactory {
 			if(method==null || componentOf==null)return null;
 			Map<String,String> options=new LinkedHashMap<>();
 			options.put("method","RAW("+method+")");
-			OpcuaDataSinkConfiguration sink=new OpcuaDataSinkConfiguration(uniqueId,base.host(),base.port(),base.servicePath(),
+			OpcUaEndpoint call=OpcUaEndpoint.sink(base.host(),base.port(),base.servicePath(),
 					componentOf,base.username(),base.password(),options);
-			sink.setSinkId(action);sink.setSchema(schemaOptional(input));
-			targetOptions.put("timeoutSeconds",30);
-			return sink;
+			connectorOptions.put("timeoutSeconds",30);
+			return new Sink(uniqueId,action,call).withSchema(schemaOptional(input));
 		}
 		if(family==WireModel.ProtocolFamily.MQTT) {
 			Form form=mqttForm(target,mapping,path,"sink",true,issues);if(form==null)return null;
@@ -627,14 +553,13 @@ public final class ConnectorConfigurationFactory {
 				issue(issues,mapping,path+"/forms/mqv_qos","an invoke-only MQTT action needs mqv_qos 1 or 2 so the broker acknowledges the command");return null;
 			}
 			long timeoutSeconds=30;
-			MqttV5OperationDataSinkConfiguration sink=new MqttV5OperationDataSinkConfiguration(uniqueId,
-					"tcp://"+base.host()+":"+base.port(),topic,stableMqttClientId(plan,routeId,mapping,action,"operation"),
-					qos==null?MQTT_DEFAULT_QOS:qos,Boolean.TRUE.equals(retained),replyTopic,timeoutSeconds,base.username(),base.password());
-			sink.setSinkId(action);sink.setSchema(schemaOptional(input));
-			targetOptions.put("requestReply",!invokeOnly);
-			if(!invokeOnly)targetOptions.put("responseTopic",replyTopic);
-			targetOptions.put("timeoutSeconds",timeoutSeconds);
-			return sink;
+			MqttAction request=new MqttAction("tcp://"+base.host()+":"+base.port(),topic,
+					stableMqttClientId(plan,routeId,mapping,action,"operation"),qos==null?MQTT_DEFAULT_QOS:qos,
+					Boolean.TRUE.equals(retained),replyTopic,timeoutSeconds,Credentials.of(base.username(),base.password()));
+			connectorOptions.put("requestReply",!invokeOnly);
+			if(!invokeOnly)connectorOptions.put("responseTopic",replyTopic);
+			connectorOptions.put("timeoutSeconds",timeoutSeconds);
+			return new Sink(uniqueId,action,request).withSchema(schemaOptional(input));
 		}
 		issue(issues,mapping,path,"unsupported Operation connector family "+families);
 		return null;
@@ -666,12 +591,17 @@ public final class ConnectorConfigurationFactory {
 				&& left.resolved().affordance().equals(right.resolved().affordance());
 	}
 
-	private void compileResponseBindings(MappingPlan mapping,EndpointPlan operation,AidTarget command,boolean write,
-			boolean callerOutputs,List<String> requiredOutputs,Plan plan,String routeId,RuntimeSettings runtime,Map<String,Object> trigger,
-			List<DataSinkConfiguration> destinations,List<Issue> issues) {
+	/**
+	 * An Operation's ResponseSources (the reply's values), the ResponseSinks the DMP writes, and those answering the
+	 * caller: the whole Operation ({@code callerId}) or variables ({@code callerBindings}, SinkId to path).
+	 */
+	private record BridgeResponse(List<ResponseSource> sources,List<Sink> sinks,String callerId,Map<String,String> callerBindings) { }
+
+	private BridgeResponse compileResponseBindings(MappingPlan mapping,EndpointPlan operation,AidTarget command,boolean write,
+			boolean callerOutputs,List<String> requiredOutputs,Plan plan,String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path="MappingConfigurations/value/"+mapping.listIndex()+"/response";
 		requireResponseUnit(mapping,path,issues);
-		List<Map<String,Object>> sourceBindings=new ArrayList<>();
+		List<ResponseSource> sourceBindings=new ArrayList<>();
 		Set<String> sourcePaths=new LinkedHashSet<>();
 		if(mapping.responseSources().present()) {
 			if(mapping.responseSources().value()==null)issue(issues,mapping,path,"ResponseSources must not be null");
@@ -684,15 +614,13 @@ public final class ConnectorConfigurationFactory {
 				}
 				String pointer=jsonPointer(target.resolved().schemaPath());
 				sourcePaths.add(pointer==null?"":pointer);
-				Map<String,Object> binding=new LinkedHashMap<>();binding.put("sourceId",endpoint.id());binding.put("valuePath",pointer);
-				sourceBindings.add(binding);
+				sourceBindings.add(new ResponseSource(endpoint.id(),null,pointer));
 			}
 		}
 		if(sourcePaths.contains("") && sourcePaths.size()>1)issue(issues,mapping,path,"whole and member response sources overlap");
-		trigger.put(ProtocolBridgeRouteConfiguration.RESPONSE_SOURCE_BINDINGS,List.copyOf(sourceBindings));
 		String callerId=null;
 		Map<String,String> callerBindings=new LinkedHashMap<>();
-		List<Map<String,Object>> sinkBindings=new ArrayList<>();
+		List<Sink> sinkBindings=new ArrayList<>();
 		if(mapping.responseSinks().present()) {
 			if(mapping.responseSinks().value()==null)issue(issues,mapping,path,"ResponseSinks must not be null");
 			else for(int i=0;i<mapping.responseSinks().value().size();i++) {
@@ -720,17 +648,15 @@ public final class ConnectorConfigurationFactory {
 					}
 					continue;
 				}
-				Map<String,Object> binding=responseSinkBinding(endpoint,mapping,i,plan,routeId,runtime,destinations,issues);
-				if(binding!=null)sinkBindings.add(binding);
+				Sink sink=responseSink(endpoint,mapping,i,plan,routeId,runtime,issues);
+				if(sink!=null)sinkBindings.add(sink);
 			}
 		}
 		if(callerId==null && requiredOutputs.stream().anyMatch(name -> !callerBindings.containsValue("$."+name)))issue(issues,mapping,path,
 				"the Operation's required output and InOut variables need a ResponseSink selecting the Operation or each required variable");
 		if(!callerOutputs && (callerId!=null || !callerBindings.isEmpty()))issue(issues,mapping,path,
 				"a ResponseSink selects the Operation, which declares no output or InOut variables");
-		if(callerId!=null)trigger.put(ProtocolBridgeRouteConfiguration.CALLER_REPLY_SINK_ID,callerId);
-		trigger.put(ProtocolBridgeRouteConfiguration.CALLER_REPLY_BINDINGS,Map.copyOf(callerBindings));
-		trigger.put(ProtocolBridgeRouteConfiguration.RESPONSE_SINK_BINDINGS,List.copyOf(sinkBindings));
+		return new BridgeResponse(sourceBindings,sinkBindings,callerId,callerBindings);
 	}
 
 	/**
@@ -751,22 +677,10 @@ public final class ConnectorConfigurationFactory {
 	}
 
 	/** A ResponseSink written by the DMP (an AAS element, a TimeSeries segment, a device property), or null. */
-	private Map<String,Object> responseSinkBinding(EndpointPlan endpoint,MappingPlan mapping,int position,Plan plan,
-			String routeId,RuntimeSettings runtime,List<DataSinkConfiguration> destinations,List<Issue> issues) {
-		DataSinkConfiguration sink=sink(endpoint,mapping,RESPONSE_SINK_POSITION+position,plan,routeId,runtime,issues);
-		if(sink==null)return null;
-		payloadBinding(sink,endpoint,mapping,issues);
-		destinations.add(sink);
-		Map<String,Object> binding=new LinkedHashMap<>();binding.put("sinkId",endpoint.id());
-		binding.put("dataSinkId",sink.getUniqueId());binding.put("schema",sink.getSchema());
-		boolean aas=endpoint.target() instanceof DirectTarget;
-		binding.put("aas",aas);binding.put("jsonPayload",!aas && (sink instanceof HttpDataSinkConfiguration || sink instanceof MqttDataSinkConfiguration));
-		if(!aas && endpoint.target() instanceof AidTarget target) {
-			binding.put("valuePath",jsonPointer(target.resolved().schemaPath()));
-			binding.put("payloadGroup",sink.getPayloadGroup());
-			binding.put("payloadSchema",sink.getPayloadSchema());
-		}
-		return binding;
+	private Sink responseSink(EndpointPlan endpoint,MappingPlan mapping,int position,Plan plan,
+			String routeId,RuntimeSettings runtime,List<Issue> issues) {
+		Sink sink=sink(endpoint,mapping,RESPONSE_SINK_POSITION+position,plan,routeId,runtime,issues);
+		return sink==null?null:payloadBinding(sink,endpoint,mapping,issues);
 	}
 
 	/**
@@ -774,41 +688,35 @@ public final class ConnectorConfigurationFactory {
 	 * Sinks was sent, or a member of it; the ResponseSinks receive the ResponseTransformation's result. No
 	 * Operation is answered: only the mapping an Operation triggers answers it.
 	 */
-	private void compileOrdinaryResponse(MappingPlan mapping,Plan plan,String routeId,RuntimeSettings runtime,
-			Map<String,Object> trigger,List<DataSinkConfiguration> destinations,List<DataTransformerConfiguration> transformers,
+	private Response compileOrdinaryResponse(MappingPlan mapping,Plan plan,String routeId,RuntimeSettings runtime,
 			List<Issue> issues) {
 		String root="MappingConfigurations/value/"+mapping.listIndex();
 		String path=root+"/response";
 		requireResponseUnit(mapping,path,issues);
-		List<Map<String,Object>> sourceBindings=new ArrayList<>();
+		List<ResponseSource> sourceBindings=new ArrayList<>();
 		if(mapping.responseSources().value()!=null) for(EndpointPlan endpoint:mapping.responseSources().value()) {
-			Map<String,Object> binding=writtenValueBinding(endpoint,mapping.sinks());
+			ResponseSource binding=writtenValueBinding(endpoint,mapping.sinks());
 			if(binding==null)issue(issues,mapping,path,"ResponseSource "+endpoint.id()
 					+" must select one of the mapping's Sinks, or a member of it: its value is what that Sink was sent");
 			else sourceBindings.add(binding);
 		}
-		trigger.put(RouteConfiguration.RESPONSE_SOURCE_BINDINGS,List.copyOf(sourceBindings));
-		List<Map<String,Object>> sinkBindings=new ArrayList<>();
+		List<Sink> sinkBindings=new ArrayList<>();
 		if(mapping.responseSinks().value()!=null) for(int i=0;i<mapping.responseSinks().value().size();i++) {
 			EndpointPlan endpoint=mapping.responseSinks().value().get(i);
 			if(operationModel(endpoint)!=null) {
 				issue(issues,mapping,path,"ResponseSink "+endpoint.id()+" selects an Operation; only the mapping it triggers answers it");continue;
 			}
-			Map<String,Object> binding=responseSinkBinding(endpoint,mapping,i,plan,routeId,runtime,destinations,issues);
-			if(binding!=null)sinkBindings.add(binding);
+			Sink sink=responseSink(endpoint,mapping,i,plan,routeId,runtime,issues);
+			if(sink!=null)sinkBindings.add(sink);
 		}
-		trigger.put(RouteConfiguration.RESPONSE_SINK_BINDINGS,List.copyOf(sinkBindings));
-		if(!mapping.responseTransformation().present() || mapping.responseTransformation().value()==null)return;
-		String id=entityId(mapping,"response-transform",0);
-		int before=transformers.size();
-		addLua(transformers,id,mapping.responseTransformation().value().bytes(),mapping.identity()+":response",
+		if(!mapping.responseTransformation().present() || mapping.responseTransformation().value()==null)return null;
+		Endpoint transformation=lua(mapping.responseTransformation().value().bytes(),mapping.identity()+":response",
 				mapping,root+"/ResponseTransformation",issues);
-		if(transformers.size()==before)return;
-		trigger.put(RouteConfiguration.RESPONSE_TRANSFORMER,id);
+		return transformation==null?null:new Response(transformation,sourceBindings,sinkBindings);
 	}
 
 	/** The Sink whose sent value a ResponseSource selects, the most specific when Sinks nest; null when none or two. */
-	private static Map<String,Object> writtenValueBinding(EndpointPlan source,List<EndpointPlan> sinks) {
+	private static ResponseSource writtenValueBinding(EndpointPlan source,List<EndpointPlan> sinks) {
 		EndpointPlan match=null;List<String> member=null;boolean ambiguous=false;
 		for(EndpointPlan sink:sinks) {
 			List<String> remainder=memberPath(sink,source);
@@ -817,9 +725,7 @@ public final class ConnectorConfigurationFactory {
 			else if(remainder.size()==member.size())ambiguous=true;
 		}
 		if(match==null || ambiguous)return null;
-		Map<String,Object> binding=new LinkedHashMap<>();
-		binding.put("sourceId",source.id());binding.put("sinkId",match.id());binding.put("valuePath",jsonPointer(member));
-		return binding;
+		return new ResponseSource(source.id(),match.id(),jsonPointer(member));
 	}
 
 	/** The path from a Sink's target down to the source's, or null when the source does not lie within it. */
@@ -858,7 +764,7 @@ public final class ConnectorConfigurationFactory {
 	 * A source read once per evaluation ({@code ReadAtEvaluation}): a Read, never an observation, at no interval
 	 * of its own. Its affordance must be readable; an MQTT topic is only received by subscription.
 	 */
-	private static DataSourceConfiguration readSource(EndpointPlan endpoint,MappingPlan mapping,int position,Plan plan,
+	private static Source readSource(EndpointPlan endpoint,MappingPlan mapping,int position,Plan plan,
 			String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if(polled(endpoint)) { issue(issues,mapping,path+"/PollingInterval","a source read at evaluation is not polled; remove its PollingInterval");return null; }
@@ -877,15 +783,14 @@ public final class ConnectorConfigurationFactory {
 		if(families.equals(List.of(WireModel.ProtocolFamily.MQTT))) {
 			issue(issues,mapping,path,"an MQTT property is received by subscription and cannot be read at evaluation");return null;
 		}
-		DataSourceConfiguration source=families.equals(List.of(WireModel.ProtocolFamily.OPCUA))
+		Source source=families.equals(List.of(WireModel.ProtocolFamily.OPCUA))
 				?opcuaSource(endpoint,mapping,position,target,true,issues)
 				:source(endpoint,mapping,position,plan,routeId,runtime,issues);
 		if(source==null)return null;
-		if(!"sync".equalsIgnoreCase(source.getDelivery())) {
+		if(!source.read()) {
 			issue(issues,mapping,path,"the form observes (e.g. an HTTP subprotocol) and cannot be read at evaluation");return null;
 		}
-		source.setPollingIntervalMs(0);
-		return source;
+		return source.withPollingIntervalMs(0);
 	}
 
 	private static void validateCapabilities(MappingPlan mapping,List<Issue> issues) {
@@ -1025,13 +930,14 @@ public final class ConnectorConfigurationFactory {
 		}
 	}
 
-	private static void payloadBinding(DataSinkConfiguration sink,EndpointPlan endpoint,MappingPlan mapping,List<Issue> issues) {
-		if(!(endpoint.target() instanceof AidTarget target))return;
+	/** A sink of an AID affordance with the schema of the whole payload and the group of sinks assembling it. */
+	private static Sink payloadBinding(Sink sink,EndpointPlan endpoint,MappingPlan mapping,List<Issue> issues) {
+		if(!(endpoint.target() instanceof AidTarget target))return sink;
 		WireModel.Affordance affordance=target.resolved().affordance();
 		var root=new AidTarget(new dk.aau.smartproductionlab.dmp.management.repository.AasReferenceResolver.AidTarget(
 				target.resolved().owner(),affordance,affordance.schema(),List.of(),target.resolved().submodelId()));
-		sink.setPayloadSchema(schemaForAidTarget(root,mapping,"MappingConfigurations/value/"+mapping.listIndex()+"/Sinks",issues));
-		sink.setPayloadGroup(target.resolved().submodelId()+":"+target.resolved().owner().idShort()+":"+affordance.idShort().value());
+		return sink.withPayload(schemaForAidTarget(root,mapping,"MappingConfigurations/value/"+mapping.listIndex()+"/Sinks",issues),
+				target.resolved().submodelId()+":"+target.resolved().owner().idShort()+":"+affordance.idShort().value());
 	}
 
 	private static String pathSegment(String value) {
@@ -1060,35 +966,34 @@ public final class ConnectorConfigurationFactory {
 				? schema.required().value():List.of();
 	}
 
-	private void addLua(List<DataTransformerConfiguration> transformers,String id,byte[] bytes,String identity,
-			MappingPlan mapping,String path,List<Issue> issues) {
+	/** The compiled Lua of {@code bytes}; null after an issue. */
+	private static Endpoint lua(byte[] bytes,String identity,MappingPlan mapping,String path,List<Issue> issues) {
 		try {
-			LuaCompiledSource compiled=compiledLua(bytes,identity);
-			transformers.add(new LuaTransformerConfiguration(id,compiled));
+			return new LuaScript(compiledLua(bytes,identity));
 		} catch(RuntimeException failure) {
 			issue(issues,mapping,path,"Lua source cannot be compiled: "+failure.getMessage());
+			return null;
 		}
 	}
 
-	/** Compiles isolated per-mapping configurations suitable for DmpComponent.installBundle. */
+	/** Compiles each mapping into its own bundle for DmpComponent.installBundle; its route is {@code <bundleId>:mapping}. */
 	public BundleResult createBundles(Plan plan,RuntimeSettings runtime) {
 		List<CompiledBundle> bundles=new ArrayList<>();
 		List<Issue> issues=new ArrayList<>();
 		for(MappingPlan mapping:plan.mappings()) {
 			String bundleId=stableBundleId(plan,mapping,runtime);
-			Plan single=new Plan(plan.aimcSubmodelId(),List.of(mapping));
-			Result compiled;
-			try { compiled=create(single,bundleId,runtime); }
+			String routeId=bundleId+":mapping";
+			List<Issue> compiled=new ArrayList<>();
+			RoutePlan route;
+			try { route=compileMapping(mapping,new Plan(plan.aimcSubmodelId(),List.of(mapping)),bundleId,routeId,runtime,compiled); }
 			catch(RuntimeException invalid) {
 				issue(issues,mapping,"MappingConfigurations/value/"+mapping.listIndex(),"mapping configuration preflight failed");continue;
 			}
-			if(compiled.issues().isEmpty()) {
-				compiled.configuration().getRoutes().get(0).setRouteId(bundleId+":mapping");
-				bundles.add(new CompiledBundle(mapping.identity(),mapping.listIndex(),bundleId,
-						compiled.configuration().getRoutes().get(0).getRouteId(),compiled.configuration(),
+			if(compiled.isEmpty()) {
+				bundles.add(new CompiledBundle(mapping.identity(),mapping.listIndex(),bundleId,routeId,route,
 						EffectiveFingerprint.of(mapping,runtime)));
 			} else {
-				issues.addAll(compiled.issues());
+				issues.addAll(compiled);
 			}
 		}
 		return new BundleResult(bundles,issues);
@@ -1122,7 +1027,7 @@ public final class ConnectorConfigurationFactory {
 		}
 	}
 
-	private static DataSourceConfiguration source(EndpointPlan endpoint, MappingPlan mapping, int position,
+	private static Source source(EndpointPlan endpoint, MappingPlan mapping, int position,
 			Plan plan, String routeId, RuntimeSettings runtime, List<Issue> issues) {
 		String path = endpointPath(mapping, "Sources", position);
 		if (endpoint.target() instanceof SeriesTarget series) return seriesSource(endpoint,mapping,position,series,runtime,false,issues);
@@ -1167,38 +1072,30 @@ public final class ConnectorConfigurationFactory {
 		if (!httpUri(uri, mapping, path, issues)) return null;
 		AidSecurity.Applied security = security(target, form, uri, runtime, mapping, path, issues);
 		if (security == null) return null;
-		String username = security.username();
-		String password = security.password();
 		String subprotocol = httpSubprotocol(form);
 		if (subprotocol != null) {
 			// Observed (property) or subscribed (event) through the WoT HTTP binding's subprotocol.
-			HttpObserveDataSourceConfiguration observed = new HttpObserveDataSourceConfiguration(entityId(mapping, "source", position),
-					uri.toString(), effectivePort(uri), subprotocol,
+			HttpObservation observed = new HttpObservation(uri.toString(), subprotocol,
 					form.contentType().present() && form.contentType().value() != null ? form.contentType().value() : "application/json",
-					username, password);
-			observed.setSourceId(endpoint.id());
-			observed.setSecretQuery(security.query());
-			observed.setHeaders(httpHeaders(form, true, security, mapping, path, issues));
-			observed.setSchema(schemaForAidTarget(target,mapping,path,issues));
-			setValuePath(observed,target);
-			return observed;
+					httpOptions(form, true, security, mapping, path, issues));
+			return new Source(entityId(mapping, "source", position), endpoint.id(), observed, Source.Delivery.OBSERVED, 0)
+					.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		}
-		HttpPollingDataSourceConfiguration result = new HttpPollingDataSourceConfiguration(
-				entityId(mapping, "source", position), uri.toString(), effectivePort(uri), username, password);
-		result.setSourceId(endpoint.id());
-		result.setSecretQuery(security.query());
-		result.setHeaders(httpHeaders(form, false, security, mapping, path, issues));
-		result.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		result.setDelivery("sync");
-		setValuePath(result,target);
+		HttpPoll poll = new HttpPoll(uri.toString(), httpOptions(form, false, security, mapping, path, issues));
+		Source result = new Source(entityId(mapping, "source", position), endpoint.id(), poll, Source.Delivery.READ, 0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		if (endpoint.pollingInterval().present()) {
 			OptionalLong polling = endpointPollingMillis(endpoint.pollingInterval(), mapping, position, issues);
-			if (polling.isPresent()) {
-				result.setDelivery("sync");
-				result.setPollingIntervalMs(polling.getAsLong());
-			}
+			if (polling.isPresent()) result = result.withPollingIntervalMs(polling.getAsLong());
 		}
 		return result;
+	}
+
+	/** An HTTP form's request options: its static headers with the security scheme's, credentials and query. */
+	private static HttpRequestOptions httpOptions(Form form, boolean observed, AidSecurity.Applied security,
+			MappingPlan mapping, String path, List<Issue> issues) {
+		return new HttpRequestOptions(httpHeaders(form, observed, security, mapping, path, issues),
+				security.username(), security.password(), security.query());
 	}
 
 	/** Whether a source authors a PollingInterval other than 0 (0 is event-based, like none). */
@@ -1225,7 +1122,7 @@ public final class ConnectorConfigurationFactory {
 		return OptionalLong.of((long)(seconds*1000d));
 	}
 
-	private static DataSinkConfiguration sink(EndpointPlan endpoint, MappingPlan mapping, int position,
+	private static Sink sink(EndpointPlan endpoint, MappingPlan mapping, int position,
 			Plan plan, String routeId, RuntimeSettings runtime, List<Issue> issues) {
 		String path = endpointPath(mapping, "Sinks", position);
 		if (endpoint.target() instanceof SeriesTarget series) return seriesSink(endpoint,mapping,position,series,runtime,issues);
@@ -1271,21 +1168,14 @@ public final class ConnectorConfigurationFactory {
 		if (!httpUri(uri, mapping, path, issues)) return null;
 		AidSecurity.Applied security = security(target, form, uri, runtime, mapping, path, issues);
 		if (security == null) return null;
-		HttpDataSinkConfiguration result = new HttpDataSinkConfiguration(entityId(mapping, "sink", position),
-				uri.getScheme(), uri.getHost(), uri.getPath(), effectivePort(uri));
-		result.setQuery(uri.getQuery());
-		result.setMethod(method);
-		if (security.basic()) result.setBasicCredentials(security.username(), security.password());
-		result.setSecretQuery(security.query());
-		result.setHeaders(httpHeaders(form, false, security, mapping, path, issues));
-		result.setSinkId(endpoint.id());
-		result.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(result,target);
-		return result;
+		HttpWrite write = new HttpWrite(uri.getScheme(), uri.getHost(), effectivePort(uri), uri.getPath(), uri.getQuery(),
+				method, httpOptions(form, false, security, mapping, path, issues));
+		return new Sink(entityId(mapping, "sink", position), endpoint.id(), write)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 	}
 
 	/** A TimeSeries LinkedSegment written one point per row on the configured InfluxDB. */
-	private static DataSinkConfiguration seriesSink(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Sink seriesSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			SeriesTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		if(!seriesOnConfiguredInflux(target,mapping,path,runtime,issues))return null;
@@ -1293,18 +1183,15 @@ public final class ConnectorConfigurationFactory {
 		if(!series.open()) {
 			issue(issues,mapping,path,"the segment is Completed or has an EndTime; only an open segment can be written");return null;
 		}
-		InfluxDb2DataSinkConfiguration sink=new InfluxDb2DataSinkConfiguration(entityId(mapping,"sink",position),
-				series.measurement(),series.bucket(),series.timePath(),series.tags(),series.columns());
-		sink.setPeriod(series.start(),series.end());
-		sink.setSinkId(endpoint.id());
-		return sink;
+		return new Sink(entityId(mapping,"sink",position),endpoint.id(),new InfluxDb2Endpoint(series.measurement(),
+				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end()));
 	}
 
 	/**
 	 * A TimeSeries LinkedSegment read by polling: its latest row. InfluxDB has no subscriptions, so the source
 	 * needs an authored PollingInterval (its own or the mapping's DefaultPollingInterval); none is assumed.
 	 */
-	private static DataSourceConfiguration seriesSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source seriesSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			SeriesTarget target,RuntimeSettings runtime,boolean readAtEvaluation,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if(!seriesOnConfiguredInflux(target,mapping,path,runtime,issues))return null;
@@ -1315,12 +1202,9 @@ public final class ConnectorConfigurationFactory {
 			return null;
 		}
 		TimeSeriesProjection.Series series=target.projection();
-		URI influx=runtime.influx().url();
-		InfluxDb2DataSourceConfiguration source=new InfluxDb2DataSourceConfiguration(entityId(mapping,"source",position),
-				influx.getHost(),effectivePort(influx),series.measurement(),series.bucket(),series.timePath(),series.tags(),series.columns());
-		source.setPeriod(series.start(),series.end());
-		source.setSourceId(endpoint.id());
-		if(interval.isPresent())source.setPollingIntervalMs(interval.getAsLong());
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),new InfluxDb2Endpoint(series.measurement(),
+				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end()),
+				Source.Delivery.READ,interval.orElse(0));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
@@ -1336,7 +1220,7 @@ public final class ConnectorConfigurationFactory {
 		return true;
 	}
 
-	private static DataSourceConfiguration aasSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source aasSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			DirectTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if(runtime==null) { issue(issues,mapping,path,"AAS source compilation requires explicit repository runtime settings");return null; }
@@ -1349,24 +1233,20 @@ public final class ConnectorConfigurationFactory {
 		if(target.resolved().element() instanceof Property && interval.isEmpty()) {
 			// Without a positive PollingInterval (none, or 0) a Property follows the repository's change events.
 			String idShortPath=AasReferenceResolver.idShortPath(Aas.keys(endpoint.reference()));
-			AasEventDataSourceConfiguration source=new AasEventDataSourceConfiguration(entityId(mapping,"source",position),
-					target.resolved().submodel().getId(),idShortPath,dk.aau.smartproductionlab.dmp.aas.http.AasHttp.elementUrl(submodelEndpoint,idShortPath));
-			source.setSourceId(endpoint.id());
-			source.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
+			AasEventSource events=new AasEventSource(target.resolved().submodel().getId(),idShortPath,"Property",
+					dk.aau.smartproductionlab.dmp.aas.http.AasHttp.elementUrl(submodelEndpoint,idShortPath));
+			Source source=new Source(entityId(mapping,"source",position),endpoint.id(),events,Source.Delivery.OBSERVED,0)
+					.withSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
 			return hasIssue(issues,mapping)?null:source;
 		}
-		URI base=runtime.aasRepositoryBaseUri();
-		AASPollingDataSourceConfiguration source=new AASPollingDataSourceConfiguration(entityId(mapping,"source",position),
-				base.getHost(),effectivePort(base),elementPath,submodelEndpoint);
-		source.setSourceId(endpoint.id());
-		source.setElementType(Aas.modelType(target.resolved().element()));
-		source.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
-		source.setDelivery("sync");
-		if(endpoint.pollingInterval().present() && interval.isPresent())source.setPollingIntervalMs(interval.getAsLong());
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				new AasElementSource(submodelEndpoint,elementPath,Aas.modelType(target.resolved().element())),
+				Source.Delivery.READ,endpoint.pollingInterval().present() && interval.isPresent()?interval.getAsLong():0)
+				.withSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	private static DataSinkConfiguration aasSink(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Sink aasSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			DirectTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		if(runtime==null) { issue(issues,mapping,path,"AAS sink compilation requires explicit repository runtime settings");return null; }
@@ -1380,12 +1260,9 @@ public final class ConnectorConfigurationFactory {
 		if(elementPath==null)return null;
 		String submodelEndpoint=submodelEndpoint(target.resolved().submodel().getId(),runtime,mapping,path,issues);
 		if(submodelEndpoint==null)return null;
-		AASDatasinkConfiguration sink=new AASDatasinkConfiguration(submodelEndpoint,elementPath,
-				entityId(mapping,"sink",position));
-		sink.setSinkId(endpoint.id());
-		sink.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
-		sink.setValuePath(endpoint.id());
-		sink.setElementType(elementType);
+		Sink sink=new Sink(entityId(mapping,"sink",position),endpoint.id(),
+				new AasElementSink(submodelEndpoint,elementPath,elementType,endpoint.id()))
+				.withSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues)).withValuePath(endpoint.id());
 		return hasIssue(issues,mapping)?null:sink;
 	}
 
@@ -1548,34 +1425,30 @@ public final class ConnectorConfigurationFactory {
 	/** An SNMP object as the AID 1.2 SNMP binding (Annex E.1) addresses it. */
 	private record SnmpForm(String host, int port, String oid, String version, String community) { }
 
-	private static DataSourceConfiguration snmpSource(EndpointPlan endpoint, MappingPlan mapping, int position,
+	private static Source snmpSource(EndpointPlan endpoint, MappingPlan mapping, int position,
 			AidTarget target, List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		SnmpForm form=snmpForm(target,true,mapping,path,issues);
 		if(form==null)return null;
 		// SNMP has no observation in the binding: a source is read (GET) at its polling interval.
-		SnmpDataSourceConfiguration source=new SnmpDataSourceConfiguration(entityId(mapping,"source",position),
-				form.host(),form.port(),form.oid(),form.version(),form.community());
-		source.setSourceId(endpoint.id());
-		source.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(source,target);
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				new SnmpEndpoint(form.host(),form.port(),form.oid(),form.version(),form.community()),Source.Delivery.READ,0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		if(endpoint.pollingInterval().present()) {
 			OptionalLong interval=endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues);
-			if(interval.isPresent())source.setPollingIntervalMs(interval.getAsLong());
+			if(interval.isPresent())source=source.withPollingIntervalMs(interval.getAsLong());
 		}
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	private static DataSinkConfiguration snmpSink(EndpointPlan endpoint, MappingPlan mapping, int position,
+	private static Sink snmpSink(EndpointPlan endpoint, MappingPlan mapping, int position,
 			AidTarget target, List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		SnmpForm form=snmpForm(target,false,mapping,path,issues);
 		if(form==null)return null;
-		SnmpDataSinkConfiguration sink=new SnmpDataSinkConfiguration(entityId(mapping,"sink",position),
-				form.host(),form.port(),form.oid(),form.version(),form.community());
-		sink.setSinkId(endpoint.id());
-		sink.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(sink,target);
+		Sink sink=new Sink(entityId(mapping,"sink",position),endpoint.id(),
+				new SnmpEndpoint(form.host(),form.port(),form.oid(),form.version(),form.community()))
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		return hasIssue(issues,mapping)?null:sink;
 	}
 
@@ -1830,7 +1703,7 @@ public final class ConnectorConfigurationFactory {
 		catch(java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException("SHA-256 unavailable",impossible); }
 	}
 
-	private static DataSourceConfiguration mqttSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source mqttSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,Plan plan,String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		Form form=mqttForm(target,mapping,path,"source",issues);
@@ -1840,20 +1713,20 @@ public final class ConnectorConfigurationFactory {
 		String topic=connection==null?null:mqttTopic(connection,form,mapping,path,issues);
 		Integer qos=mqttQos(form,mapping,path,issues);
 		if(connection==null || topic==null || hasIssue(issues,mapping))return null;
-		MqttDataSourceConfiguration source=new MqttDataSourceConfiguration(entityId(mapping,"source",position),
-				connection.host(),connection.port(),stableMqttClientId(plan,routeId,mapping,endpoint.id(),"source"),
-				topic,connection.username()==null?null:new BasicCredential(connection.username(),connection.password()));
-		source.setSourceId(endpoint.id()); source.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(source,target);
-		source.setQos(qos==null?MQTT_DEFAULT_QOS:qos);
+		MqttSubscription subscription=new MqttSubscription(connection.host(),connection.port(),
+				stableMqttClientId(plan,routeId,mapping,endpoint.id(),"source"),topic,
+				Credentials.of(connection.username(),connection.password()),qos==null?MQTT_DEFAULT_QOS:qos);
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),subscription,Source.Delivery.OBSERVED,0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		if(endpoint.pollingInterval().present()) {
 			OptionalLong interval=endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues);
-			if(interval.isPresent()) { source.setDelivery("sync"); source.setPollingIntervalMs(interval.getAsLong()); }
+			if(interval.isPresent()) source=new Source(source.id(),source.sourceId(),subscription,Source.Delivery.READ,
+					interval.getAsLong(),source.evaluation(),source.valuePath(),source.schema());
 		}
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	private static DataSinkConfiguration mqttSink(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Sink mqttSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,Plan plan,String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		Form form=mqttForm(target,mapping,path,"sink",issues); if(form==null)return null;
@@ -1863,18 +1736,16 @@ public final class ConnectorConfigurationFactory {
 		String topic=connection==null?null:mqttTopic(connection,form,mapping,path,issues);
 		Integer qos=mqttQos(form,mapping,path,issues); Boolean retain=mqttRetain(form,mapping,path,issues);
 		if(connection==null || topic==null || hasIssue(issues,mapping))return null;
-		MqttDataSinkConfiguration sink=new MqttDataSinkConfiguration(entityId(mapping,"sink",position),connection.host(),
-				connection.port(),topic,stableMqttClientId(plan,routeId,mapping,endpoint.id(),"sink"),
-				connection.username()==null?"":connection.username(),connection.password()==null?"":connection.password());
-		sink.setSinkId(endpoint.id()); sink.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(sink,target);
-		sink.setQos(qos==null?MQTT_DEFAULT_QOS:qos); if(retain!=null)sink.setRetained(retain);
-		return sink;
+		MqttPublication publication=new MqttPublication(connection.host(),connection.port(),topic,
+				stableMqttClientId(plan,routeId,mapping,endpoint.id(),"sink"),
+				Credentials.of(connection.username(),connection.password()),qos==null?MQTT_DEFAULT_QOS:qos,retain);
+		return new Sink(entityId(mapping,"sink",position),endpoint.id(),publication)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 	}
 
 	private record ProtocolBase(String host,int port,String servicePath,String username,String password,URI uri) { }
 
-	private static DataSourceConfiguration opcuaSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source opcuaSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,boolean readAtEvaluation,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if("event".equalsIgnoreCase(target.resolved().affordance().kind()))return opcuaEventSource(endpoint,mapping,position,target,issues);
@@ -1892,12 +1763,10 @@ public final class ConnectorConfigurationFactory {
 		boolean observed=!readAtEvaluation && AidForms.operations(target.resolved().affordance(),form).contains(AidForms.OBSERVE);
 		if(interval.isPresent())configuration.put("requestedPublishingInterval",Long.toString(interval.getAsLong()));
 		if(interval.isPresent() && observed)configuration.put("samplingInterval",Long.toString(interval.getAsLong()));
-		OpcuaDataSourceConfiguration source=new OpcuaDataSourceConfiguration(entityId(mapping,"source",position),
-				base.host(),base.port(),base.servicePath(),node,base.username(),base.password(),configuration);
-		source.setSourceId(endpoint.id()); source.setDelivery(observed?"async":"sync");
-		source.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(source,target);
-		if(interval.isPresent() && !observed) source.setPollingIntervalMs(interval.getAsLong());
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				OpcUaEndpoint.source(base.host(),base.port(),base.servicePath(),node,base.username(),base.password(),configuration),
+				observed?Source.Delivery.OBSERVED:Source.Delivery.READ,interval.isPresent() && !observed?interval.getAsLong():0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
@@ -1912,7 +1781,7 @@ public final class ConnectorConfigurationFactory {
 	 * the affordance-level {@code uav_eventType} is the where clause (OfType). PollingInterval sets
 	 * the publishing interval. Delivered like an MQTT event: one field map per notification.
 	 */
-	private static DataSourceConfiguration opcuaEventSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source opcuaEventSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		Form form=protocolForm(target,mapping,path,issues);if(form==null)return null;
@@ -1943,11 +1812,10 @@ public final class ConnectorConfigurationFactory {
 		if(eventType!=null)configuration.put("eventType","RAW("+eventType.trim()+")");
 		OptionalLong interval=endpoint.pollingInterval().present()?endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues):OptionalLong.empty();
 		if(interval.isPresent())configuration.put("requestedPublishingInterval",Long.toString(interval.getAsLong()));
-		OpcuaDataSourceConfiguration source=new OpcuaDataSourceConfiguration(entityId(mapping,"source",position),
-				base.host(),base.port(),base.servicePath(),notifier,base.username(),base.password(),configuration);
-		source.setSourceId(endpoint.id()); source.setDelivery("async");
-		source.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(source,target);
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				OpcUaEndpoint.source(base.host(),base.port(),base.servicePath(),notifier,base.username(),base.password(),configuration),
+				Source.Delivery.OBSERVED,0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
@@ -1968,7 +1836,7 @@ public final class ConnectorConfigurationFactory {
 		return owners.get(0);
 	}
 
-	private static DataSinkConfiguration opcuaSink(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Sink opcuaSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		if(!"property".equalsIgnoreCase(target.resolved().affordance().kind())) {
@@ -1977,14 +1845,12 @@ public final class ConnectorConfigurationFactory {
 		Form form=protocolForm(target,mapping,path,issues);if(form==null)return null;
 		ProtocolBase base=protocolBase(target,"opc.tcp",mapping,path,issues);if(base==null)return null;
 		String node=opcuaNode(form,mapping,path,issues);if(node==null)return null;
-		OpcuaDataSinkConfiguration sink=new OpcuaDataSinkConfiguration(entityId(mapping,"sink",position),base.host(),
-				base.port(),base.servicePath(),node,base.username(),base.password(),new LinkedHashMap<>());
-		sink.setSinkId(endpoint.id()); sink.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(sink,target);
-		return sink;
+		return new Sink(entityId(mapping,"sink",position),endpoint.id(),
+				OpcUaEndpoint.sink(base.host(),base.port(),base.servicePath(),node,base.username(),base.password(),Map.of()))
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 	}
 
-	private static DataSourceConfiguration plc4xSource(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Source plc4xSource(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		if(!"property".equalsIgnoreCase(target.resolved().affordance().kind())) {
@@ -1993,37 +1859,35 @@ public final class ConnectorConfigurationFactory {
 		Form form=protocolForm(target,mapping,path,issues);if(form==null)return null;
 		PlcTarget plc=plcTarget(target,form,false,mapping,path,issues);if(plc==null)return null;
 		List<Tag> tags=List.of(new Tag(target.resolved().affordance().idShort().value(),plc.address()));
-		Plc4xDataSourceConfiguration source=new Plc4xDataSourceConfiguration(entityId(mapping,"source",position),
-				plc.base().host(),plc.base().port(),plc.driver(),plc.base().servicePath(),plc.options(),tags);
-		source.setSourceId(endpoint.id()); source.setDelivery("sync"); source.setSchema(schemaForAidTarget(target,mapping,path,issues));
-		setValuePath(source,target);
+		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),
+				new Plc4xEndpoint(plc.base().host(),plc.base().port(),plc.driver(),plc.base().servicePath(),plc.options(),tags),
+				Source.Delivery.READ,0)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 		// modv_pollingTime is the device's maximum polling rate: a lower limit for the AIMC's interval
 		// (its own or the mapping's DefaultPollingInterval), never an interval of its own.
 		OptionalLong interval=endpoint.pollingInterval().present()
 				? endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues) : pollingMillis(mapping,new ArrayList<>());
-		if(interval.isPresent())source.setPollingIntervalMs(plc.pollingMs()==null?interval.getAsLong():Math.max(interval.getAsLong(),plc.pollingMs()));
+		if(interval.isPresent())source=source.withPollingIntervalMs(plc.pollingMs()==null?interval.getAsLong():Math.max(interval.getAsLong(),plc.pollingMs()));
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	private static DataSinkConfiguration plc4xSink(EndpointPlan endpoint,MappingPlan mapping,int position,
+	private static Sink plc4xSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			AidTarget target,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		if(!"property".equalsIgnoreCase(target.resolved().affordance().kind())) {
 			issue(issues,mapping,path,"Modbus command invocation is not represented by the PLC4X tag-write connector");return null;
 		}
-		Plc4xDataSinkConfiguration sink=plc4xTagSink(target,entityId(mapping,"sink",position),
-				target.resolved().affordance().idShort().value(),mapping,path,issues);
-		if(sink==null)return null;
-		sink.setSinkId(endpoint.id()); sink.setSchema(schemaForAidTarget(target,mapping,path,issues)); setValuePath(sink,target);
-		return sink;
+		Plc4xEndpoint tag=plc4xTag(target,target.resolved().affordance().idShort().value(),mapping,path,issues);
+		if(tag==null)return null;
+		return new Sink(entityId(mapping,"sink",position),endpoint.id(),tag)
+				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 	}
 
 	/** A PLC4X write of the one tag that the affordance's form addresses. */
-	private static Plc4xDataSinkConfiguration plc4xTagSink(AidTarget target,String uniqueId,String tagName,
-			MappingPlan mapping,String path,List<Issue> issues) {
+	private static Plc4xEndpoint plc4xTag(AidTarget target,String tagName,MappingPlan mapping,String path,List<Issue> issues) {
 		Form form=protocolForm(target,mapping,path,issues);if(form==null)return null;
 		PlcTarget plc=plcTarget(target,form,true,mapping,path,issues);if(plc==null)return null;
-		return new Plc4xDataSinkConfiguration(uniqueId,plc.base().host(),plc.base().port(),plc.driver(),plc.base().servicePath(),
+		return new Plc4xEndpoint(plc.base().host(),plc.base().port(),plc.driver(),plc.base().servicePath(),
 				plc.options(),List.of(new Tag(tagName,plc.address())));
 	}
 
@@ -2210,11 +2074,9 @@ public final class ConnectorConfigurationFactory {
 		return form.bindingTerms().get(name);
 	}
 
-	private static void setValuePath(DataSourceConfiguration configuration,AidTarget target) {
-		String pointer=jsonPointer(target.resolved().schemaPath()); if(pointer!=null)configuration.setValuePath(pointer);
-	}
-	private static void setValuePath(DataSinkConfiguration configuration,AidTarget target) {
-		String pointer=jsonPointer(target.resolved().schemaPath()); if(pointer!=null)configuration.setValuePath(pointer);
+	/** The JSON Pointer of the member of the affordance's payload {@code target} selects; null for the whole payload. */
+	private static String valuePath(AidTarget target) {
+		return jsonPointer(target.resolved().schemaPath());
 	}
 	private static String jsonPointer(List<String> tokens) {
 		if(tokens.isEmpty())return null;
@@ -2244,16 +2106,16 @@ public final class ConnectorConfigurationFactory {
 		}
 		return OptionalLong.of((long) millis);
 	}
-	private static Object schema(WireModel.Presence<DataSchema> presence) {
+	private static Map<String,Object> schema(WireModel.Presence<DataSchema> presence) {
 		return presence.present() && presence.value() != null ? schema(presence.value()) : null;
 	}
 
-	private static Object schemaOptional(DataSchema schema) { return schema == null ? null : schema(schema); }
+	private static Map<String,Object> schemaOptional(DataSchema schema) { return schema == null ? null : schema(schema); }
 
-	private static Object schemaForAidTarget(AidTarget target,MappingPlan mapping,String path,List<Issue> issues) {
-		Object base=schema(target.resolved().schema());
+	private static Map<String,Object> schemaForAidTarget(AidTarget target,MappingPlan mapping,String path,List<Issue> issues) {
+		Map<String,Object> base=schema(target.resolved().schema());
 		Map<String,Object> result=new LinkedHashMap<>();
-		if(base instanceof Map<?,?> map)map.forEach((key,value) -> result.put(String.class.cast(key),value));
+		if(base!=null)result.putAll(base);
 		// required is a data schema element (jsonschema:required), part of the schema above;
 		// an affordance qualifier with behaviour has no meaning the DMP could honour.
 		for(Qualifier qualifier:Aas.nonNull(target.resolved().affordance().element().getQualifiers()))

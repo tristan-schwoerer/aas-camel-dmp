@@ -24,19 +24,23 @@
  ******************************************************************************/
 package dk.aau.smartproductionlab.dmp.aas.operation;
 
-import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import org.apache.camel.builder.RouteBuilder;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreator;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
-import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.AffordanceValidation;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanIn;
+import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkTargets;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.SourceReads;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.PlanBuild;
+import dk.aau.smartproductionlab.dmp.aas.model.Aas;
+import org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,8 +49,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>
  * Applies to every operation-delegation mapping: the descriptor derives the
- * caller-facing REST surface by convention and carries {@code restPath}/
- * {@code restMethod} in generic route trigger data. This AAS connector emits
+ * caller-facing REST surface by convention ({@link OperationRoute.Identity#restPath()},
+ * served with POST). This AAS connector emits
  * the REST consumer and completes the accepted Operation invocation. Target
  * request/reply behavior is delegated to registered connector adapters:
  * <pre>
@@ -60,69 +64,38 @@ import org.slf4j.LoggerFactory;
  * The interactive consumer joins the DMP's consolidated REST surface
  * (camel-rest with jetty, same port as {@code /health}).
  */
-public class ProtocolBridgeRouteCreator implements RouteCreator {
+public class ProtocolBridgeRouteCreator {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(ProtocolBridgeRouteCreator.class);
 	private static final String CONTENT_TYPE_JSON = "application/json";
 
 	private final RouteBuilder routeBuilder;
-	private final RoutesConfiguration routesConfiguration;
+	private final PlanBuild build;
 
-	public ProtocolBridgeRouteCreator(RouteBuilder routeBuilder, RoutesConfiguration routesConfiguration) {
+	public ProtocolBridgeRouteCreator(RouteBuilder routeBuilder) {
 		this.routeBuilder = routeBuilder;
-		this.routesConfiguration = routesConfiguration;
+		this.build = PlanBuild.of(routeBuilder);
 	}
 
-	@Override
-	public void addRouteToRouteBuilder(RouteConfiguration routeConfig) {
-		ProtocolBridgeRouteConfiguration bridgeConfig = routeConfig instanceof ProtocolBridgeRouteConfiguration typed
-				? typed : new ProtocolBridgeRouteConfiguration(routeConfig);
+	public void create(OperationRoute bridge) {
+		String routeId = bridge.routeId();
+		String restPath = bridge.identity().restPath();
+		String action = bridge.identity().action();
+		OperationRoute.Command command = bridge.command();
+		OperationRoute.Caller caller = bridge.caller();
+		Response response = bridge.response();
 
-		String restPath = bridgeConfig.getRestPath();
-		if (restPath == null || restPath.isBlank()) {
-			LOGGER.warn("bridge {}: no derived operation path (triggerData.restPath); skipping",
-					bridgeConfig.getRouteId());
-			return;
-		}
-
-		String[] requestTransformers = RouteCreatorHelper.getDataTransformerEndpoints(
-				routesConfiguration, bridgeConfig.getTransformers(), "bridge");
-		String requestLuaUri = requestTransformers.length == 0 ? null : requestTransformers[0];
-		String[] responseTransformers = bridgeConfig.getResponseTransformer() == null ? new String[0]
-				: RouteCreatorHelper.getDataTransformerEndpoints(routesConfiguration,
-						Collections.singletonList(bridgeConfig.getResponseTransformer()), "bridge");
-		String responseLuaUri = responseTransformers.length == 0 ? null : responseTransformers[0];
-		java.util.List<String> commandSinkIds = bridgeConfig.getCommandSinkIds();
-		String commandSinkUri = firstSinkUri(commandSinkIds);
-		AffordanceValidation commandValidation = commandValidation(commandSinkIds);
-		java.util.List<java.util.Map<String, Object>> responseSinkTargets = ResponseSinkTargets.resolve(
-				routeBuilder, routesConfiguration, bridgeConfig.getRouteId(), bridgeConfig.getResponseSinkBindings());
-		java.util.List<java.util.Map<String, Object>> responseSourceBindings =
-				bridgeConfig.getResponseSourceBindings();
-		java.util.List<String> commandSourceIds = bridgeConfig.getCommandSinkBindings().stream()
-				.map(binding -> String.valueOf(binding.get("sinkId"))).toList();
-		java.util.Map<String, String> commandValuePaths = new java.util.LinkedHashMap<>();
-		for (java.util.Map<String, Object> binding : bridgeConfig.getCommandSinkBindings()) {
-			if (binding.get("valuePath") != null) {
-				commandValuePaths.put(String.valueOf(binding.get("sinkId")),
-						String.valueOf(binding.get("valuePath")));
-			}
-		}
-		if (requestLuaUri == null || commandSinkUri == null) {
-			LOGGER.warn("bridge {}: missing transformer/sink endpoints; skipping",
-					bridgeConfig.getRouteId());
-			return;
-		}
-
-		String action = bridgeConfig.getAction();
-		if (action == null || action.isBlank()) {
-			LOGGER.warn("bridge {}: descriptor has no resolved action name; skipping",
-					bridgeConfig.getRouteId());
-			return;
-		}
-		String routeId = bridgeConfig.getRouteId();
-		if (routeId == null || routeId.isBlank())
-			throw new IllegalArgumentException("bridge for " + action + " has no route id");
+		String requestLuaUri = build.uri(bridge.requestTransformation());
+		String responseLuaUri = response == null ? null : build.uri(response.transformation());
+		String commandSinkUri = build.uri(command.sink().endpoint());
+		AffordanceValidation commandValidation = commandValidation(command.sink());
+		List<ResponseSinkFanOutProcessor.Target> responseSinkTargets = response == null ? List.of()
+				: ResponseSinkTargets.resolve(routeBuilder, build, routeId, response.sinks());
+		List<Response.ResponseSource> responseSourceBindings = response == null ? List.of() : response.sources();
+		List<String> commandSourceIds = command.members().stream().map(OperationRoute.Command.Member::sinkId).toList();
+		Map<String, String> commandValuePaths = new LinkedHashMap<>();
+		for (OperationRoute.Command.Member member : command.members())
+			if (member.valuePath() != null) commandValuePaths.put(member.sinkId(), member.valuePath());
 		String method = "POST";
 
 		// 1. Interactive consumer (consolidated camel-rest surface), emitted
@@ -140,31 +113,31 @@ public class ProtocolBridgeRouteCreator implements RouteCreator {
 
 		OperationContext operationContext = OperationContext.builder(action, commandSinkUri)
 				.responseLuaUri(responseLuaUri)
-				.parameterTypes(bridgeConfig.getParameterTypes())
-				.responseTypes(bridgeConfig.getResponseTypes())
-				.callerResponseTypes(bridgeConfig.getCallerResponseTypes())
-				.callerOutputOrder(bridgeConfig.getCallerOutputOrder())
-				.callerInputTemplates(bridgeConfig.getCallerInputTemplates())
-				.callerOutputTemplates(bridgeConfig.getCallerOutputTemplates())
-				.callerInputSourcePaths(bridgeConfig.getCallerInputSourcePaths())
-				.callerReplyBindings(bridgeConfig.getCallerReplyBindings())
-				.callerReplySinkId(bridgeConfig.getCallerReplySinkId())
+				.parameterTypes(command.parameterTypes())
+				.responseTypes(command.responseTypes())
+				.callerResponseTypes(caller.responseTypes())
+				.callerOutputOrder(caller.outputOrder())
+				.callerInputTemplates(templates(caller.inputTemplates()))
+				.callerOutputTemplates(templates(caller.outputTemplates()))
+				.callerInputSourcePaths(caller.inputSourcePaths())
+				.callerReplyBindings(caller.replyBindings())
+				.callerReplySinkId(caller.replySinkId())
 				.commandSinkIds(commandSourceIds)
 				.commandSinkValuePaths(commandValuePaths)
-				.explicitResponseMapping(bridgeConfig.isExplicitResponseMapping())
-				.parameterRequired(bridgeConfig.getParameterRequired())
-				.responseRequired(bridgeConfig.getResponseRequired())
-				.targetOptions(bridgeConfig.getTargetOptions())
+				.explicitResponseMapping(response != null)
+				.parameterRequired(command.parameterRequired())
+				.responseRequired(command.responseRequired())
+				.propertyWrite(command.propertyWrite())
+				.jsonPayload(command.sink().jsonPayload())
+				.targetOptions(command.connectorOptions())
 				.build();
 		SyncOperationProcessor operation = new SyncOperationProcessor(routeBuilder.getContext(), operationContext,
-				commandValidation, new AffordanceValidation(bridgeConfig.getResponseSchema(),
+				commandValidation, new AffordanceValidation(command.responseSchema(),
 						"bridge output " + action), responseSourceBindings, responseSinkTargets, routeId);
-		operation.setOperationIdentity(bridgeConfig.getOperationIdentity());
+		operation.setOperationIdentity(bridge.identity().tags());
 		// Fan-in: AAS elements read at invocation, decoded like ordinary sources (SPEC §5.4).
-		java.util.List<java.util.Map<String, Object>> fanIn = bridgeConfig.getFanInSources();
-		FanIn decoder = fanIn.isEmpty() ? null : new FanIn(new RouteConfiguration(ProtocolBridgeRouteConfiguration.ROUTE_TRIGGER,
-				fanIn.stream().map(binding -> String.valueOf(binding.get("dataSourceId"))).toList(),
-				java.util.List.of(), java.util.List.of()), routesConfiguration);
+		List<Source> fanIn = bridge.fanIn();
+		FanIn decoder = fanIn.isEmpty() ? null : new FanIn(routeId, fanIn, Map.of());
 		if (decoder != null && routeBuilder instanceof DmpRouteBuilder managed) managed.registerManagedResource(decoder);
 		registerManagedResource(operation);
 		String responseWriteRouteId = routeId + "-response-write";
@@ -186,12 +159,12 @@ public class ProtocolBridgeRouteCreator implements RouteCreator {
 		var flow = operationRoute.doTry();
 		flow.process(operation::prepareRequest);
 		for (int i = 0; i < fanIn.size(); i++) {
-			String sourceId = String.valueOf(fanIn.get(i).get("sourceId"));
-			flow.enrich(SourceReads.route(routeBuilder, routesConfiguration, routeId + "-fan-in", i,
-					String.valueOf(fanIn.get(i).get("dataSourceId")), decoder), SourceReads.into(sourceId));
+			Source source = fanIn.get(i);
+			flow.enrich(SourceReads.route(routeBuilder, build, routeId + "-fan-in", i, source, decoder),
+					SourceReads.into(source.sourceId()));
 		}
 		flow.process(operation::keepRequestSources)
-				.to(requestTransformers)
+				.to(requestLuaUri)
 				.process(operation::keepRequestResult);
 		// The device call: the connector's steps run in the command route on a copy of the
 		// exchange (Content Enricher), so caller headers never reach the device. The
@@ -229,6 +202,13 @@ public class ProtocolBridgeRouteCreator implements RouteCreator {
 				operationContext.callerOutputOrder);
 	}
 
+	/** Declared variables as fresh model elements: each build gets copies of its own. */
+	private static Map<String, SubmodelElement> templates(Map<String, String> json) {
+		Map<String, SubmodelElement> templates = new LinkedHashMap<>();
+		json.forEach((name, element) -> templates.put(name, Aas.read(element, SubmodelElement.class)));
+		return templates;
+	}
+
 	private static void encodeRestResponse(org.apache.camel.Exchange exchange) {
 		if (Boolean.TRUE.equals(exchange.getProperty(OperationPayloads.OPERATION_DELEGATION_FAILED))) return;
 		exchange.getMessage().setBody(OperationPayloads.encodeReply(exchange.getMessage().getBody()));
@@ -249,18 +229,8 @@ public class ProtocolBridgeRouteCreator implements RouteCreator {
 		if (routeBuilder instanceof DmpRouteBuilder managed) managed.registerManagedResource(operation);
 	}
 
-	private AffordanceValidation commandValidation(java.util.List<String> sinkIds) {
-		DataSinkConfiguration sink = sinkIds == null || sinkIds.isEmpty() ? null
-				: routesConfiguration.getDatasinks().get(sinkIds.get(0));
-		return new AffordanceValidation(sink == null ? null
-				: sink.getPayloadSchema() != null ? sink.getPayloadSchema() : sink.getSchema(),
-				"bridge sink " + (sinkIds == null || sinkIds.isEmpty() ? "unknown" : sinkIds.get(0)));
-	}
-
-	private String firstSinkUri(java.util.List<String> sinkIds) {
-		if (sinkIds == null || sinkIds.isEmpty()) {
-			return null;
-		}
-		return RouteCreatorHelper.getDataSinkEndpoints(routesConfiguration, sinkIds, "bridge")[0];
+	private static AffordanceValidation commandValidation(Sink sink) {
+		return new AffordanceValidation(sink.payloadSchema() != null ? sink.payloadSchema() : sink.schema(),
+				"bridge sink " + sink.id());
 	}
 }

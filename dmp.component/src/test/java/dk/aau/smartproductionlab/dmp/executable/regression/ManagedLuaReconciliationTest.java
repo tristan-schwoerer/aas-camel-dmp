@@ -28,12 +28,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.camel.CamelContext;
 import org.apache.camel.builder.RouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import dk.aau.smartproductionlab.dmp.lua.component.LuaEndpoint;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
-import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler.Plan;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import dk.aau.smartproductionlab.dmp.management.repository.MappingReconciliationService;
 import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery;
@@ -200,15 +198,16 @@ class ManagedLuaReconciliationTest {
 			var compiled = new CountDownLatch(1);
 			var release = new CountDownLatch(1);
 			var armed = new AtomicBoolean(false);
-			var staleDefinition = new AtomicReference<RoutesConfiguration>();
-			fixture.replaceService(candidate -> () -> {
-				var configuration = fixture.definition(candidate);
+			var staleScan = new AtomicReference<RepositoryDiscovery.Scan>();
+			// A scan compiles each mapping once; the stale pass is held after compiling the stale scripts.
+			fixture.replaceService(() -> {
+				var scan = fixture.discovery.scan();
 				if (armed.getAndSet(false)) {
-					staleDefinition.set(configuration);
+					staleScan.set(scan);
 					compiled.countDown();
 					await(release);
 				}
-				return configuration;
+				return scan;
 			});
 			fixture.service.reconcileNow();
 			var oldBindings = fixture.bindings();
@@ -225,8 +224,9 @@ class ManagedLuaReconciliationTest {
 				assertTrue(stale.get(5, TimeUnit.SECONDS).superseded());
 				var result = latest.get(5, TimeUnit.SECONDS);
 				assertFalse(result.superseded());
-				assertTrue(staleDefinition.get().getTransformers().values().stream()
-						.map(LuaTransformerConfiguration.class::cast).noneMatch(LuaTransformerConfiguration::isManagedSourceBound));
+				var bound = fixture.bindings().values();
+				assertTrue(sources(staleScan.get()).stream().noneMatch(script -> bound.stream().anyMatch(source -> source == script)),
+						"the stale compiled scripts are never bound");
 				for (var name : oldBindings.keySet()) assertNull(fixture.runtime.context().getRegistry().lookupByName(name));
 				if (remove) {
 					assertEquals(1, result.removed());
@@ -322,15 +322,9 @@ class ManagedLuaReconciliationTest {
 	private static List<LuaCompiledSource> sources(RepositoryDiscovery.Scan scan) {
 		assertTrue(scan.complete());
 		assertTrue(scan.failures().isEmpty(), scan.failures().toString());
-		return scan.mappings().values().stream().flatMap(candidate -> candidate.desired().bundle().configuration()
-				.getTransformers().values().stream()).map(LuaTransformerConfiguration.class::cast)
-				.map(configuration -> {
-					try {
-						var field = LuaTransformerConfiguration.class.getDeclaredField("managedSource");
-						field.setAccessible(true);
-						return (LuaCompiledSource) field.get(configuration);
-					} catch (ReflectiveOperationException failure) { throw new AssertionError(failure); }
-				}).toList();
+		return scan.mappings().values().stream().flatMap(candidate -> candidate.desired().bundle().route()
+				.endpoints().stream()).filter(LuaScript.class::isInstance).map(script -> ((LuaScript) script).source())
+				.toList();
 	}
 
 	private static void assertReply(HttpResponse<String> response, String expected) {
@@ -401,19 +395,12 @@ class ManagedLuaReconciliationTest {
 					from("direct:r3-fixture-health").routeId("r3-fixture-health").setBody(constant("ready"));
 				}
 			});
-			service = new MappingReconciliationService(runtime, discovery, settings, 32, 16, 60_000);
+			service = new MappingReconciliationService(runtime, discovery, 32, 16, 60_000);
 		}
 
-		void replaceService(MappingReconciliationService.DefinitionFactory definitions) {
+		void replaceService(MappingReconciliationService.ScanProvider scans) {
 			service.close();
-			service = new MappingReconciliationService(runtime, () -> discovery.scan(), definitions, 32, 16, 60_000);
-		}
-
-		RoutesConfiguration definition(RepositoryDiscovery.MappingCandidate candidate) {
-			var result = new ConnectorConfigurationFactory().createBundles(new Plan(candidate.key().aimcId(),
-					List.of(candidate.desired().desired().plan())), settings);
-			assertTrue(result.issues().isEmpty(), result.issues().toString());
-			return result.bundles().get(0).configuration();
+			service = new MappingReconciliationService(runtime, scans, 32, 16, 60_000);
 		}
 
 		void version(String version) throws Exception {

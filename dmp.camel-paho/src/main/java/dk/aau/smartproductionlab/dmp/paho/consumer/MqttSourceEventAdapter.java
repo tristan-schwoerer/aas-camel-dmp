@@ -7,25 +7,20 @@ import java.util.Map;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
 /** Decodes MQTT payload bytes only when the transport/schema declares JSON. */
-public final class MqttSourceEventAdapter implements SourceEventAdapter {
-	@Override
-	public String sourceKind() { return "mqtt"; }
-
-	@Override
-	public Processor normalizer(DataSourceConfiguration configuration) {
+public final class MqttSourceEventAdapter {
+	public Processor normalizer(Source source) {
 		return exchange -> {
 			Object body = exchange.getMessage().getBody();
-			boolean json = jsonContent(exchange) || jsonSchema(configuration.getSchema());
-			Object normalized = decode(body, json, textSchema(configuration.getSchema()));
+			boolean json = jsonContent(exchange) || jsonSchema(source.schema());
+			Object normalized = decode(body, json, textSchema(source.schema()));
 			exchange.getMessage().setBody(normalized);
-			exchange.setProperty(NORMALIZED_VALUE_PROPERTY, true);
-			exchange.setProperty(CONTRIBUTION_PROPERTY, normalized != null);
+			exchange.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
+			exchange.setProperty(Source.CONTRIBUTION_PROPERTY, normalized != null);
 		};
 	}
 

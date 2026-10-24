@@ -26,11 +26,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.camel.builder.RouteBuilder;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASDatasinkConfiguration;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -38,8 +35,6 @@ import dk.aau.smartproductionlab.dmp.management.repository.AasReferenceResolver;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import dk.aau.smartproductionlab.dmp.management.repository.FakeAasRepository;
 import dk.aau.smartproductionlab.dmp.management.repository.PublishedModels;
-import dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.paho.configuration.MqttDataSourceConfiguration;
 import org.eclipse.milo.opcua.sdk.server.AddressSpaceFilter;
 import org.eclipse.milo.opcua.sdk.server.EndpointConfig;
 import org.eclipse.milo.opcua.sdk.server.ManagedAddressSpaceFragmentWithLifecycle;
@@ -116,12 +111,12 @@ class ManagedProtocolOutcomeParityTest {
             repository.respond("Reply", "Calibrate", "function aimc_main(sources) local reply = sources.Reply "
                     + "return { Calibrate = { Calibrate = reply.Calibrate, State = reply.State, Label = reply.Label, "
                     + "Count = reply.Count } } end");
-            RoutesConfiguration plan = repository.compile();
+            RoutePlan plan = repository.compile();
             JsonObject fullCci = json(repository.models.get("a/submodels/ControlComponentInstance")).getAsJsonObject();
             child(child(child(fullCci, "Skills"), "Calibrate"), "operation").remove("outputVariables");
             repository.models.put("a/submodels/ControlComponentInstance", fullCci.toString());
             repository.withoutResponse();
-            RoutesConfiguration nativePlan = repository.compile();
+            RoutePlan nativePlan = repository.compile();
             runtime.startComponent();
             int port = freePort();
             runtime.listener(port);
@@ -232,7 +227,7 @@ class ManagedProtocolOutcomeParityTest {
                     + device.getAddress().getPort() + "/plc/api", Map.of(cciId, cci.toString()))) {
                 repository.respond("Reply", "Restart", "function aimc_main(sources) local reply = sources.Reply "
                         + "return { Restart = { Uuid = reply.Uuid, State = reply.State, Count = reply.Count } } end");
-                RoutesConfiguration plan = repository.compile();
+                RoutePlan plan = repository.compile();
                 runtime.startComponent();
                 int port = freePort();
                 runtime.listener(port);
@@ -348,7 +343,7 @@ class ManagedProtocolOutcomeParityTest {
         Runtime runtime = new Runtime();
         try (Repository repository = new Repository("http-operation", "http://127.0.0.1:"
                 + device.getAddress().getPort() + "/plc/api")) {
-            RoutesConfiguration javaPlan = repository.compile();
+            RoutePlan javaPlan = repository.compile();
             runtime.startComponent();
             int port = freePort();
             runtime.listener(port);
@@ -357,7 +352,7 @@ class ManagedProtocolOutcomeParityTest {
             HttpClient caller = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
             List<String> payloads = List.of("{\"Restart\":{\"x\":1},\"text\":\"001\",\"flag\":true,\"nil\":null}",
                     "{\"Restart\":[false,2,\"002\",null],\"0\":\"object-key\"}", "{}", "{\"last\":4}");
-            for (RoutesConfiguration configuration : List.of(javaPlan)) {
+            for (RoutePlan configuration : List.of(javaPlan)) {
                 int before = sends.get();
                 var owner = runtime.installBundle("exclusive-http-parity", configuration);
                 List<Request> observedCommands = new ArrayList<>();
@@ -407,13 +402,13 @@ class ManagedProtocolOutcomeParityTest {
                 writes.add(request(exchange));
                 respond(exchange, 200, "{}");
             });
-            RoutesConfiguration javaPlan = repository.compile();
+            RoutePlan javaPlan = repository.compile();
             runtime.startComponent();
             int baselineRoutes = runtime.routes();
             int baselineEndpoints = runtime.endpoints();
             String path = "/submodels/" + Base64.getUrlEncoder().withoutPadding().encodeToString("contractAAS/submodels/KPI"
                     .getBytes(StandardCharsets.UTF_8)) + "/submodel-elements/";
-            for (RoutesConfiguration configuration : List.of(javaPlan)) {
+            for (RoutePlan configuration : List.of(javaPlan)) {
                 var owner = runtime.installBundle("exclusive-mqtt-parity", configuration);
                 List<Request> observedWrites = new ArrayList<>();
                 try {
@@ -553,7 +548,7 @@ class ManagedProtocolOutcomeParityTest {
             edit.accept(child(aimc, "MappingConfigurations").getAsJsonArray("value").get(0).getAsJsonObject());
             models.put(id, aimc.toString());
         }
-        RoutesConfiguration compile() throws Exception {
+        RoutePlan compile() throws Exception {
             var client = repository.client();
             String aimc = models.values().stream().filter(model -> json(model).getAsJsonObject().toString()
                     .contains("AssetInterfacesMappingConfiguration/2/0/Submodel")).findFirst().orElseThrow();
@@ -563,7 +558,7 @@ class ManagedProtocolOutcomeParityTest {
                     new ConnectorConfigurationFactory.RuntimeSettings(base));
             assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
             assertEquals(1, compiled.bundles().size());
-            return compiled.bundles().get(0).configuration();
+            return compiled.bundles().get(0).route();
         }
         @Override public void close() { server.stop(0); repository.close(); }
     }

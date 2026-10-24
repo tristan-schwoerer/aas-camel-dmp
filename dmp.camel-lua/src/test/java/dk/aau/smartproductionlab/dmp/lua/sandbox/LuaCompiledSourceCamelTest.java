@@ -13,20 +13,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
 import org.junit.jupiter.api.Test;
 
 class LuaCompiledSourceCamelTest extends CamelTestSupport {
 	@Test
 	void keyedInputPreservesExactAuthoredKeysAndPayloadLevels() throws Exception {
 		String script = "function aimc_main(sources) return { result = sources } end";
-		var configuration = new LuaTransformerConfiguration("exact-keys",
-				LuaCompiledSource.fromBytes(script.getBytes(StandardCharsets.UTF_8), "exact-keys", 256));
+		var configuration = new LuaBinding(LuaCompiledSource.fromBytes(script.getBytes(StandardCharsets.UTF_8), "exact-keys", 256));
 		configuration.bind(context);
 		try {
 			context.addRoutes(new RouteBuilder() {
 				@Override public void configure() {
-					from("direct:exact-keys").to(configuration.getConnectionURI());
+					from("direct:exact-keys").to(configuration.uri());
 				}
 			});
 			context.start();
@@ -53,13 +52,13 @@ class LuaCompiledSourceCamelTest extends CamelTestSupport {
 					compileCount.incrementAndGet();
 					return CompiledLuaScript.compile(script, identity);
 				});
-		LuaTransformerConfiguration configuration = new LuaTransformerConfiguration("compile-once", source);
+		LuaBinding configuration = new LuaBinding(source);
 		configuration.bind(context);
 		try {
 			context.addRoutes(new RouteBuilder() {
 				@Override
 				public void configure() {
-					from("direct:managed").to(configuration.getConnectionURI());
+					from("direct:managed").to(configuration.uri());
 				}
 			});
 			context.start();

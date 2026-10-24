@@ -9,28 +9,27 @@ import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvo
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SynchronousInvocationAdapter;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 
-/** MQTT 5 invocation binding: request/reply with reply normalization, or a one-way invoke-only publish. */
+/**
+ * MQTT 5 invocation binding on {@code dmp-paho-mqtt5:} ({@code MqttAction}): request/reply with
+ * reply normalization when the endpoint declares a reply topic, or a one-way invoke-only publish.
+ */
 public final class MqttSynchronousInvocationAdapter implements SynchronousInvocationAdapter {
-	private static final String SINK_SCHEME = "paho-mqtt5:";
-	/** A request/reply sink the compiler already built (MqttV5OperationDataSinkConfiguration). */
-	private static final String INOUT_SCHEME = "paho-mqtt5-inout:";
-	/** A sink's bound credentials, referenced as two beans; the InOut endpoint takes the binding by name. */
-	private static final java.util.regex.Pattern CREDENTIALS =
-			java.util.regex.Pattern.compile("userName=#bean:([^&]+)\\.user&password=#bean:\\1\\.password");
+	private static final String SCHEME = DmpPahoMqtt5Component.SCHEME + ":";
 
 	@Override
 	public boolean supports(String endpointUri) {
-		return endpointUri != null && (endpointUri.startsWith(SINK_SCHEME) || endpointUri.startsWith(INOUT_SCHEME));
+		return endpointUri != null && endpointUri.startsWith(SCHEME);
 	}
 
 	@Override
 	public java.util.Set<String> ownedEndpointUris(String endpointUri, InvocationSchema schema) {
-		return java.util.Set.of(invocationUri(endpointUri, schema));
+		if (!invokeOnly(schema)) requireReplyTopic(endpointUri);
+		return java.util.Set.of(endpointUri);
 	}
 
 	@Override
 	public void configureInvoke(ProcessorDefinition<?> route, String endpointUri, InvocationSchema schema) {
-		if (invokeOnly(endpointUri, schema)) {
+		if (invokeOnly(schema)) {
 			// No reply topic: the command is published one way; the broker's acknowledgement
 			// (QoS 1/2) ends the call, and the action has no output.
 			route.doTry()
@@ -43,8 +42,9 @@ public final class MqttSynchronousInvocationAdapter implements SynchronousInvoca
 				.end();
 			return;
 		}
+		requireReplyTopic(endpointUri);
 		route.doTry()
-				.to(ExchangePattern.InOut, invocationUri(endpointUri, schema))
+				.to(ExchangePattern.InOut, endpointUri)
 				.process(exchange -> exchange.getMessage().setBody(reply(exchange.getMessage().getBody())))
 			.doCatch(Exception.class)
 				.process(exchange -> {
@@ -67,23 +67,19 @@ public final class MqttSynchronousInvocationAdapter implements SynchronousInvoca
 	}
 
 	/** An action the compiler bound without a reply topic (requestReply=false). */
-	private static boolean invokeOnly(String endpointUri, InvocationSchema schema) {
-		return endpointUri.startsWith(INOUT_SCHEME) && Boolean.FALSE.equals(schema.connectorOptions().get("requestReply"));
+	private static boolean invokeOnly(InvocationSchema schema) {
+		return Boolean.FALSE.equals(schema.connectorOptions().get("requestReply"));
 	}
 
-	private static String invocationUri(String endpointUri, InvocationSchema schema) {
-		if (endpointUri.startsWith(INOUT_SCHEME)) return endpointUri;
-		Object requestReply = schema.connectorOptions().get("requestReply");
-		Object topic = schema.connectorOptions().get("responseTopic");
-		if (!Boolean.TRUE.equals(requestReply) || topic == null || String.valueOf(topic).isBlank()) {
+	/** A request/reply needs the reply topic its endpoint subscribes. */
+	private static void requireReplyTopic(String endpointUri) {
+		int query = endpointUri.indexOf('?');
+		if (query < 0 || java.util.Arrays.stream(endpointUri.substring(query + 1).split("&"))
+				.noneMatch(option -> option.startsWith("replyTopic=") && option.length() > "replyTopic=".length())) {
 			throw new ConnectorInvocationException(ConnectorInvocationException.Category.CONFIGURATION,
 					"MQTT_REQUEST_REPLY_NOT_DECLARED",
 					"MQTT action form must declare request/reply and a response topic", Map.of());
 		}
-		long timeout = number(schema.connectorOptions().get("timeoutSeconds"), 30);
-		String options = CREDENTIALS.matcher(endpointUri.substring(SINK_SCHEME.length())).replaceAll("credentials=$1");
-		// The first reply carrying the request's correlation data is the terminal reply.
-		return "paho-mqtt5-inout:" + options + "&replyTopic=" + topic + "&replyTimeout=" + timeout;
 	}
 
 	static ConnectorInvocationException connectorFailure(Throwable failure) {
@@ -115,12 +111,6 @@ public final class MqttSynchronousInvocationAdapter implements SynchronousInvoca
 			if (cause.getCause() == cause) break;
 		}
 		return false;
-	}
-
-	private static long number(Object value, long fallback) {
-		if (value instanceof Number number) return number.longValue();
-		try { return value == null ? fallback : Long.parseLong(String.valueOf(value)); }
-		catch (NumberFormatException e) { return fallback; }
 	}
 
 	private static Map<String, Object> stringMap(Map<?, ?> value) {

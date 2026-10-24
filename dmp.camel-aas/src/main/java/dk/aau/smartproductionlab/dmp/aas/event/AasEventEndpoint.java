@@ -6,7 +6,6 @@
 package dk.aau.smartproductionlab.dmp.aas.event;
 
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
 
 import org.apache.camel.Consumer;
 import org.apache.camel.Exchange;
@@ -14,8 +13,10 @@ import org.apache.camel.Processor;
 import org.apache.camel.Producer;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.DefaultEndpoint;
+import dk.aau.smartproductionlab.dmp.core.execution.DmpExecutors;
+import dk.aau.smartproductionlab.dmp.core.execution.SerialLane;
 
-/** Consumer-only endpoint for one repository element; events are delivered in order on one thread. */
+/** Consumer-only endpoint for one repository element; each consumer processes its events in order on the shared workers. */
 final class AasEventEndpoint extends DefaultEndpoint implements org.apache.camel.MultipleConsumersSupport {
 	private final AasEventComponent component;
 	private final String submodelId;
@@ -42,37 +43,51 @@ final class AasEventEndpoint extends DefaultEndpoint implements org.apache.camel
 	}
 
 	private final class EventConsumer extends DefaultConsumer implements AasEventHub.Listener {
-		private ExecutorService executor;
+		/** Events this element may have waiting; one more replaces the newest (it carries the newer value). */
+		private static final int PENDING_EVENTS = 1024;
+		private volatile SerialLane<Delivery> lane;
+
+		/** One event with the headers it arrived with. */
+		private record Delivery(com.google.gson.JsonObject event, Map<String, Object> headers) { }
 
 		EventConsumer(AasEventEndpoint endpoint, Processor processor) { super(endpoint, processor); }
 
 		@Override public String submodelId() { return submodelId; }
 		@Override public String idShortPath() { return idShortPath; }
 
+		/** Returns at once: the event is processed on a shared worker, after the ones before it. */
 		@Override public void deliver(com.google.gson.JsonObject event, Map<String, Object> headers) {
-			ExecutorService current = executor;
-			if (current == null || current.isShutdown()) return;
-			current.execute(() -> {
-				Exchange exchange = createExchange(false);
-				exchange.getMessage().setHeaders(new java.util.HashMap<>(headers));
-				exchange.getMessage().setBody(event);
-				try { getProcessor().process(exchange); }
-				catch (Exception failure) { exchange.setException(failure); }
-				if (exchange.getException() != null) getExceptionHandler().handleException("AAS element event failed", exchange, exchange.getException());
-				releaseExchange(exchange, false);
-			});
+			SerialLane<Delivery> current = lane;
+			if (current != null) current.submit(new Delivery(event, headers));
+		}
+
+		private void process(Delivery delivery) {
+			Exchange exchange = createExchange(false);
+			exchange.getMessage().setHeaders(new java.util.HashMap<>(delivery.headers()));
+			exchange.getMessage().setBody(delivery.event());
+			try { getProcessor().process(exchange); }
+			catch (Exception failure) { exchange.setException(failure); }
+			if (exchange.getException() != null) getExceptionHandler().handleException("AAS element event failed", exchange, exchange.getException());
+			releaseExchange(exchange, false);
 		}
 
 		@Override protected void doStart() throws Exception {
 			super.doStart();
-			executor = getEndpoint().getCamelContext().getExecutorServiceManager().newSingleThreadExecutor(this, "aas-event");
+			lane = new SerialLane<>("AAS events of " + submodelId + " " + idShortPath,
+					DmpExecutors.of(getEndpoint().getCamelContext()).workers(), PENDING_EVENTS, this::process,
+					(older, newer) -> newer);
 			component.hub().register(this);
 		}
 
 		@Override protected void doStop() throws Exception {
 			component.hub().unregister(this);
-			if (executor != null) getEndpoint().getCamelContext().getExecutorServiceManager().shutdown(executor);
-			executor = null;
+			SerialLane<Delivery> current = lane;
+			lane = null;
+			// An event being processed ends before the route's downstream may stop; waiting ones are dropped.
+			if (current != null) {
+				current.close();
+				current.drain(java.time.Duration.ofSeconds(30));
+			}
 			super.doStop();
 		}
 	}

@@ -580,7 +580,7 @@ public final class WireProjection {
 		SubmodelElement mode = directChild(evaluation, "Mode", at);
 		if (!(mode instanceof Property property) || property.getValue() == null)
 			throw error(at + "/Mode", "must be a Property with a value");
-		if (dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation.ofAuthored(property.getValue()) == null)
+		if (dk.aau.smartproductionlab.dmp.core.plan.Evaluation.ofAuthored(property.getValue()) == null)
 			throw error(at + "/Mode", "expected OnUpdate, OnChange, Cached or ReadAtEvaluation");
 		return Presence.of(property.getValue());
 	}

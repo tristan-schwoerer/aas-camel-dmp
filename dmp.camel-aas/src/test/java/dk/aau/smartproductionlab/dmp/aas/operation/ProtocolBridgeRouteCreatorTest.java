@@ -28,7 +28,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -41,10 +40,11 @@ import java.util.stream.IntStream;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -74,65 +74,37 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 	/** The consolidated REST surface port (bound once per class). */
 	private static int restPort;
 
-	static final class FixedSink extends DataSinkConfiguration {
-		private final String uri;
+	/** The Operation's reply, as the response mapping of the Restart action answers it. */
+	static final Response.ResponseSource RESTART_REPLY = new Response.ResponseSource("Restart", null, "/Restart");
 
-		FixedSink(String uniqueId, String uri) {
-			super(uniqueId);
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
+	/**
+	 * Generic bridge route: connector target semantics are in connector options/adapters. The authored response
+	 * mapping: the reply's Restart member is the ResponseSource, the Operation (SinkId Restart) declares the output
+	 * "state".
+	 */
+	private static OperationRoute syncBridge(String routeId, String restPath, String requestLuaUri, String commandId,
+			String commandUri) {
+		return new OperationRoute(routeId, new OperationRoute.Identity(restPath, "Restart", null, null),
+				Endpoint.of(requestLuaUri), List.of(), command(commandId, commandUri, new OperationRoute.Command.Member("Restart", null)),
+				caller(Map.of("Restart", "$"), "Restart", List.of("state")),
+				new Response(Endpoint.of("direct:luaResp"), List.of(RESTART_REPLY), List.of()));
 	}
 
-	static final class FixedTransformer extends DataTransformerConfiguration {
-		private final String uri;
-
-		FixedTransformer(String uniqueId, String uri) {
-			super(uniqueId);
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
+	/** An action invoked through {@code uri}, its command assembled from {@code members}. */
+	static OperationRoute.Command command(String id, String uri, OperationRoute.Command.Member... members) {
+		return new OperationRoute.Command(new Sink(id, null, Endpoint.of(uri)), List.of(members), false, Map.of(), List.of(),
+				Map.of(), List.of(), null, Map.of());
 	}
 
-	/** Generic bridge route: connector target semantics are in targetOptions/adapters. */
-	private static ProtocolBridgeRouteConfiguration syncBridge(String routeId, String restPath,
-			String requestLuaId, String sinkId) {
-		RouteConfiguration base = new RouteConfiguration(
-				"bridge", List.of(), List.of(requestLuaId), List.of(sinkId));
-		ProtocolBridgeRouteConfiguration config = new ProtocolBridgeRouteConfiguration(base);
-		config.setRouteId(routeId);
-		config.getTriggerData().put(ProtocolBridgeRouteConfiguration.REST_PATH, restPath);
-		config.getTriggerData().put("action", "Restart");
-		config.getTriggerData().put("callerInputSourcePaths", Map.of("Restart", "$"));
-		config.getTriggerData().put("commandSinkIds", List.of(sinkId));
-		config.getTriggerData().put("commandSinkBindings", List.of(Map.of("sinkId", "Restart", "dataSinkId", sinkId)));
-		// The authored response mapping: the reply's Restart member is the ResponseSource,
-		// the Operation (SinkId Restart) declares the output "state".
-		config.getTriggerData().put("responseTransformer", "luaResp");
-		config.getTriggerData().put(ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING, true);
-		config.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SOURCE_BINDINGS,
-				List.of(Map.of("sourceId", "Restart", "valuePath", "/Restart")));
-		config.getTriggerData().put("callerReplySinkId", "Restart");
-		config.getTriggerData().put("callerOutputOrder", List.of("state"));
-		return config;
+	/** The caller's side: the Operation's Sources, the ResponseSink answering it, its outputs in order. */
+	static OperationRoute.Caller caller(Map<String, String> inputSourcePaths, String replySinkId, List<String> outputOrder) {
+		return new OperationRoute.Caller(inputSourcePaths, Map.of(), Map.of(), Map.of(), outputOrder, Map.of(), replySinkId);
 	}
 
-	@Test
-	void declaredCallerOutputOrderParsesFromTriggerData() {
-		ProtocolBridgeRouteConfiguration config = syncBridge(
-				"syntegonStopperingSystem_Dispensing_interaction", "/operations/x/Dispensing",
-				"luaReq", "httpCmd");
-		config.getTriggerData().put("callerOutputOrder",
-				List.of("State", "Outcome"));
-		assertEquals(List.of("State", "Outcome"), config.getCallerOutputOrder());
+	/** {@code bridge} with another response half. */
+	static OperationRoute withResponse(OperationRoute bridge, Response response) {
+		return new OperationRoute(bridge.routeId(), bridge.identity(), bridge.requestTransformation(), bridge.fanIn(),
+				bridge.command(), bridge.caller(), response);
 	}
 
 	@Override
@@ -146,78 +118,45 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 				}
 				restConfiguration().component("jetty").host("localhost").port(restPort);
 
-				RoutesConfiguration routes = new RoutesConfiguration(
-						List.of(),
-						Arrays.asList(
-							new FixedTransformer("luaReq", "direct:luaReq"),
-								new FixedTransformer("luaReqRestart", "direct:luaReqRestart"),
-								new FixedTransformer("luaReqMember", "direct:luaReqMember"),
-								new FixedTransformer("luaReqMemberSecond", "direct:luaReqMemberSecond"),
-								new FixedTransformer("luaReqFail", "direct:luaReqFail"),
-								new FixedTransformer("luaRespFail", "direct:luaRespFail"),
-								new FixedTransformer("luaAasResponse", "direct:luaAasResponse"),
-								new FixedTransformer("luaResp", "direct:luaResp"),
-								new FixedTransformer("luaRealResponse", realLuaResponseUri()),
-								new FixedTransformer("luaLog", "direct:luaLog")),
-						Arrays.asList(
-							new FixedSink("httpCmd", "direct:httpSink"),
-							new FixedSink("infraCommand", "direct:infraCommand"),
-							new FixedSink("auditWrite", "direct:auditSink"),
-							new FixedSink("aasWrite", "direct:aasTarget"),
-							new FixedSink("logWrite", "direct:logTarget"),
-							new FixedSink("failCmd", "direct:failCmd")),
-						List.of());
+				syncBridge(HTTP_ROUTE_ID, "/operations/packingCellAAS/Restart", "direct:luaReqRestart",
+						"httpCmd", "direct:httpSink").build(this);
+				// Two request transformations in a row: the second sees what the first made.
+				from("direct:luaReqMemberChain").to("direct:luaReqMember").to("direct:luaReqMemberSecond");
+				OperationRoute member = syncBridge(MEMBER_ROUTE_ID, "/operations/packingCellAAS/Restart/member",
+						"direct:luaReqMemberChain", "infraCommand", "direct:infraCommand");
+				new OperationRoute(member.routeId(), member.identity(), member.requestTransformation(), member.fanIn(),
+						command("infraCommand", "direct:infraCommand",
+								new OperationRoute.Command.Member("AuthoredCommand", "$.value")),
+						member.caller(), member.response()).build(this);
+				syncBridge("packingCellAAS_Restart_failure_interaction",
+						"/operations/packingCellAAS/Restart/failure", "direct:luaReqFail", "httpCmd", "direct:httpSink")
+						.build(this);
+				withResponse(syncBridge("packingCellAAS_Restart_reply_failure_interaction",
+						"/operations/packingCellAAS/Restart/reply-failure", "direct:luaReqRestart", "httpCmd", "direct:httpSink"),
+						new Response(Endpoint.of("direct:luaRespFail"), List.of(RESTART_REPLY), List.of())).build(this);
+				Endpoint audit = Endpoint.of("direct:auditSink");
+				withResponse(syncBridge(REAL_LUA_ROUTE_ID, "/operations/packingCellAAS/Restart/real-lua",
+						"direct:luaReqRestart", "httpCmd", "direct:httpSink"),
+						new Response(Endpoint.of(realLuaResponseUri()), List.of(RESTART_REPLY), IntStream.range(0, 131)
+								.mapToObj(i -> new Sink("auditWrite", "Audit" + i, audit, null, null, null, "audit-" + i)).toList()))
+						.build(this);
+				// An AAS element written as a ResponseSink: its endpoint places the SinkId's value itself.
+				Endpoint aas = new Endpoint() {
+					@Override public String uri(BundleResources resources) { return "direct:aasTarget"; }
+					@Override public boolean appliesValuePath() { return true; }
+				};
+				withResponse(syncBridge("packingCellAAS_Restart_aas_response_interaction",
+						"/operations/packingCellAAS/Restart/aas-response", "direct:luaReqRestart", "httpCmd", "direct:httpSink"),
+						new Response(Endpoint.of("direct:luaAasResponse"), List.of(RESTART_REPLY),
+								List.of(new Sink("aasWrite", "Audit", aas, null, null, null, "device")))).build(this);
 
-				new ProtocolBridgeRouteCreator(this, routes)
-						.addRouteToRouteBuilder(syncBridge(HTTP_ROUTE_ID,
-								"/operations/packingCellAAS/Restart", "luaReqRestart",
-								"httpCmd"));
-				ProtocolBridgeRouteConfiguration memberBridge = syncBridge(MEMBER_ROUTE_ID,
-						"/operations/packingCellAAS/Restart/member", "luaReqMember", "infraCommand");
-				memberBridge.getTriggerData().put("commandSinkIds", List.of("infraCommand"));
-				memberBridge.getTriggerData().put("commandSinkBindings", List.of(
-						Map.of("sinkId", "AuthoredCommand", "dataSinkId", "infraCommand",
-								"valuePath", "$.value")));
-				memberBridge.setTransformers(List.of("luaReqMember", "luaReqMemberSecond"));
-				new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(memberBridge);
-				new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(
-						syncBridge("packingCellAAS_Restart_failure_interaction",
-								"/operations/packingCellAAS/Restart/failure", "luaReqFail", "httpCmd"));
-				ProtocolBridgeRouteConfiguration replyFailure = syncBridge(
-						"packingCellAAS_Restart_reply_failure_interaction",
-						"/operations/packingCellAAS/Restart/reply-failure", "luaReqRestart", "httpCmd");
-				replyFailure.getTriggerData().put("responseTransformer", "luaRespFail");
-				new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(replyFailure);
-				ProtocolBridgeRouteConfiguration realLuaBridge = syncBridge(REAL_LUA_ROUTE_ID,
-						"/operations/packingCellAAS/Restart/real-lua", "luaReqRestart", "httpCmd");
-				realLuaBridge.getTriggerData().put("responseTransformer", "luaRealResponse");
-				realLuaBridge.getTriggerData().put("callerReplySinkId", "Restart");
-				realLuaBridge.getTriggerData().put(
-						ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING, true);
-				realLuaBridge.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SINK_BINDINGS,
-						IntStream.range(0, 131).mapToObj(i -> Map.<String, Object>of(
-								"sinkId", "Audit" + i, "dataSinkId", "auditWrite",
-								"payloadGroup", "audit-" + i)).toList());
-				new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(realLuaBridge);
-				ProtocolBridgeRouteConfiguration aasResponseBridge = syncBridge(
-						"packingCellAAS_Restart_aas_response_interaction",
-						"/operations/packingCellAAS/Restart/aas-response", "luaReqRestart", "httpCmd");
-				aasResponseBridge.getTriggerData().put("responseTransformer", "luaAasResponse");
-				aasResponseBridge.getTriggerData().put("callerReplySinkId", "Restart");
-				aasResponseBridge.getTriggerData().put(
-						ProtocolBridgeRouteConfiguration.EXPLICIT_RESPONSE_MAPPING, true);
-				aasResponseBridge.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SINK_BINDINGS,
-						List.of(Map.of("sinkId", "Audit", "dataSinkId", "aasWrite",
-								"payloadGroup", "device", "aas", true)));
-				new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(aasResponseBridge);
-
-				for (String[] bridge : new String[][] { { "log", "httpCmd" }, { "log-failure", "failCmd" } }) {
-					ProtocolBridgeRouteConfiguration logged = syncBridge("packingCellAAS_Restart_" + bridge[0].replace('-', '_')
-							+ "_interaction", "/operations/packingCellAAS/Restart/" + bridge[0], "luaReqRestart", bridge[1]);
-					logged.getTriggerData().put("responseTransformer", "luaLog");
-					logged.getTriggerData().put(ProtocolBridgeRouteConfiguration.RESPONSE_SINK_BINDINGS,
-							List.of(Map.of("sinkId", "Log", "dataSinkId", "logWrite", "payloadGroup", "log")));
-					new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(logged);
+				for (String[] bridge : new String[][] { { "log", "httpCmd", "direct:httpSink" },
+						{ "log-failure", "failCmd", "direct:failCmd" } }) {
+					withResponse(syncBridge("packingCellAAS_Restart_" + bridge[0].replace('-', '_') + "_interaction",
+							"/operations/packingCellAAS/Restart/" + bridge[0], "direct:luaReqRestart", bridge[1], bridge[2]),
+							new Response(Endpoint.of("direct:luaLog"), List.of(RESTART_REPLY),
+									List.of(new Sink("logWrite", "Log", Endpoint.of("direct:logTarget"), null, null, null, "log"))))
+							.build(this);
 				}
 
 				// test doubles for the Lua blob query endpoints
@@ -266,9 +205,9 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 				});
 				from("direct:luaLog").process(exchange -> {
 					@SuppressWarnings("unchecked")
-					Map<String, Object> meta = exchange.getProperty(DataTransformerConfiguration.META, Map.class);
+					Map<String, Object> meta = exchange.getProperty(TransformerMeta.PROPERTY, Map.class);
 					LOG_META.add(meta);
-					LOG_REQUEST_SOURCES.add(exchange.getProperty(DataTransformerConfiguration.REQUEST_SOURCES));
+					LOG_REQUEST_SOURCES.add(exchange.getProperty(TransformerMeta.REQUEST_SOURCES));
 					Object outcome = ((Map<?, ?>) meta.get("invocation")).get("outcome");
 					exchange.getMessage().setBody("Succeeded".equals(outcome)
 							? Map.of("Restart", Map.of("state", "restarting"), "Log", Map.of("outcome", outcome))

@@ -25,7 +25,7 @@ import java.util.function.Consumer;
 
 import org.apache.camel.builder.RouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -253,7 +253,7 @@ class OperationConnectorsTest {
 	// ---- models: the opcua-method Operation bound to an affordance of another fixture's AID ----
 
 	/** The Operation bound to {@code property} of {@code fixture}'s {@code interfaceId}, whose form {@code form} edits. */
-	private RoutesConfiguration compile(String fixture, String interfaceId, String property, String base,
+	private RoutePlan compile(String fixture, String interfaceId, String property, String base,
 			Consumer<JsonObject> form, Consumer<JsonObject> operation, String lua) throws Exception {
 		JsonObject aid = json(resource(fixture + "/aid.json")).getAsJsonObject();
 		JsonObject iface = child(aid, interfaceId);
@@ -263,7 +263,7 @@ class OperationConnectorsTest {
 	}
 
 	/** The Operation bound to the stoppering Occupy action (MQTT 5 request/reply), renamed Calibrate. */
-	private RoutesConfiguration compileMqttAction(Mqtt5TestBroker broker, boolean outputs) throws Exception {
+	private RoutePlan compileMqttAction(Mqtt5TestBroker broker, boolean outputs) throws Exception {
 		JsonObject occupy = child(child(child(child(json(resource("stoppering/aid.json")).getAsJsonObject(), "interface_mqtt"),
 				"InteractionMetadata"), "actions"), "Occupy").deepCopy();
 		occupy.addProperty("idShort", "Calibrate");
@@ -290,7 +290,7 @@ class OperationConnectorsTest {
 
 	/** {@code responseLua}, when given, answers the Operation (SinkId {@code sinkId}) from the action's output Reply. */
 	/** The stoppering Halt action (no output, no response topic) as Calibrate, bound to an Operation with only an input. */
-	private RoutesConfiguration compileInvokeOnlyMqttAction(Mqtt5TestBroker broker) throws Exception {
+	private RoutePlan compileInvokeOnlyMqttAction(Mqtt5TestBroker broker) throws Exception {
 		JsonObject halt = child(child(child(child(json(resource("stoppering/aid.json")).getAsJsonObject(), "interface_mqtt"),
 				"InteractionMetadata"), "actions"), "Halt").deepCopy();
 		halt.addProperty("idShort", "Calibrate");
@@ -307,7 +307,7 @@ class OperationConnectorsTest {
 				"function aimc_main(sources) return { Calibrate = { Uuid = sources.Calibrate.Uuid } } end", null);
 	}
 
-	private RoutesConfiguration compile(JsonObject aid, String interfaceId, String container, String affordance, String sinkId,
+	private RoutePlan compile(JsonObject aid, String interfaceId, String container, String affordance, String sinkId,
 			Consumer<JsonObject> operation, String lua, String responseLua) throws Exception {
 		JsonObject cci = json(resource("opcua-method/dependencies/0.json")).getAsJsonObject();
 		operation.accept(child(child(child(cci, "Skills"), "Calibrate"), "operation"));
@@ -333,7 +333,7 @@ class OperationConnectorsTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:1")));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().get(0).configuration();
+		return compiled.bundles().get(0).route();
 	}
 
 	private static JsonObject child(JsonObject parent, String name) {

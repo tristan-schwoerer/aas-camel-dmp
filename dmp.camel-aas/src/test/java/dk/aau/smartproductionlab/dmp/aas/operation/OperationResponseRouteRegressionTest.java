@@ -16,9 +16,10 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import org.junit.jupiter.api.Test;
 
@@ -58,45 +59,28 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 					((List<Object>) exchange.getProperty("payload", Map.class).get("values")).clear();
 					exchange.getProperty("dmp.operation.callerReplyResult", Map.class).clear();
 				});
-				var routes = new RoutesConfiguration(List.of(), List.of(
-						new ProtocolBridgeRouteCreatorTest.FixedTransformer("request", "direct:r0-request"),
-						new ProtocolBridgeRouteCreatorTest.FixedTransformer("projected", "direct:r0-projected"),
-						new ProtocolBridgeRouteCreatorTest.FixedTransformer("whole", "direct:r0-whole-transform"),
-						new ProtocolBridgeRouteCreatorTest.FixedTransformer("context", "direct:r0-context-transform")),
-						List.of(new ProtocolBridgeRouteCreatorTest.FixedSink("command", "direct:r0-device"),
-								new ProtocolBridgeRouteCreatorTest.FixedSink("extra", "direct:r0-extra")), List.of());
+				Endpoint extra = Endpoint.of("direct:r0-extra");
 				for (String id : List.of("null", "missing", "duplicate", "whole", "native", "context")) {
-					var bridge = new ProtocolBridgeRouteConfiguration(new RouteConfiguration(
-							"bridge", List.of(), List.of("request"), List.of("command")));
-					bridge.setRouteId("r0-" + id);
-					var data = bridge.getTriggerData();
-					data.put("restPath", "/r0/" + id);
-					data.put("action", "Invoke");
-					data.put("callerInputSourcePaths", Map.of("Request", "$"));
-					data.put("commandSinkIds", List.of("command"));
-					data.put("commandSinkBindings", List.of(Map.of("sinkId", "Command", "dataSinkId", "command")));
-					// "native" has no response mapping: the call answers with no outputs.
-					data.put("explicitResponseMapping", !"native".equals(id));
-					data.put("callerOutputOrder", "whole".equals(id) ? List.of("Reply", "sibling", "values")
-							: List.of("Optional"));
-					if (!"native".equals(id)) {
-						data.put("callerReplySinkId", "Reply");
-						data.put("responseTransformer", List.of("whole", "context").contains(id) ? id : "projected");
-					}
+					var sources = new ArrayList<Response.ResponseSource>();
 					if (List.of("null", "missing", "duplicate").contains(id)) {
-						var bindings = new ArrayList<Map<String, Object>>();
-						bindings.add(Map.of("sourceId", "Optional", "valuePath",
-								"missing".equals(id) ? "/missing" : "/optional"));
-						if ("duplicate".equals(id)) bindings.add(Map.of("sourceId", "Optional", "valuePath", "/optional"));
-						data.put("responseSourceBindings", bindings);
+						sources.add(new Response.ResponseSource("Optional", null, "missing".equals(id) ? "/missing" : "/optional"));
+						if ("duplicate".equals(id)) sources.add(new Response.ResponseSource("Optional", null, "/optional"));
 					}
-					if ("whole".equals(id)) data.put("responseSourceBindings", List.of(Map.of("sourceId", "Device")));
-					if ("context".equals(id)) data.put("responseSourceBindings", List.of(
-							Map.of("sourceId", "Optional", "valuePath", "/optional")));
-					if ("whole".equals(id)) data.put("responseSinkBindings", List.of(
-							Map.of("sinkId", "First", "dataSinkId", "extra"),
-							Map.of("sinkId", "Second", "dataSinkId", "extra")));
-					new ProtocolBridgeRouteCreator(this, routes).addRouteToRouteBuilder(bridge);
+					if ("whole".equals(id)) sources.add(new Response.ResponseSource("Device", null, null));
+					if ("context".equals(id)) sources.add(new Response.ResponseSource("Optional", null, "/optional"));
+					List<Sink> sinks = "whole".equals(id)
+							? List.of(new Sink("extra", "First", extra), new Sink("extra", "Second", extra)) : List.of();
+					String transformation = "whole".equals(id) ? "direct:r0-whole-transform"
+							: "context".equals(id) ? "direct:r0-context-transform" : "direct:r0-projected";
+					// "native" has no response mapping: the call answers with no outputs.
+					boolean answered = !"native".equals(id);
+					new OperationRoute("r0-" + id, new OperationRoute.Identity("/r0/" + id, "Invoke", null, null),
+							Endpoint.of("direct:r0-request"), List.of(),
+							ProtocolBridgeRouteCreatorTest.command("command", "direct:r0-device",
+									new OperationRoute.Command.Member("Command", null)),
+							ProtocolBridgeRouteCreatorTest.caller(Map.of("Request", "$"), answered ? "Reply" : null,
+									"whole".equals(id) ? List.of("Reply", "sibling", "values") : List.of("Optional")),
+							answered ? new Response(Endpoint.of(transformation), sources, sinks) : null).build(this);
 				}
 				from("direct:r0-request").setBody().constant(Map.of("Command", Map.of("argument", 1L)));
 				from("direct:r0-device").process(exchange -> {
@@ -129,7 +113,7 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 				from("direct:r0-context-transform").process(exchange -> {
 					contextSources.set(JsonCodec.copyValue(exchange.getMessage().getBody()));
 					contextRequestSources.set(JsonCodec.copyValue(exchange.getProperty(
-							dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration.REQUEST_SOURCES)));
+							dk.aau.smartproductionlab.dmp.core.util.TransformerMeta.REQUEST_SOURCES)));
 					Map<String, Object> outputs = new LinkedHashMap<>();
 					outputs.put("Optional", null);
 					exchange.getMessage().setBody(Map.of("Reply", outputs));

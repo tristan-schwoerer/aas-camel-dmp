@@ -73,7 +73,7 @@ class ResponseSinkFanOutProcessorTest {
 			}
 		});
 		context.start();
-		var processor = new ResponseSinkFanOutProcessor(context, "deadline", List.of(Map.of("sinkId", "old-target", "endpoint", "direct:uninterruptible-write")), 1, 2);
+		var processor = new ResponseSinkFanOutProcessor(context, "deadline", List.of(target("old-target", "direct:uninterruptible-write")), 1, 2);
 		try {
 			var job = new ResponseSinkFanOutProcessor.DispatchJob("direct:uninterruptible-write", 1, "old-target", false);
 			dispatch(context, processor, List.of(job));
@@ -125,8 +125,8 @@ class ResponseSinkFanOutProcessorTest {
 		context.start();
 		try {
 			try (var processor = new ResponseSinkFanOutProcessor(context, "isolation", List.of(
-					Map.of("sinkId", "First", "endpoint", "direct:mutating"),
-					Map.of("sinkId", "Second", "endpoint", "direct:sibling")), 1, 4)) {
+					target("First", "direct:mutating"),
+					target("Second", "direct:sibling")), 1, 4)) {
 				Map<String, Object> shared = new LinkedHashMap<>();
 				shared.put("values", new ArrayList<>(List.of("original")));
 				shared.put("bytes", new byte[] { 1, 2 });
@@ -168,7 +168,7 @@ class ResponseSinkFanOutProcessorTest {
 		});
 		context.start();
 		try {
-			try (var processor = new ResponseSinkFanOutProcessor(context, "queued", List.of(Map.of("sinkId", "Queued", "endpoint", "direct:queued")), 1, 4)) {
+			try (var processor = new ResponseSinkFanOutProcessor(context, "queued", List.of(target("Queued", "direct:queued")), 1, 4)) {
 				processor.responseExecutor().execute(() -> {
 					try {
 						if (!release.await(2, TimeUnit.SECONDS)) throw new IllegalStateException("test release timed out");
@@ -227,7 +227,7 @@ class ResponseSinkFanOutProcessorTest {
 		context.start();
 		try {
 			try (var processor = new ResponseSinkFanOutProcessor(context, "null", List.of(
-					Map.of("sinkId", "Optional", "endpoint", "direct:null", "schema", Map.of("type", "null"))))) {
+					new ResponseSinkFanOutProcessor.Target("Optional", "direct:null", null, null, null, Map.of("type", "null"), true)))) {
 				var exchange = new DefaultExchange(context);
 				exchange.getMessage().setBody(Map.of("Optional", JsonPointer.JSON_NULL));
 				assertNull(processor.prepareJobs(exchange).get(0).body());
@@ -261,8 +261,8 @@ class ResponseSinkFanOutProcessorTest {
 		context.start();
 		try {
 			try (var processor = new ResponseSinkFanOutProcessor(context, "bounded-test", List.of(
-					Map.of("sinkId", "First", "endpoint", "direct:slow"),
-					Map.of("sinkId", "Second", "endpoint", "direct:slow")), 1, 0)) {
+					target("First", "direct:slow"),
+					target("Second", "direct:slow")), 1, 0)) {
 				assertEquals(1, processor.workerCount());
 				assertEquals(0, processor.queueCapacity());
 				var exchange = new DefaultExchange(context);
@@ -290,7 +290,7 @@ class ResponseSinkFanOutProcessorTest {
 		});
 		context.start();
 		try {
-			try (var processor = new ResponseSinkFanOutProcessor(context, "drain", List.of(Map.of("sinkId", "drain", "endpoint", "direct:drain")), 1, 2)) {
+			try (var processor = new ResponseSinkFanOutProcessor(context, "drain", List.of(target("drain", "direct:drain")), 1, 2)) {
 				var job = new ResponseSinkFanOutProcessor.DispatchJob("direct:drain", Map.of("v", 1), "drain", false);
 				dispatch(context, processor, List.of(job));
 				processor.close();
@@ -320,5 +320,10 @@ class ResponseSinkFanOutProcessorTest {
 		try (var template = context.createProducerTemplate()) {
 			template.sendBody("direct:" + id + "-dispatch", jobs);
 		}
+	}
+
+	/** A target without value path, payload group, schemas or JSON encoding. */
+	private static ResponseSinkFanOutProcessor.Target target(String sinkId, String endpoint) {
+		return new ResponseSinkFanOutProcessor.Target(sinkId, endpoint, null, null, null, null, false);
 	}
 }

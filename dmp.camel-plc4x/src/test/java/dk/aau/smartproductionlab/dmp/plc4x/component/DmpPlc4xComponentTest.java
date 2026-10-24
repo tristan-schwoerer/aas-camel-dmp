@@ -15,7 +15,7 @@ import org.apache.camel.ExchangePattern;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvocationException;
-import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xDataSinkConfiguration;
+import dk.aau.smartproductionlab.dmp.plc4x.configuration.Plc4xEndpoint;
 import dk.aau.smartproductionlab.dmp.plc4x.configuration.Tag;
 import dk.aau.smartproductionlab.dmp.plc4x.testing.ModbusTestServer;
 import org.junit.jupiter.api.Test;
@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 /** {@code dmp-plc4x:} writes and reads against a real Modbus TCP socket. */
 class DmpPlc4xComponentTest {
 	private static String uri(int port, String tag, String address) {
-		return new Plc4xDataSinkConfiguration("sink", "127.0.0.1", port, "modbus-tcp", "", List.of(),
-				List.of(new Tag(tag, address))).getConnectionURI();
+		return new Plc4xEndpoint("127.0.0.1", port, "modbus-tcp", "", List.of(),
+				List.of(new Tag(tag, address))).uri(null);
 	}
 
 	@Test
@@ -37,6 +37,45 @@ class DmpPlc4xComponentTest {
 					Map.of("Start", 43));
 			assertEquals(List.of("register:4=42", "register:4=43"), device.writes(), "a value, or a value per tag");
 			assertEquals(Map.of(), reply);
+		}
+	}
+
+	@Test
+	void theTagsOfOneDeviceShareOneConnection() throws Exception {
+		try (ModbusTestServer device = new ModbusTestServer(); DefaultCamelContext camel = new DefaultCamelContext()) {
+			String read = uri(device.port(), "Done", "holding-register:2");
+			camel.addRoutes(new RouteBuilder() {
+				@Override public void configure() {
+					from("direct:read").pollEnrich(read, 3000);
+				}
+			});
+			camel.start();
+			device.register(1, 7);
+			var template = camel.createProducerTemplate();
+			// as routes do: the endpoints exist before they are used concurrently
+			String start = uri(device.port(), "Start", "holding-register:5"), stop = uri(device.port(), "Stop", "coil:3");
+			camel.getEndpoint(start);
+			camel.getEndpoint(stop);
+			var writers = java.util.concurrent.Executors.newFixedThreadPool(4);
+			try {
+				var calls = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+				for (int i = 0; i < 20; i++) {
+					int value = i;
+					calls.add(writers.submit(() -> template.sendBody(start, value)));
+					calls.add(writers.submit(() -> template.sendBody(stop, value % 2 == 0)));
+					calls.add(writers.submit(() -> template.requestBody("direct:read", (Object) null)));
+				}
+				for (var call : calls) call.get(10, java.util.concurrent.TimeUnit.SECONDS);
+			} finally { writers.shutdownNow(); }
+			assertEquals(40, device.writes().size());
+			assertEquals(1, device.acceptedConnections(), "three endpoints of one device, one connection");
+			var component = camel.getComponent("dmp-plc4x", DmpPlc4xComponent.class);
+			assertEquals(1, component.openConnections());
+			camel.stop();
+			assertEquals(0, component.openConnections());
+			org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> {
+				while (device.openConnections() > 0) Thread.sleep(20);
+			}, "the last endpoint closes the device's connection");
 		}
 	}
 

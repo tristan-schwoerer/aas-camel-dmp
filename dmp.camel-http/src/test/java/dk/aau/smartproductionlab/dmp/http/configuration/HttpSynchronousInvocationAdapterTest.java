@@ -15,6 +15,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvocationException;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SynchronousInvocationAdapter;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import org.junit.jupiter.api.Test;
 
 public class HttpSynchronousInvocationAdapterTest {
@@ -146,10 +148,15 @@ public class HttpSynchronousInvocationAdapterTest {
 		}
 	}
 
+	/** Resources only named, never bound: the URI is all the test reads. */
+	private static final BundleResources BOUND = new BundleResources() {
+		@Override public <T extends ManagedRouteResource> T own(T resource) { return resource; }
+	};
+
 	@Test
 	void anActionsTimeoutReplacesTheFormsDefaultOnce() {
-		HttpDataSinkConfiguration sink = new HttpDataSinkConfiguration("action", "http", "device", "/move", 80);
-		String uri = HttpSynchronousInvocationAdapter.invocationUri(sink.getConnectionURI(), 5000);
+		String action = new HttpWrite("http", "device", 80, "/move", null, null, HttpRequestOptions.none()).uri(BOUND);
+		String uri = HttpSynchronousInvocationAdapter.invocationUri(action, 5000);
 		assertEquals(1, uri.split("responseTimeout=", -1).length - 1, uri);
 		assertTrue(uri.contains("connectTimeout=5000&responseTimeout=5000"), uri);
 		assertTrue(uri.contains("httpClientConfigurer="), uri);
@@ -171,15 +178,18 @@ public class HttpSynchronousInvocationAdapterTest {
 		hung.start();
 		try (var camel = new org.apache.camel.impl.DefaultCamelContext()) {
 			camel.start();
-			HttpDataSinkConfiguration sink = new HttpDataSinkConfiguration("sink", "http", "127.0.0.1", "/value", hung.getAddress().getPort());
-			sink.setMethod("PUT");
-			sink.bind(camel);
-			String uri = HttpSynchronousInvocationAdapter.invocationUri(sink.getConnectionURI(), 500);
+			String sink = new HttpWrite("http", "127.0.0.1", hung.getAddress().getPort(), "/value", null, "PUT",
+					HttpRequestOptions.none()).uri(new BundleResources() {
+						@Override public <T extends ManagedRouteResource> T own(T resource) {
+							try { resource.bind(camel); } catch (Exception e) { throw new IllegalStateException(e); }
+							return resource;
+						}
+					});
+			String uri = HttpSynchronousInvocationAdapter.invocationUri(sink, 500);
 			long started = System.nanoTime();
 			assertThrows(Exception.class, () -> camel.createProducerTemplate().sendBody(uri, "{\"v\":1}"));
 			assertTrue(System.nanoTime() - started < 5_000_000_000L, "the write ends at its response timeout");
 			assertEquals(1, requests.get(), "no automatic retry of a write");
-			sink.close();
 		} finally {
 			release.countDown();
 			hung.stop(0);

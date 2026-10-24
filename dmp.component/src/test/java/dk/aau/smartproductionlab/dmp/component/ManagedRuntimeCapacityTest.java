@@ -53,7 +53,7 @@ class ManagedRuntimeCapacityTest {
 			@SuppressWarnings("resource") // closing the runtime would reconcile; this test owns the component lifecycle
 			var component = new ManagedDmpRuntime(settings).component();
 			component.startComponent();
-			try (var service = new MappingReconciliationService(component, discovery, runtimeSettings, capacity, 8, 1000)) {
+			try (var service = new MappingReconciliationService(component, discovery, capacity, 8, 1000)) {
 				long phaseStarted = System.nanoTime();
 				var initial = service.reconcileNow();
 				assertTrue(initial.complete(), initial.categories().toString());

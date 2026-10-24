@@ -31,7 +31,7 @@ import org.eclipse.paho.mqttv5.common.util.MqttTopicValidator;
  * properties) plus retained messages. Sessions are never kept; {@link #sessionPresent} only shapes CONNACK.
  */
 public final class Mqtt5TestBroker implements AutoCloseable {
-	private final ServerSocket server = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
+	private final ServerSocket server;
 	private final ExecutorService workers = Executors.newCachedThreadPool(task -> {
 		Thread thread = new Thread(task, "mqtt5-test-broker");
 		thread.setDaemon(true);
@@ -77,7 +77,13 @@ public final class Mqtt5TestBroker implements AutoCloseable {
 		public String text() { return new String(payload, StandardCharsets.UTF_8); }
 	}
 
-	public Mqtt5TestBroker() throws IOException {
+	public Mqtt5TestBroker() throws IOException { this(0); }
+
+	/** A broker on {@code port} (0: any), e.g. to come back where a stopped one was. */
+	public Mqtt5TestBroker(int port) throws IOException {
+		server = new ServerSocket();
+		server.setReuseAddress(true);
+		server.bind(new java.net.InetSocketAddress(InetAddress.getLoopbackAddress(), port), 50);
 		workers.submit(() -> {
 			try {
 				while (!closing) {

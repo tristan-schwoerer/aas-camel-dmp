@@ -20,7 +20,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.camel.builder.RouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -88,7 +87,7 @@ class ManagedModelBehaviorTest {
 			assertEquals(1, compiled.bundles().size());
 			runtime.startComponent();
 			var bundle = compiled.bundles().get(0);
-			var installed = runtime.installBundle(bundle.bundleId(), bundle.configuration());
+			var installed = runtime.installBundle(bundle.bundleId(), bundle.route());
 			assertTrue(received.await(6, java.util.concurrent.TimeUnit.SECONDS), "generated polling must execute a real AAS write");
 			runtime.removeBundle(installed);
 			assertEquals("PATCH", writeMethod.get());
@@ -158,7 +157,7 @@ class ManagedModelBehaviorTest {
 				assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
 				assertEquals(1, compiled.bundles().size());
 				var bundle = compiled.bundles().get(0);
-				var installed = runtime.installBundle(bundle.bundleId(), bundle.configuration());
+				var installed = runtime.installBundle(bundle.bundleId(), bundle.route());
 				try {
 					for (String payload : List.of("{\"Restart\":{\"x\":1}}",
 							"{\"Restart\":{\"x\":1},\"other\":\"001\"}")) {

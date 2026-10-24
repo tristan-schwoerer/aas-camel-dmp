@@ -14,7 +14,6 @@ import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
 import org.apache.camel.builder.AdviceWith;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import org.junit.jupiter.api.Test;
 
 class AasControlEventTest {
@@ -133,8 +132,7 @@ class AasControlEventTest {
 	void controlRouteInvalidatesBeforeManualOffsetCommit() throws Exception {
 		var component = new DmpComponent();
 		var service = new MappingReconciliationService(component,
-				() -> new RepositoryDiscovery.Scan(true, "", Set.of(), Set.of(), Map.of(), Map.of(), List.of()),
-				candidate -> () -> new RoutesConfiguration(), 8, 8, 60_000);
+				() -> new RepositoryDiscovery.Scan(true, "", Set.of(), Set.of(), Map.of(), Map.of(), List.of()), 8, 8, 60_000);
 		var settings = new KafkaControlEventRouteBuilder.Settings("127.0.0.1:9092", "aas-control",
 				"dmp-control");
 		var context = new DefaultCamelContext();

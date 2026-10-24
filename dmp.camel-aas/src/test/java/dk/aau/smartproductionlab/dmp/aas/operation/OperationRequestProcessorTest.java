@@ -15,7 +15,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaBinding;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.Test;
 
@@ -52,7 +52,7 @@ class OperationRequestProcessorTest {
 			AtomicReference<Object> boundary = new AtomicReference<>();
 			AtomicReference<Object> command = new AtomicReference<>();
 			try (var camel = new DefaultCamelContext()) {
-				var lua = new LuaTransformerConfiguration("request-collision", LuaCompiledSource.fromBytes(
+				var lua = new LuaBinding(LuaCompiledSource.fromBytes(
 						("function aimc_main(sources) return { Command = sources['" + sourceId + "'] } end")
 								.getBytes(StandardCharsets.UTF_8), "request-collision", 4096));
 				lua.bind(camel);
@@ -61,7 +61,7 @@ class OperationRequestProcessorTest {
 						@Override public void configure() {
 							from("direct:request-boundary").process(new OperationRequestProcessor(Map.of(), Map.of(sourceId, "$")))
 									.process(exchange -> boundary.set(JsonCodec.copyValue(exchange.getMessage().getBody())))
-									.to(lua.getConnectionURI())
+									.to(lua.uri())
 									.process(exchange -> exchange.getMessage().setBody(OperationPayloads.assembleCommand(
 											exchange.getMessage().getBody(), List.of("Command"), Map.of())))
 									.to("direct:device");

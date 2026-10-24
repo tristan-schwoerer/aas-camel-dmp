@@ -27,7 +27,7 @@ public final class OpcUaSynchronousSourceReadAdapter implements SynchronousSourc
 				.process(exchange -> {
 					exchange.getMessage().setBody(normalizeReadResult(awaitReadResult(exchange.getMessage().getBody())));
 					// Already a decoded value: a string is not JSON text to parse.
-					exchange.setProperty(dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter.NORMALIZED_VALUE_PROPERTY, true);
+					exchange.setProperty(dk.aau.smartproductionlab.dmp.core.plan.Source.NORMALIZED_VALUE_PROPERTY, true);
 				});
 	}
 

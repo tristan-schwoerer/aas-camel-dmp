@@ -22,14 +22,18 @@ import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvo
  * device outcome. Upstream logs a write it could not send and answers a failed
  * read with an empty body; here both raise a {@link ConnectorInvocationException}.
  * The producer takes the decoded value of a single-tag endpoint (or a value per
- * tag) instead of upstream's {@code {tag: {address: value}}} body.
+ * tag) instead of upstream's {@code {tag: {address: value}}} body. Endpoints of one
+ * device share its connection (upstream opens one per endpoint, so per tag).
  */
 public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 	static final long REQUEST_TIMEOUT_MS = 5000;
 	private final String connectionString;
+	private final DmpPlc4xComponent component;
+	private DmpPlc4xComponent.SharedConnection shared;
 
 	DmpPlc4xEndpoint(String endpointUri, DmpPlc4xComponent component, String connectionString) {
 		super(endpointUri, component);
+		this.component = component;
 		this.connectionString = connectionString;
 	}
 
@@ -38,17 +42,36 @@ public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 	public String getUri() { return connectionString; }
 
 	@Override
+	protected void doStart() throws Exception {
+		super.doStart();
+		synchronized (this) { shared = component.acquire(connectionString, this); }
+	}
+
+	@Override
+	public void doStop() throws Exception {
+		DmpPlc4xComponent.SharedConnection released;
+		synchronized (this) {
+			released = shared;
+			shared = null;
+			connection = null; // the device's connection is not this endpoint's to close
+		}
+		if (released != null) component.release(released, this);
+		super.doStop();
+	}
+
+	private synchronized DmpPlc4xComponent.SharedConnection shared() {
+		if (shared == null) throw new IllegalStateException("the PLC4X endpoint is not started");
+		return shared;
+	}
+
+	@Override
 	public void setupConnection() throws PlcConnectionException {
-		connection = plcDriverManager.getConnection(connectionString);
+		connection = shared().connected(plcDriverManager);
 	}
 
 	@Override
 	public void reconnectIfNeeded() throws PlcConnectionException {
-		if (isConnected()) return;
-		if (connection != null) {
-			try { connection.close(); } catch (Exception ignored) { /* replaced below */ }
-		}
-		connection = plcDriverManager.getConnection(connectionString);
+		connection = shared().connected(plcDriverManager);
 	}
 
 	@Override
@@ -73,7 +96,7 @@ public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 	}
 
 	/** Writes and waits for the device to acknowledge every tag. */
-	synchronized void write(Map<String, Object> values) {
+	void write(Map<String, Object> values) {
 		Map<String, Map<String, Object>> request = new LinkedHashMap<>();
 		values.forEach((tag, value) -> {
 			String address = getTags().get(tag);
@@ -82,7 +105,7 @@ public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 			addressed.put(address, value);
 			request.put(tag, addressed);
 		});
-		PlcWriteResponse response = await(() -> buildPlcWriteRequest(request).execute(), "PLC4X_WRITE");
+		PlcWriteResponse response = await(() -> buildPlcWriteRequest(request), "PLC4X_WRITE");
 		for (String tag : values.keySet())
 			if (response.getResponseCode(tag) != PlcResponseCode.OK)
 				throw new ConnectorInvocationException(ConnectorInvocationException.Category.REMOTE,
@@ -91,8 +114,8 @@ public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 	}
 
 	/** Reads every tag; a single-tag endpoint yields the value itself. */
-	synchronized Object read() {
-		PlcReadResponse response = await(() -> buildPlcReadRequest().execute(), "PLC4X_READ");
+	Object read() {
+		PlcReadResponse response = await(this::buildPlcReadRequest, "PLC4X_READ");
 		Map<String, Object> values = new LinkedHashMap<>();
 		for (String tag : getTags().keySet()) {
 			if (response.getResponseCode(tag) != PlcResponseCode.OK)
@@ -104,13 +127,20 @@ public class DmpPlc4xEndpoint extends Plc4XEndpoint {
 		return values.size() == 1 ? values.values().iterator().next() : values;
 	}
 
-	private interface Request<T> { java.util.concurrent.CompletableFuture<? extends T> send() throws Exception; }
+	private interface Request<T extends org.apache.plc4x.java.api.messages.PlcResponse> {
+		org.apache.plc4x.java.api.messages.PlcRequest build() throws Exception;
+	}
 
-	private <T> T await(Request<T> request, String code) {
+	/** One request at a time per device: the shared connection's lock is held until the answer arrived. */
+	@SuppressWarnings("unchecked")
+	private <T extends org.apache.plc4x.java.api.messages.PlcResponse> T await(Request<T> request, String code) {
+		DmpPlc4xComponent.SharedConnection device = shared();
 		try {
-			reconnectIfNeeded();
-			if (!isConnected()) throw new IllegalStateException("not connected");
-			return request.send().get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+			synchronized (device) {
+				connection = device.connected(plcDriverManager);
+				if (!isConnected()) throw new IllegalStateException("not connected");
+				return (T) request.build().execute().get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+			}
 		} catch (TimeoutException timeout) {
 			throw new ConnectorInvocationException(ConnectorInvocationException.Category.TIMEOUT,
 					code + "_TIMEOUT", "the device did not answer in time", Map.of());

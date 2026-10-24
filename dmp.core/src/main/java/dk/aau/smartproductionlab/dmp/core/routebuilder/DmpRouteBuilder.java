@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.apache.camel.CamelContext;
@@ -37,11 +36,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.rest.RestDefinition;
 import org.apache.camel.tooling.model.Strings;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreator;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorFactory;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 
 /**
  * Builds the Camel routes of one managed bundle (one mapping) and records everything they own:
@@ -51,8 +46,8 @@ import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResou
  *
  */
 public class DmpRouteBuilder extends RouteBuilder {
-	private final RoutesConfiguration routesConfiguration;
-	private final Map<String, RouteCreatorFactory> routeCreatorFactoryMap;
+	private final RoutePlan plan;
+	private final PlanBuild build = new PlanBuild(this);
 	private final Set<String> routeInventory = new LinkedHashSet<>();
 	private final Set<String> ingressInventory = new LinkedHashSet<>();
 	private final Set<String> endpointInventory = new LinkedHashSet<>();
@@ -64,16 +59,21 @@ public class DmpRouteBuilder extends RouteBuilder {
 	private boolean configurationStarted;
 	private boolean configurationComplete;
 
-	private DmpRouteBuilder(RoutesConfiguration configuration, Map<String, RouteCreatorFactory> routeCreatorFactoryMap) {
-		validateManagedRouteIds(configuration);
-		this.routesConfiguration = configuration;
-		this.routeCreatorFactoryMap = routeCreatorFactoryMap;
+	private DmpRouteBuilder(RoutePlan plan) {
+		if (plan == null || Strings.isNullOrEmpty(plan.routeId()) || plan.routeId().isBlank()) {
+			throw new IllegalArgumentException("managed bundle requires a route plan with an explicit route ID");
+		}
+		this.plan = plan;
 	}
 
-	/** Creates a builder for one managed bundle, requiring explicit unique mapping IDs. */
-	public static DmpRouteBuilder forManagedBundle(RoutesConfiguration configuration,
-			Map<String, RouteCreatorFactory> routeCreatorFactoryMap) {
-		return new DmpRouteBuilder(configuration, routeCreatorFactoryMap);
+	/** Creates a builder for one managed bundle: the routes of {@code plan}. */
+	public static DmpRouteBuilder forManagedBundle(RoutePlan plan) {
+		return new DmpRouteBuilder(plan);
+	}
+
+	/** The bundle's build: its endpoints' URIs, resolved once, and what they bind. */
+	PlanBuild planBuild() {
+		return build;
 	}
 
 	/** Returns the exact route IDs registered while constructing this bundle. */
@@ -211,66 +211,10 @@ public class DmpRouteBuilder extends RouteBuilder {
 			throw new IllegalStateException("route builder configuration failed after it had started");
 		}
 		configurationStarted = true;
-		bindEntityResources();
-		for (RouteConfiguration routeConfig : routesConfiguration.getRoutes()) {
-			resolveRouteCreator(routeConfig).addRouteToRouteBuilder(routeConfig);
-		}
+		plan.build(this);
 		configurationComplete = true;
-		routesConfiguration.getDatasources().values().forEach(entity -> registerEndpointUri(entity.getConnectionURI()));
-		routesConfiguration.getDatasinks().values().forEach(entity -> registerEndpointUri(entity.getConnectionURI()));
-		routesConfiguration.getTransformers().values().forEach(entity -> registerEndpointUri(entity.getConnectionURI()));
+		build.resolvedUris().forEach(this::registerEndpointUri);
 		managedResources.forEach(resource -> resource.endpointUris().forEach(this::registerEndpointUri));
-	}
-
-	private RouteCreator resolveRouteCreator(RouteConfiguration routeConfig) {
-		String trigger = routeConfig.getRouteTrigger();
-		if (trigger == null || !routeCreatorFactoryMap.containsKey(trigger)) {
-			throw new IllegalArgumentException("route " + routeConfig.getRouteId()
-					+ ": no route creator factory registered for trigger '" + trigger + "'");
-		}
-		return routeCreatorFactoryMap.get(trigger).create(this, routesConfiguration);
-	}
-
-	private static void validateManagedRouteIds(RoutesConfiguration configuration) {
-		if (configuration == null || configuration.getRoutes() == null || configuration.getRoutes().isEmpty()) {
-			throw new IllegalArgumentException("managed bundle must contain at least one route with an explicit route ID");
-		}
-		Set<String> authoredIds = new LinkedHashSet<>();
-		for (RouteConfiguration route : configuration.getRoutes()) {
-			String routeId = route == null ? null : route.getRouteId();
-			if (Strings.isNullOrEmpty(routeId) || routeId.isBlank()) {
-				throw new IllegalArgumentException("managed bundle routes require explicit nonblank route IDs");
-			}
-			if (!authoredIds.add(routeId)) {
-				throw new IllegalArgumentException("duplicate route ID in managed bundle: " + routeId);
-			}
-			String trigger = route.getRouteTrigger();
-			if (!dk.aau.smartproductionlab.dmp.core.configuration.route.execution.policy.ExecutionPolicyRouteConfiguration.ROUTE_TRIGGER
-					.equals(trigger) && !"bridge".equals(trigger)) {
-				throw new IllegalArgumentException("managed route creator is not supported by bundle inventory: " + trigger);
-			}
-		}
-	}
-
-	/** Entities may own registry bindings their URIs reference: compiled Lua, credentials. */
-	private void bindEntityResources() {
-		routesConfiguration.getDatasinks().values().forEach(this::bindEntityResource);
-		routesConfiguration.getDatasources().values().forEach(this::bindEntityResource);
-		routesConfiguration.getTransformers().values().forEach(this::bindEntityResource);
-	}
-
-	private void bindEntityResource(Object entity) {
-		if (!(entity instanceof ManagedRouteResource resource) || managedResources.contains(resource)) return;
-		bindResource(resource);
-		managedResources.add(resource);
-	}
-
-	private void bindResource(ManagedRouteResource resource) {
-		try {
-			resource.bind(getCamelContext());
-		} catch (Exception e) {
-			throw new IllegalStateException("failed to bind managed route resource", e);
-		}
 	}
 
 	public record RestReservation(String method, String path, String restRouteId, RestDefinition definition) {

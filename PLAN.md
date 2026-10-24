@@ -299,29 +299,112 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
   (nosec, basic, bearer, apikey, combo, empty and unknown selections, OPC UA
   blocked) and the credentials file.
 
-### H5. Threads and scale (E4)
+### H5. Threads and scale (E4) — done (2026-10-24), not committed
 
-- **Evaluations off the consumer thread.** Evaluations leave the Paho, Milo
-  and value-feed threads: a shared pool runs each mapping's evaluations one at
-  a time, and the consumers only accept. Today one slow sink blocks Paho's
-  callback thread (QoS acks, inbound queue of 10), and the value feed runs
-  stalled tasks itself (CallerRuns). This also removes the per-mapping lock.
-- **Polling** runs on one shared scheduler at a fixed rate, not a Timer
-  thread per source.
-- **MQTT.** One client per broker and credentials (from Deferred), carrying
-  each mapping's subscriptions.
-- **PLC4X.** One connection per device (a cached connection manager), not
-  one per tag.
-- **Test:** the capacity profile at N = 1000 with a bound on the thread
-  count.
+- **Evaluations off the consumer thread, done.** `DmpExecutors` (dmp.core,
+  one per Camel context): a pool of workers (`dmp.workerThreads`, 32, on
+  demand, idle a minute) and one scheduler thread that only ticks. A
+  `SerialLane` runs one owner's work in order on the workers. FanIn admits an
+  evaluation on the consumer's thread (gate decided in acceptance order, the
+  cache snapshot taken then) and queues it on the mapping's lane; the
+  per-mapping lock is gone. Each update is still evaluated with its own value
+  (no coalescing, decided 2026-10-24); past 1024 waiting evaluations
+  (`dmp.pendingEvaluations`) one more merges into the newest, with a warning.
+  A failed evaluation is logged and no longer fails the source's message.
+  Retirement drains the lane (`FanIn.drain`, 5/6 of the deadline, then drops
+  the rest).
+- **Value feed, done.** Each `aas-event` consumer has a lane (1024, a newer
+  event replaces the newest) instead of a single-thread executor; the feed
+  never runs a task itself (CallerRuns is gone).
+- **Polling, done.** `dmp-poll:` replaces `timer:`: fixed-rate ticks from the
+  one scheduler, run on a worker, skipped while the previous poll lasts. The
+  OPC UA subscription watchdog and the SSE idle watchdog tick the same way.
+- **MQTT, done.** `dmp-paho-mqtt5:` (`DmpPahoMqtt5Component`, `MqttSession`,
+  in `dmp.paho.mqtt5.component`): one connection per broker and credentials
+  for sources, sinks and actions; `paho-mqtt5-inout` and its own publish and
+  reply clients are gone. A filter several sources share is subscribed once;
+  dispatch reads a copy-on-write table (waiting for a SUBACK under a lock the
+  callback thread needs would deadlock). A source that joins a subscribed
+  filter gets the retained message; listeners that already had the topic do
+  not get it again. The session reconnects itself (1 s doubling to 30 s) and
+  subscribes again without holding its lock, so a withheld SUBACK delays no
+  stop. An unreachable broker fails no installation (as for OPC UA and HTTP
+  sources): the session keeps trying, subscribes once connected, and
+  publications fail until then. Before, an MQTT source's route failed to
+  start. An action's reply topic is confirmed on the current connection before
+  each request; one deadline covers subscription, publication and reply; a
+  command is published at most once (Paho drops in-flight state with a clean
+  start; tested for a withheld PUBACK, PUBREC and PUBCOMP across a reconnect
+  and a restart). `name=` replaces `clientId=` in the URIs; Lua's
+  `meta.sinks.<id>.kind` for MQTT is now `dmp-paho-mqtt5`. Upstream
+  camel-paho-mqtt5 remains only for the control plane's event routes (they
+  need persistent sessions) and for its header names.
+- **PLC4X, done.** `DmpPlc4xComponent` holds one connection per connection
+  string (device), released by its last endpoint; requests take the device's
+  lock, so a device answers one request of the DMP at a time.
+- **Tests, done:** a slow sink does not hold the source's thread; lanes keep
+  order, merge when full, close, and wait for a worker when every worker is
+  busy (Camel's pool factory turns an unbounded queue into a hand-off queue,
+  which rejected work: the pool is built directly); 300 polls share the
+  scheduler; 200 `aas-event` listeners and one blocked one; the MQTT session
+  (one connection for 200 sources and a sink, a shared filter, retained values
+  for a late source, reconnect, credentials, an unreachable broker); MQTT 5
+  request/reply on it against a peer withholding SUBACK, PUBACK, PUBREC or
+  PUBCOMP (`DmpPahoMqtt5RequestReplyTest`: every wait ends at the deadline,
+  nothing is published unconfirmed or twice, 32 concurrent callers, a stop
+  ends a request at once and a restart never publishes it); three
+  PLC4X endpoints of one device on one connection. `ManagedMqttCapacityTest`
+  (`-Pcapacity`, `-Ddmp.stress.mqttMappings`, default 1000): N assets with the
+  fan-in-out mapping through discovery and reconciliation, one MQTT
+  connection, threads within workers + 60 of the baseline. At N = 1000:
+  +12 threads after install, +77 at peak, back to the baseline after removal;
+  first values for all 1000 mappings in 3.4 s, one update each in 2.6 s.
+- **Found, not fixed:** installing 1000 mappings took 284 s and removing them
+  about 12 min. Camel's `removeRoute` gathers the endpoints of every route for
+  each route it removes, so removing everything is quadratic. This matters for
+  E4's time-to-ready and reconfiguration; measure in the E4 pilot.
+- **Still per endpoint:** HTTP observation (a request loop and an
+  `HttpClient` per source); response-sink write pools per bridge mapping
+  (`ResponseSinkFanOutProcessor`, threads created on use).
 
-### H6. The compiler emits route plans directly
+### H6. The compiler emits route plans directly — done (2026-10-24), not committed
 
-`RoutesConfiguration`, the configuration entity classes, `triggerData` and the
-ServiceLoader route-creator registry give way to the compiler's typed plan.
-A mapping is then compiled once per install; today it is compiled twice,
-once for the fingerprint and again when staged. This is the largest change
-and has no behaviour change.
+- **Typed plan, done.** `dmp.core`'s `core.plan`: `RoutePlan` (`routeId`,
+  `build(RouteBuilder)`, `endpoints()`), `MappingRoute` (sources, the
+  transformation, sinks, `Response`), `Source`, `Sink`, `Response`, `Endpoint`
+  (`uri(BundleResources)`, its normalizer, whether it places a sink's value
+  itself, whether it sends JSON). camel-aas's `OperationRoute` (`Identity`,
+  `Command`, `Caller`, `Response`) replaces the bridge's `triggerData`; only
+  the connectors' invocation options stay a map (the
+  `SynchronousInvocationAdapter` contract). Each connector's mutable
+  `*DataSourceConfiguration`/`*DataSinkConfiguration` became an immutable
+  endpoint record (`AasElementSource`, `HttpPoll`, `OpcUaEndpoint`,
+  `MqttSubscription`, `MqttAction`, `InfluxDb2Endpoint`, `LuaScript`, …);
+  credentials are a redacting `Credentials` value.
+- **Removed:** `RoutesConfiguration`, `RouteConfiguration` and `triggerData`,
+  the entity classes, the `RouteCreatorFactory` ServiceLoader registry and the
+  route triggers (a plan builds its own routes), the `SourceEventAdapter`
+  registry keyed by `sourceKind` (an endpoint brings its normalizer),
+  reconciliation's `DefinitionFactory` and `DmpComponent`'s fresh-definition
+  supplier and identity check.
+- **Compiled once, done.** Reconciliation stages the plan the pass compiled
+  (with its fingerprint) instead of compiling the mapping again. Building a
+  plan resolves each endpoint's URI once (`PlanBuild`) and binds what it names
+  (`BoundCredential`, `HttpClientOptions`, `LuaBinding`) for the bundle, so
+  one plan can be staged again: a failed replacement restores the previous
+  bundle from its plan, and every bundle can now be replaced (the one-shot
+  `installBundle` is gone).
+- **Not quite unchanged:** `/management/status` counts a bundle's own
+  bindings as its resources where it counted entity objects (an MQTT source
+  without credentials no longer counts). Two equal source endpoints still
+  share one consumer only when their URIs are equal, as before.
+- **Tests, done:** migrated; `mvn -o clean test` runs 638 (645 before: the 7
+  removed tested removed mechanisms: unknown-id lookups, the adapter
+  registry, trigger-data parsing, one Lua configuration shared by two
+  bundles), the integration profile 649, all passing. The Lua binding tests
+  are stricter: each bundle unbinds its own binding. A response mapping
+  without a response transformation cannot be expressed any more (the
+  compiler never produced one).
 
 ### Documents
 
@@ -489,7 +572,8 @@ the stations needs the InfluxDB, since the skill mappings write their log
   multiple DMP instances / HA (today `DMP_MANAGED_AIMC_IDS` partitions
   manually); per-mapping Lua memory isolation; Lua blob provenance
   (signing); a credential redaction audit of data-plane log lines and caller
-  error details beyond H4. The shared MQTT client per broker moved to H5.
+  error details beyond H4. The shared MQTT client per broker moved to H5
+  (done, actions included).
 - **Verification:** live staging on the lab (Occupy/Halt and granular
   Operations, cross-AAS references, mixed sync+async fan-in); Kafka
   `SASL_SSL` with `PLAIN`; one final performance and capacity evaluation.

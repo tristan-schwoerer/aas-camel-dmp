@@ -17,19 +17,26 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.aas.AASComponent;
 import dk.aau.smartproductionlab.dmp.aas.AASEndpoint;
-import dk.aau.smartproductionlab.dmp.aas.configuration.AASPollingDataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.execution.policy.ExecutionPolicyRouteCreator;
-import dk.aau.smartproductionlab.dmp.http.configuration.HttpPollingDataSourceConfiguration;
+import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSource;
+import dk.aau.smartproductionlab.dmp.core.plan.BundleResources;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpPoll;
+import dk.aau.smartproductionlab.dmp.http.configuration.HttpRequestOptions;
 import org.junit.jupiter.api.Test;
 
 import com.sun.net.httpserver.HttpServer;
 
 /** Exercises a simulated async feed with actual HTTP and AAS polling consumers. */
 public class MixedSourceFanInTest {
+	/** An AAS element binds nothing; its URI is resolved without a bundle. */
+	private static final BundleResources RESOURCES = new BundleResources() {
+		@Override public <T extends ManagedRouteResource> T own(T resource) { return resource; }
+	};
+
 	@Test
 	public void failedReadDoesNotCompleteGateAndLaterPollUsesAllThreeSources() throws Exception {
 		AtomicBoolean aasReady = new AtomicBoolean();
@@ -60,46 +67,21 @@ public class MixedSourceFanInTest {
 		server.start();
 		try {
 			String base = "http://127.0.0.1:" + server.getAddress().getPort();
-			DataSourceConfiguration async = new DataSourceConfiguration("asyncEvent", null, 0) {
-				@Override
-				public String getConnectionURI() {
-					return "seda:stationUpdates";
-				}
-			};
-			async.setSourceId("StationState");
-			async.setDelivery("async");
-
-			HttpPollingDataSourceConfiguration http = new HttpPollingDataSourceConfiguration(
-					"httpPoll", base + "/pressure", 0, null, null);
-			http.setSourceId("Pressure");
-			http.setDelivery("sync");
-			http.setValuePath("$.value");
-			http.setPollingIntervalMs(150);
-
-			AASPollingDataSourceConfiguration aas = new AASPollingDataSourceConfiguration(
-					"aasPoll", null, 0, "Temperature", base + "/submodels/demo");
-			aas.setSourceId("Temperature");
-			aas.setDelivery("sync");
-			aas.setValuePath("$.value");
-			aas.setPollingIntervalMs(200);
-			DataSinkConfiguration sink = new DataSinkConfiguration("capture") {
-				@Override
-				public String getConnectionURI() {
-					return "direct:capture";
-				}
-			};
-			RouteConfiguration route = new RouteConfiguration("execution-policy",
-					List.of("asyncEvent", "httpPoll", "aasPoll"), List.of(), List.of("capture"));
-			route.setRouteId("mixedSources");
-			RoutesConfiguration routes = new RoutesConfiguration(List.of(async, http, aas),
-					List.of(), List.of(sink), List.of(route));
+			Source async = new Source("asyncEvent", "StationState", Endpoint.of("seda:stationUpdates"),
+					Source.Delivery.OBSERVED, 0);
+			Source http = new Source("httpPoll", "Pressure", new HttpPoll(base + "/pressure", HttpRequestOptions.none()),
+					Source.Delivery.READ, 150).withValuePath("$.value");
+			AasElementSource aasElement = new AasElementSource(base + "/submodels/demo", "Temperature", null);
+			Source aas = new Source("aasPoll", "Temperature", aasElement, Source.Delivery.READ, 200)
+					.withValuePath("$.value");
+			Sink sink = new Sink("capture", null, Endpoint.of("direct:capture"));
+			MappingRoute route = new MappingRoute("mixedSources", List.of(async, http, aas), null, List.of(sink), null);
 			List<Map<?, ?>> captured = new CopyOnWriteArrayList<>();
 
 			try (DefaultCamelContext context = new DefaultCamelContext()) {
 				context.addComponent("aas", new AASComponent());
-				// A bundle binds its sources' registry resources (the HTTP client options) before its routes start.
-				http.bind(context);
-				AASEndpoint aasEndpoint = context.getEndpoint(aas.getConnectionURI(), AASEndpoint.class);
+				// Building the plan binds its sources' registry resources (the HTTP client options) in the context.
+				AASEndpoint aasEndpoint = context.getEndpoint(aasElement.uri(RESOURCES), AASEndpoint.class);
 				assertEquals(base + "/submodels/demo", aasEndpoint.getSubmodelEndpoint());
 				assertEquals("Temperature", aasEndpoint.getPropertyPath());
 				assertEquals(base + "/submodels/demo/submodel-elements/Temperature",
@@ -109,7 +91,7 @@ public class MixedSourceFanInTest {
 					public void configure() {
 						onException(IllegalArgumentException.class)
 								.process(exchange -> sourceErrors.incrementAndGet()).handled(true);
-						new ExecutionPolicyRouteCreator(this, routes).addRouteToRouteBuilder(route);
+						route.build(this);
 						from("direct:capture").process(exchange -> captured.add(
 								exchange.getMessage().getBody(Map.class)));
 					}

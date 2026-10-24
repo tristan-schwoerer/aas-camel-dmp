@@ -39,10 +39,12 @@ import java.util.Set;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.test.junit5.CamelTestSupport;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
 import org.junit.jupiter.api.Test;
 
@@ -58,46 +60,18 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 
 	private static final java.util.concurrent.atomic.AtomicInteger RUNNING = new java.util.concurrent.atomic.AtomicInteger();
 	private static final java.util.concurrent.atomic.AtomicInteger MOST_CONCURRENT = new java.util.concurrent.atomic.AtomicInteger();
+	/** Holds the slow sink until a test releases it. */
+	private static final java.util.concurrent.CountDownLatch SLOW_SINK = new java.util.concurrent.CountDownLatch(1);
 
-	static final class FixedSource extends DataSourceConfiguration {
-		private final String uri;
-
-		FixedSource(String uniqueId, String sourceId, String delivery, String uri) {
-			super(uniqueId, null, 0);
-			setSourceId(sourceId);
-			setDelivery(delivery);
-			if ("sync".equals(delivery)) {
-				setPollingIntervalMs(100);
-			}
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
+	/** A source at a fixed URI; a read one is polled every 100 ms. */
+	private static Source source(String id, String sourceId, String delivery, String uri) {
+		boolean read = "sync".equals(delivery);
+		return new Source(id, sourceId, Endpoint.of(uri), read ? Source.Delivery.READ : Source.Delivery.OBSERVED,
+				read ? 100 : 0);
 	}
 
-	static final class FixedSink extends DataSinkConfiguration {
-		private final String uri;
-
-		FixedSink(String uniqueId, String uri) {
-			super(uniqueId);
-			this.uri = uri;
-		}
-
-		@Override
-		public String getConnectionURI() {
-			return uri;
-		}
-	}
-
-	private static RouteConfiguration route(String routeId,
-			List<String> datasourceIds, List<String> sinkIds) {
-		RouteConfiguration route = new RouteConfiguration(
-				ExecutionPolicyRouteConfiguration.ROUTE_TRIGGER, datasourceIds, List.of(), sinkIds);
-		route.setRouteId(routeId);
-		return route;
+	private static Sink sink(String id, String uri) {
+		return new Sink(id, null, Endpoint.of(uri));
 	}
 
 	@Override
@@ -105,78 +79,72 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 		return new RouteBuilder() {
 			@Override
 			public void configure() {
-				FixedSource nullable = new FixedSource("nullSource", "Nullable", "async", "direct:inNull");
-				nullable.setValuePath("$.value");
-				FixedSource sharedLeft = new FixedSource("sharedLeft", "Left", "sync", "seda:inShared");
-				sharedLeft.setValuePath("$.left");
-				FixedSource sharedRight = new FixedSource("sharedRight", "Right", "sync", "seda:inShared");
-				sharedRight.setValuePath("$.right");
-				FixedSource fastCadence = new FixedSource("fastCadence", "Fast", "sync", "seda:inDifferentCadence");
-				FixedSource slowCadence = new FixedSource("slowCadence", "Slow", "sync", "seda:inDifferentCadence");
-				slowCadence.setPollingIntervalMs(200);
-				FixedSource eventLeft = new FixedSource("eventLeft", "EventLeft", "async", "seda:inSharedEvents");
-				eventLeft.setValuePath("$.left");
-				FixedSource eventRight = new FixedSource("eventRight", "EventRight", "async", "seda:inSharedEvents");
-				eventRight.setValuePath("$.right");
-				eventRight.setPollingIntervalMs(300);
-				FixedSource changing = new FixedSource("changing", "Changing", "async", "direct:inChanging");
-				changing.setEvaluation(dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation.ON_CHANGE);
-				FixedSource cached = new FixedSource("cached", "Cached", "async", "direct:inCached");
-				cached.setEvaluation(dk.aau.smartproductionlab.dmp.core.configuration.entity.Evaluation.CACHED);
-				RoutesConfiguration routes = new RoutesConfiguration(
-						Arrays.asList(
-								// single-async route
-								new FixedSource("stateA", "StationState", "async", "direct:inA"),
-								nullable,
-								// two-async route (gate on the full set)
-								new FixedSource("stateB", "State", "async", "direct:inB"),
-								new FixedSource("modeB", "Mode", "async", "direct:inModeB"),
-								// periodic-style route: async cache + sync poller
-								new FixedSource("pAsync", "PAsync", "async", "seda:inPAsync"),
-								new FixedSource("pSync", "PSync", "sync", "seda:inPSync"),
-								sharedLeft,
-								sharedRight,
-								fastCadence,
-								slowCadence,
-								eventLeft,
-								eventRight,
-								// sync-only route: the poller drives everything
-								new FixedSource("sOnly", "S", "sync", "seda:inSOnly"),
-								// two async sources arriving on threads of their own
-								new FixedSource("serialA", "A", "async", "direct:inSerialA"),
-								new FixedSource("serialB", "B", "async", "direct:inSerialB"),
-								// headers of the source's message
-								new FixedSource("headed", "Headed", "async", "direct:inHeaded"),
-								new FixedSource("polledHeaded", "PolledHeaded", "sync", "seda:inPolledHeaded"),
-								// an OnChange trigger the gate holds back
-								changing,
-								cached),
-						List.of(),
-						List.of(new FixedSink("outAny", "mock:anyOut"),
-								new FixedSink("outNull", "mock:nullOut"),
-								new FixedSink("outAll", "mock:allOut"),
-								new FixedSink("outPeriodic", "mock:periodicOut"),
-								new FixedSink("outShared", "mock:sharedOut"),
-								new FixedSink("outSharedEvents", "mock:sharedEventsOut"),
-								new FixedSink("outSyncOnly", "mock:syncOnlyOut"),
-								new FixedSink("outSerial", "direct:serialSink"),
-								new FixedSink("outHeaded", "mock:headedOut"),
-								new FixedSink("outPolledHeaded", "mock:polledHeadedOut"),
-								new FixedSink("outChanging", "mock:changingOut")),
-						List.of());
+				Source nullable = source("nullSource", "Nullable", "async", "direct:inNull").withValuePath("$.value");
+				Source sharedLeft = source("sharedLeft", "Left", "sync", "seda:inShared").withValuePath("$.left");
+				Source sharedRight = source("sharedRight", "Right", "sync", "seda:inShared").withValuePath("$.right");
+				Source fastCadence = source("fastCadence", "Fast", "sync", "seda:inDifferentCadence");
+				Source slowCadence = source("slowCadence", "Slow", "sync", "seda:inDifferentCadence").withPollingIntervalMs(200);
+				Source eventLeft = source("eventLeft", "EventLeft", "async", "seda:inSharedEvents").withValuePath("$.left");
+				Source eventRight = source("eventRight", "EventRight", "async", "seda:inSharedEvents").withValuePath("$.right")
+						.withPollingIntervalMs(300);
+				Source changing = source("changing", "Changing", "async", "direct:inChanging").withEvaluation(Evaluation.ON_CHANGE);
+				Source cached = source("cached", "Cached", "async", "direct:inCached").withEvaluation(Evaluation.CACHED);
+				for (Source source : Arrays.asList(
+						// single-async route
+						source("stateA", "StationState", "async", "direct:inA"),
+						nullable,
+						// two-async route (gate on the full set)
+						source("stateB", "State", "async", "direct:inB"),
+						source("modeB", "Mode", "async", "direct:inModeB"),
+						// periodic-style route: async cache + sync poller
+						source("pAsync", "PAsync", "async", "seda:inPAsync"),
+						source("pSync", "PSync", "sync", "seda:inPSync"),
+						sharedLeft,
+						sharedRight,
+						fastCadence,
+						slowCadence,
+						eventLeft,
+						eventRight,
+						// sync-only route: the poller drives everything
+						source("sOnly", "S", "sync", "seda:inSOnly"),
+						// two async sources arriving on threads of their own
+						source("serialA", "A", "async", "direct:inSerialA"),
+						source("serialB", "B", "async", "direct:inSerialB"),
+						// headers of the source's message
+						source("headed", "Headed", "async", "direct:inHeaded"),
+						source("polledHeaded", "PolledHeaded", "sync", "seda:inPolledHeaded"),
+						// an OnChange trigger the gate holds back
+						changing,
+						cached,
+						// a source whose sink blocks
+						source("slow", "Slow", "async", "direct:inSlow"))) sources.put(source.id(), source);
+				for (Sink sink : List.of(sink("outAny", "mock:anyOut"),
+						sink("outNull", "mock:nullOut"),
+						sink("outAll", "mock:allOut"),
+						sink("outPeriodic", "mock:periodicOut"),
+						sink("outShared", "mock:sharedOut"),
+						sink("outSharedEvents", "mock:sharedEventsOut"),
+						sink("outSyncOnly", "mock:syncOnlyOut"),
+						sink("outSerial", "direct:serialSink"),
+						sink("outHeaded", "mock:headedOut"),
+						sink("outPolledHeaded", "mock:polledHeadedOut"),
+						sink("outChanging", "mock:changingOut"),
+						sink("outSlow", "direct:slowSink"))) sinks.put(sink.id(), sink);
 
-				add(route("onAny", List.of("stateA"), List.of("outAny")), routes);
-				add(route("onNull", List.of("nullSource"), List.of("outNull")), routes);
-				add(route("onAll", List.of("stateB", "modeB"), List.of("outAll")), routes);
-				add(route("periodic", List.of("pAsync", "pSync"), List.of("outPeriodic")), routes);
-				add(route("shared", List.of("sharedLeft", "sharedRight"), List.of("outShared")), routes);
-				add(route("differentCadence", List.of("fastCadence", "slowCadence"), List.of()), routes);
-				add(route("sharedEvents", List.of("eventLeft", "eventRight"), List.of("outSharedEvents")), routes);
-				add(route("syncOnly", List.of("sOnly"), List.of("outSyncOnly")), routes);
-				add(route("serial", List.of("serialA", "serialB"), List.of("outSerial")), routes);
-				add(route("headed", List.of("headed"), List.of("outHeaded")), routes);
-				add(route("polledHeaded", List.of("polledHeaded"), List.of("outPolledHeaded")), routes);
-				add(route("changingBehindGate", List.of("changing", "cached"), List.of("outChanging")), routes);
+				add("onAny", List.of("stateA"), List.of("outAny"));
+				add("onNull", List.of("nullSource"), List.of("outNull"));
+				add("onAll", List.of("stateB", "modeB"), List.of("outAll"));
+				add("periodic", List.of("pAsync", "pSync"), List.of("outPeriodic"));
+				add("shared", List.of("sharedLeft", "sharedRight"), List.of("outShared"));
+				add("differentCadence", List.of("fastCadence", "slowCadence"), List.of());
+				add("sharedEvents", List.of("eventLeft", "eventRight"), List.of("outSharedEvents"));
+				add("syncOnly", List.of("sOnly"), List.of("outSyncOnly"));
+				add("serial", List.of("serialA", "serialB"), List.of("outSerial"));
+				add("headed", List.of("headed"), List.of("outHeaded"));
+				add("polledHeaded", List.of("polledHeaded"), List.of("outPolledHeaded"));
+				add("changingBehindGate", List.of("changing", "cached"), List.of("outChanging"));
+				add("slowSink", List.of("slow"), List.of("outSlow"));
+				from("direct:slowSink").process(exchange -> SLOW_SINK.await(10, java.util.concurrent.TimeUnit.SECONDS)).to("mock:slowOut");
 				// a slow sink that counts the evaluations writing at the same time
 				from("direct:serialSink").process(exchange -> {
 					MOST_CONCURRENT.accumulateAndGet(RUNNING.incrementAndGet(), Math::max);
@@ -184,8 +152,12 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 				}).to("mock:serialOut");
 			}
 
-			private void add(RouteConfiguration route, RoutesConfiguration routes) {
-				new ExecutionPolicyRouteCreator(this, routes).addRouteToRouteBuilder(route);
+			private final Map<String, Source> sources = new java.util.LinkedHashMap<>();
+			private final Map<String, Sink> sinks = new java.util.LinkedHashMap<>();
+
+			private void add(String routeId, List<String> sourceIds, List<String> sinkIds) {
+				new MappingRoute(routeId, sourceIds.stream().map(sources::get).toList(), null,
+						sinkIds.stream().map(sinks::get).toList(), null).build(this);
 			}
 		};
 	}
@@ -212,6 +184,22 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 		assertEquals(1, MOST_CONCURRENT.get(), "a mapping evaluates once at a time");
 		Map<?, ?> last = sourcesOf(out.getExchanges().get(out.getExchanges().size() - 1).getMessage().getBody());
 		assertEquals(Map.of("A", "a" + updates, "B", "b" + updates), last, "the last evaluation writes the latest values");
+	}
+
+	@Test
+	void aSlowSinkDoesNotHoldTheSourcesThread() throws Exception {
+		MockEndpoint out = getMockEndpoint("mock:slowOut");
+		out.expectedMessageCount(2);
+		long started = System.nanoTime();
+		template.sendBody("direct:inSlow", "first");
+		template.sendBody("direct:inSlow", "second");
+		long sendMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+		assertTrue(sendMillis < 2000, "the source's thread only accepts its value; it took " + sendMillis + " ms");
+		assertEquals(0, out.getReceivedCounter(), "the sink is still held");
+		SLOW_SINK.countDown();
+		out.assertIsSatisfied(5000);
+		assertEquals(List.of(Map.of("Slow", "first"), Map.of("Slow", "second")),
+				out.getExchanges().stream().map(exchange -> exchange.getMessage().getBody()).toList(), "one at a time, in order");
 	}
 
 	@Test
@@ -262,16 +250,25 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 			dk.aau.smartproductionlab.dmp.core.util.JsonCodec.freeze(payload);
 			copy = Math.min(copy, threads.getCurrentThreadAllocatedBytes() - before);
 		}
+		// The source's thread accepts the value and a worker evaluates it: count what every thread allocates.
 		long evaluation = Long.MAX_VALUE;
 		for (int i = 0; i < 5; i++) {
 			out.reset();
-			long before = threads.getCurrentThreadAllocatedBytes();
+			out.expectedMessageCount(1);
+			long before = allocatedByAllThreads(threads);
 			template.sendBody("direct:inA", payload);
-			evaluation = Math.min(evaluation, threads.getCurrentThreadAllocatedBytes() - before);
+			out.assertIsSatisfied(5000);
+			evaluation = Math.min(evaluation, allocatedByAllThreads(threads) - before);
 		}
 		assertEquals(payload, sourcesOf(out.getExchanges().get(0).getMessage().getBody()).get("StationState"));
 		assertTrue(evaluation < 2 * copy, "one evaluation allocated " + evaluation + " bytes, one copy of its source "
 				+ copy + ": the value is copied once, when the cache accepts it");
+	}
+
+	private static long allocatedByAllThreads(com.sun.management.ThreadMXBean threads) {
+		long total = 0;
+		for (long bytes : threads.getThreadAllocatedBytes(threads.getAllThreadIds())) if (bytes > 0) total += bytes;
+		return total;
 	}
 
 	@Test
@@ -285,6 +282,8 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 			out.expectedMessageCount(1);
 			template.sendBody("direct:inA", "RECORDED");
 			out.assertIsSatisfied(2000);
+			// The evaluation's event is committed after its sinks wrote, on the worker.
+			Thread.sleep(200);
 			recording.stop();
 			recording.dump(file);
 			var events = jdk.jfr.consumer.RecordingFile.readAllEvents(file);
@@ -453,48 +452,23 @@ class ExecutionPolicyRouteCreatorTest extends CamelTestSupport {
 	}
 
 	@Test
-	void managedBuilderRejectsMissingAndDuplicateAuthoredRouteIds() {
-		RouteConfiguration missingId = route(null, List.of("source"), List.of());
-		RoutesConfiguration missingBundle = ordinaryBundle(missingId, "source", "async-source", "unused-sync");
-		assertThrows(IllegalArgumentException.class,
-				() -> DmpRouteBuilder.forManagedBundle(missingBundle, policyFactories()));
-		assertNull(missingId.getRouteId());
-
-		RouteConfiguration firstRoute = route("duplicate", List.of("source"), List.of());
-		RouteConfiguration secondRoute = route("duplicate", List.of("source"), List.of());
-		RoutesConfiguration duplicateBundle = ordinaryBundle(List.of(firstRoute, secondRoute), "source",
-				"async-source", "unused-sync");
-		assertThrows(IllegalArgumentException.class,
-				() -> DmpRouteBuilder.forManagedBundle(duplicateBundle, policyFactories()));
-
-		RouteConfiguration operationRoute = route("operation", List.of(), List.of());
-		operationRoute.setRouteTrigger("unsupported-managed-trigger");
-		assertThrows(IllegalArgumentException.class, () -> DmpRouteBuilder.forManagedBundle(
-				ordinaryBundle(operationRoute, "source", "async-source", "unused-sync"), policyFactories()));
+	void managedBuilderRejectsMissingRouteIdsAndDuplicateEndpoints() {
+		assertThrows(IllegalArgumentException.class, () -> new MappingRoute(null,
+				List.of(source("source", "Source", "async", "direct:source")), null, List.of(), null));
+		assertThrows(IllegalArgumentException.class, () -> new MappingRoute("duplicate",
+				List.of(source("source", "A", "async", "direct:a"), source("source", "B", "async", "direct:b")),
+				null, List.of(), null));
+		RoutePlan unnamed = new RoutePlan() {
+			@Override public String routeId() { return " "; }
+			@Override public void build(RouteBuilder builder) { }
+			@Override public List<Endpoint> endpoints() { return List.of(); }
+		};
+		assertThrows(IllegalArgumentException.class, () -> DmpRouteBuilder.forManagedBundle(unnamed));
 	}
 
 	private static DmpRouteBuilder managedBuilder(String routeId, String asyncId, String syncId) {
-		RoutesConfiguration configuration = ordinaryBundle(route(routeId, List.of(asyncId, syncId), List.of()),
-				asyncId, asyncId, syncId);
-		return DmpRouteBuilder.forManagedBundle(configuration, policyFactories());
-	}
-
-	private static RoutesConfiguration ordinaryBundle(RouteConfiguration route, String asyncId,
-			String asyncEndpointId, String syncEndpointId) {
-		return ordinaryBundle(List.of(route), asyncId, asyncEndpointId, syncEndpointId);
-	}
-
-	private static RoutesConfiguration ordinaryBundle(List<RouteConfiguration> routes, String asyncId,
-			String asyncEndpointId, String syncEndpointId) {
-		return new RoutesConfiguration(
-				List.of(new FixedSource(asyncEndpointId, asyncId, "async", "direct:" + asyncEndpointId),
-						new FixedSource(syncEndpointId, "Sync", "sync", "direct:" + syncEndpointId)),
-				List.of(), List.of(), routes);
-	}
-
-	private static Map<String, dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorFactory>
-			policyFactories() {
-		ExecutionPolicyRouteCreatorFactory factory = new ExecutionPolicyRouteCreatorFactory();
-		return Map.of(factory.routeTrigger(), factory);
+		return DmpRouteBuilder.forManagedBundle(new MappingRoute(routeId,
+				List.of(source(asyncId, asyncId, "async", "direct:" + asyncId),
+						source(syncId, "Sync", "sync", "direct:" + syncId)), null, List.of(), null));
 	}
 }

@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.influxdb2.InfluxSettings;
 import dk.aau.smartproductionlab.dmp.influxdb2.component.DmpInfluxDb2Component;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
@@ -132,7 +132,7 @@ class TimeSeriesSegmentTest {
 		return new InfluxSettings(URI.create("http://127.0.0.1:" + influx.getAddress().getPort()), "ap2030", "token");
 	}
 
-	private RoutesConfiguration compile(String aimc) throws Exception {
+	private RoutePlan compile(String aimc) throws Exception {
 		repository.put(aimc);
 		var plan = new MappingPlanCompiler(new AasReferenceResolver(repository.client())).compile(WireProjection.aimc(
 				dk.aau.smartproductionlab.dmp.aas.model.Aas.read(aimc, org.eclipse.digitaltwin.aas4j.v3.model.Submodel.class)));
@@ -142,7 +142,7 @@ class TimeSeriesSegmentTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(repository.uri(), named));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().get(0).configuration();
+		return compiled.bundles().get(0).route();
 	}
 
 	private static String variables() throws Exception {

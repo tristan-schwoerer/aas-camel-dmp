@@ -17,6 +17,7 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.support.DefaultExchange;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.AffordanceValidation;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseProjectionProcessor;
+import dk.aau.smartproductionlab.dmp.core.plan.Response.ResponseSource;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseSinkFanOutProcessor;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.PayloadValidationException;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
@@ -29,9 +30,9 @@ class OperationResponseMappingTest {
 
 	@Test
 	void responseSourcesProjectDifferentMembersUnderAuthoredIds() throws Exception {
-		List<Map<String, Object>> bindings = List.of(
-				Map.of("sourceId", "State", "valuePath", "$.Machine.State"),
-				Map.of("sourceId", "Audit", "valuePath", "$.Machine.Audit"));
+		List<ResponseSource> bindings = List.of(
+				new ResponseSource("State", null, "$.Machine.State"),
+				new ResponseSource("Audit", null, "$.Machine.Audit"));
 		Map<String, Object> projected = ResponseProjectionProcessor.project(
 				Map.of("Machine", Map.of("State", "READY", "Audit", Map.of("code", 7))), bindings);
 		assertEquals("READY", projected.get("State"));
@@ -42,7 +43,7 @@ class OperationResponseMappingTest {
 	void projectionDistinguishesMissingPointerFromPresentNull() {
 		Map<String, Object> reply = new java.util.LinkedHashMap<>();
 		reply.put("optional", null);
-		var bindings = List.of(Map.<String, Object>of("sourceId", "Optional", "valuePath", "/optional"));
+		var bindings = List.of(new ResponseSource("Optional", null, "/optional"));
 		var projected = ResponseProjectionProcessor.project(reply, bindings);
 		assertTrue(projected.containsKey("Optional"));
 		assertNull(projected.get("Optional"));
@@ -55,8 +56,8 @@ class OperationResponseMappingTest {
 	void wholeAndRootProjectionPreserveNormalizedScalarArrayAndNullValues() {
 		for (Object reply : java.util.Arrays.asList("READY", List.of(1L, 2L), null, JsonPointer.JSON_NULL)) {
 			Object expected = reply == JsonPointer.JSON_NULL ? null : reply;
-			for (Map<String, Object> binding : List.of(Map.<String, Object>of("sourceId", "Whole"),
-					Map.<String, Object>of("sourceId", "Whole", "valuePath", "$"))) {
+			for (ResponseSource binding : List.of(new ResponseSource("Whole", null, null),
+					new ResponseSource("Whole", null, "$"))) {
 				var projected = ResponseProjectionProcessor.project(reply, List.of(binding));
 				assertTrue(projected.containsKey("Whole"));
 				assertEquals(expected, projected.get("Whole"));
@@ -71,8 +72,8 @@ class OperationResponseMappingTest {
 		reply.put("other", "READY");
 		PayloadValidationException failure = assertThrows(PayloadValidationException.class,
 				() -> ResponseProjectionProcessor.project(reply, List.of(
-						Map.of("sourceId", "Duplicate", "valuePath", "/optional"),
-						Map.of("sourceId", "Duplicate", "valuePath", "/other"))));
+						new ResponseSource("Duplicate", null, "/optional"),
+						new ResponseSource("Duplicate", null, "/other"))));
 		assertEquals(PayloadValidationException.Stage.MAPPING, failure.getStage());
 		assertTrue(failure.getMessage().contains("duplicate ResponseSource id Duplicate"));
 	}
@@ -110,7 +111,7 @@ class OperationResponseMappingTest {
 			Exchange exchange = new DefaultExchange(context);
 			exchange.getMessage().setBody(Map.of("State", "READY"));
 			new ResponseProjectionProcessor(List.of(
-					Map.of("sourceId", "MachineState", "valuePath", "$.State"))).process(exchange);
+					new ResponseSource("MachineState", null, "$.State"))).process(exchange);
 			assertEquals(Map.of("MachineState", "READY"), exchange.getMessage().getBody());
 		}
 	}
@@ -135,8 +136,8 @@ class OperationResponseMappingTest {
 			exchange.getMessage().setBody(Map.of("CurrentState", "READY",
 					"Audit", Map.of("state", "READY", "code", 7L)));
 			try (var processor = new ResponseSinkFanOutProcessor(context, "invocation-1", List.of(
-					Map.of("sinkId", "CurrentState", "endpoint", "direct:state"),
-					Map.of("sinkId", "Audit", "endpoint", "direct:audit")))) {
+					new ResponseSinkFanOutProcessor.Target("CurrentState", "direct:state", null, null, null, null, false),
+					new ResponseSinkFanOutProcessor.Target("Audit", "direct:audit", null, null, null, null, false)))) {
 				dispatch(context, processor, processor.prepareJobs(exchange));
 				MockEndpoint.assertIsSatisfied(2_000, java.util.concurrent.TimeUnit.MILLISECONDS,
 						state, audit);
@@ -181,12 +182,10 @@ class OperationResponseMappingTest {
 			Map<String, Object> schema = Map.of("type", "object", "required", List.of("X", "Y"),
 					"properties", Map.of("X", Map.of("type", "number"), "Y", Map.of("type", "number")));
 			try (var processor = new ResponseSinkFanOutProcessor(context, "invocation-2", List.of(
-					Map.of("sinkId", "XResult", "endpoint", "direct:device", "payloadGroup", "move",
-							"valuePath", "$.X", "payloadSchema", schema, "schema", Map.of("type", "number"),
-							"aas", false),
-					Map.of("sinkId", "YResult", "endpoint", "direct:device", "payloadGroup", "move",
-							"valuePath", "$.Y", "payloadSchema", schema, "schema", Map.of("type", "number"),
-							"aas", false)))) {
+					new ResponseSinkFanOutProcessor.Target("XResult", "direct:device", "move", "$.X", schema,
+							Map.of("type", "number"), true),
+					new ResponseSinkFanOutProcessor.Target("YResult", "direct:device", "move", "$.Y", schema,
+							Map.of("type", "number"), true)))) {
 				dispatch(context, processor, processor.prepareJobs(exchange));
 				MockEndpoint.assertIsSatisfied(2_000, java.util.concurrent.TimeUnit.MILLISECONDS, device);
 				assertEquals(Map.of("X", 1, "Y", 2), device.getExchanges().get(0).getMessage().getBody());
@@ -212,10 +211,8 @@ class OperationResponseMappingTest {
 			var exchange = new DefaultExchange(context);
 			exchange.getMessage().setBody(Map.of("XResult", 1));
 			try (var processor = new ResponseSinkFanOutProcessor(context, "invocation-3", List.of(
-					Map.of("sinkId", "XResult", "endpoint", "direct:device", "payloadGroup", "move",
-							"valuePath", "$.X", "aas", false),
-					Map.of("sinkId", "YResult", "endpoint", "direct:device", "payloadGroup", "move",
-							"valuePath", "$.Y", "aas", false)))) {
+					new ResponseSinkFanOutProcessor.Target("XResult", "direct:device", "move", "$.X", null, null, false),
+					new ResponseSinkFanOutProcessor.Target("YResult", "direct:device", "move", "$.Y", null, null, false)))) {
 				dispatch(context, processor, processor.prepareJobs(exchange));
 				MockEndpoint.assertIsSatisfied(2_000, java.util.concurrent.TimeUnit.MILLISECONDS, device);
 			}
@@ -241,7 +238,7 @@ class OperationResponseMappingTest {
 			exchange.getMessage().setBody(Map.of("Payload", Map.of(
 					"count", 2147483648L, "optional", JsonPointer.JSON_NULL)));
 			try (var processor = new ResponseSinkFanOutProcessor(context, "invocation-4", List.of(
-					Map.of("sinkId", "Payload", "endpoint", "direct:device")))) {
+					new ResponseSinkFanOutProcessor.Target("Payload", "direct:device", null, null, null, null, false)))) {
 				dispatch(context, processor, processor.prepareJobs(exchange));
 				MockEndpoint.assertIsSatisfied(2_000, java.util.concurrent.TimeUnit.MILLISECONDS, device);
 				assertEquals(dk.aau.smartproductionlab.dmp.core.util.JsonCodec.parseJson(

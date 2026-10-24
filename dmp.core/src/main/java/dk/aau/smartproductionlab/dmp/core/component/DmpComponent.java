@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.Duration;
-import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.camel.CamelContext;
@@ -44,10 +43,8 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.model.Model;
 import org.apache.camel.model.RouteDefinition;
 import org.apache.camel.model.rest.RestDefinition;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorFactory;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.execution.policy.ExecutionPolicyRouteConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,7 +57,6 @@ import org.slf4j.LoggerFactory;
  */
 public class DmpComponent {
 	private static Logger logger = LoggerFactory.getLogger(DmpComponent.class);
-	private final Map<String, RouteCreatorFactory> routeCreatorFactories;
 	private final Map<String, ManagedBundle> managedBundles = new HashMap<>();
 	private final Map<String, AtomicLong> generations = new ConcurrentHashMap<>();
 	private final AtomicLong generationSequence = new AtomicLong();
@@ -227,13 +223,12 @@ public class DmpComponent {
 		}
 		this.drainTimeout = drainTimeout;
 		camelContext = new DefaultCamelContext();
-		routeCreatorFactories = getRouteCreatorFactoryMapDefault();
 	}
 
-	/** One-shot installation of a definition that is never replaced; replacement needs a fresh-definition factory. */
-	public synchronized ManagedBundle installBundle(String bundleId, RoutesConfiguration configuration) {
+	/** Stages and installs {@code plan} as a new bundle. */
+	public synchronized ManagedBundle installBundle(String bundleId, RoutePlan plan) {
 		if (managedBundles.containsKey(bundleId)) throw new IllegalStateException("bundle already installed: " + bundleId);
-		return installBundle(stageBundle(bundleId, nextBundleGeneration(bundleId), () -> configuration, false));
+		return installBundle(stageBundle(bundleId, nextBundleGeneration(bundleId), plan));
 	}
 
 	/** Fences already compiled/staged work, including after removal. Call before asynchronous compilation. */
@@ -273,26 +268,17 @@ public class DmpComponent {
 	}
 
 	/**
-	 * Builds an inactive, owned candidate. Close abandoned candidates. The factory
-	 * must create fresh mutable configuration/entities on every call, including rollback.
-	 * It must reconstruct the same validated definition, not fetch changing desired state.
+	 * Builds an inactive, owned candidate of {@code plan}'s routes. Close abandoned candidates. Each build creates
+	 * what the bundle owns, so the bundle's plan restores it when a replacement fails.
 	 */
-	public synchronized StagedBundle stageBundle(String bundleId, long generation,
-			Supplier<RoutesConfiguration> definition) {
-		return stageBundle(bundleId, generation, definition, true);
-	}
-
-	private StagedBundle stageBundle(String bundleId, long generation,
-			Supplier<RoutesConfiguration> definition, boolean restorable) {
+	public synchronized StagedBundle stageBundle(String bundleId, long generation, RoutePlan plan) {
 		requireGeneration(bundleId, generation);
 		if (camelContext == null || !camelContext.getStatus().isStarted()) {
 			throw new IllegalStateException("managed bundles require a running DMP context");
 		}
 		if (stagedBundles.size() >= 128) throw new IllegalStateException("staged bundle capacity exceeded");
-		RoutesConfiguration configuration = definition.get();
-		DmpRouteBuilder candidate = DmpRouteBuilder.forManagedBundle(configuration, routeCreatorFactories);
-		StagedBundle staged = new StagedBundle(bundleId, generation, candidate,
-				configuration, restorable ? definition : null);
+		DmpRouteBuilder candidate = DmpRouteBuilder.forManagedBundle(plan);
+		StagedBundle staged = new StagedBundle(bundleId, generation, candidate, plan);
 		stagedBundles.add(staged);
 		try {
 			candidate.prepareBundle(camelContext);
@@ -318,14 +304,13 @@ public class DmpComponent {
 		if (previous == null || managedBundles.get(staged.bundleId) != previous || !previous.bundleId.equals(staged.bundleId)) {
 			throw new IllegalArgumentException("replacement does not own the installed bundle");
 		}
-		if (previous.definitionFactory == null || !previous.active) {
-			throw new IllegalStateException("replacement requires an active bundle installed with a fresh-definition factory");
+		if (!previous.active) {
+			throw new IllegalStateException("replacement requires an active bundle");
 		}
 		if (staged.generation <= previous.generation) {
 			throw new IllegalStateException("replacement requires a newer bundle generation");
 		}
 		try {
-			validateFreshDefinition(previous.configuration, staged.configuration);
 			preflight(staged.builder, previous);
 			requireGeneration(staged.bundleId, staged.generation);
 			retireBundle(previous);
@@ -340,32 +325,13 @@ public class DmpComponent {
 			AtomicLong fence = generations.get(previous.bundleId);
 			if (!managedBundles.containsKey(previous.bundleId) && fence != null) {
 				try {
-					StagedBundle restore = stageBundle(previous.bundleId, fence.get(), previous.definitionFactory);
+					StagedBundle restore = stageBundle(previous.bundleId, fence.get(), previous.plan);
 					try {
-						validateFreshDefinition(previous.configuration, restore.configuration);
 						activate(restore);
 					} finally { if (!restore.consumed) restore.close(); }
 				} catch (Exception restoreFailure) { failure.addSuppressed(restoreFailure); }
 			}
 			throw new IllegalStateException("unable to replace managed bundle '" + previous.bundleId + "'", failure);
-		}
-	}
-
-	private static void validateFreshDefinition(RoutesConfiguration old, RoutesConfiguration candidate) {
-		Set<Object> oldObjects = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-		oldObjects.add(old);
-		oldObjects.addAll(old.getRoutes());
-		oldObjects.addAll(old.getDatasources().values());
-		oldObjects.addAll(old.getDatasinks().values());
-		oldObjects.addAll(old.getTransformers().values());
-		List<Object> newObjects = new ArrayList<>();
-		newObjects.add(candidate);
-		newObjects.addAll(candidate.getRoutes());
-		newObjects.addAll(candidate.getDatasources().values());
-		newObjects.addAll(candidate.getDatasinks().values());
-		newObjects.addAll(candidate.getTransformers().values());
-		if (newObjects.stream().anyMatch(oldObjects::contains)) {
-			throw new IllegalArgumentException("bundle generations must not reuse mutable configuration/entities");
 		}
 	}
 
@@ -440,8 +406,7 @@ public class DmpComponent {
 			ManagedBundle installed = new ManagedBundle(bundleId, definitions, reservations, restEndpoints,
 					candidate.getManagedResources());
 			installed.builder = candidate;
-			installed.configuration = staged.configuration;
-			installed.definitionFactory = staged.definitionFactory;
+			installed.plan = staged.plan;
 			installed.generation = staged.generation;
 			AtomicLong fence = generations.get(bundleId);
 			synchronized (fence) {
@@ -785,8 +750,7 @@ public class DmpComponent {
 		private final Set<Endpoint> remainingEndpoints = Collections.synchronizedSet(Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
 		private final Map<String, Endpoint> endpointBaseline = new HashMap<>();
 		private DmpRouteBuilder builder;
-		private RoutesConfiguration configuration;
-		private Supplier<RoutesConfiguration> definitionFactory;
+		private RoutePlan plan;
 		private long generation;
 		private volatile boolean active;
 		private boolean releasingEndpoints;
@@ -822,18 +786,15 @@ public class DmpComponent {
 		private final String bundleId;
 		private final long generation;
 		private final DmpRouteBuilder builder;
-		private final RoutesConfiguration configuration;
-		private final Supplier<RoutesConfiguration> definitionFactory;
+		private final RoutePlan plan;
 		private Set<ManagedRouteResource> remainingResources;
 		private boolean consumed;
 
-		private StagedBundle(String bundleId, long generation, DmpRouteBuilder builder,
-				RoutesConfiguration configuration, Supplier<RoutesConfiguration> definitionFactory) {
+		private StagedBundle(String bundleId, long generation, DmpRouteBuilder builder, RoutePlan plan) {
 			this.bundleId = bundleId;
 			this.generation = generation;
 			this.builder = builder;
-			this.configuration = configuration;
-			this.definitionFactory = definitionFactory;
+			this.plan = plan;
 		}
 
 		public long generation() { return generation; }
@@ -859,23 +820,6 @@ public class DmpComponent {
 				publishResourceSnapshot();
 			}
 		}
-	}
-
-	private static Map<String, RouteCreatorFactory> getRouteCreatorFactoryMapDefault() {
-		Map<String, RouteCreatorFactory> defaultRouteCreatorFactoryMap = new HashMap<>();
-		for (RouteCreatorFactory factory : java.util.ServiceLoader
-				.load(RouteCreatorFactory.class, DmpComponent.class.getClassLoader())) {
-			RouteCreatorFactory existing = defaultRouteCreatorFactoryMap.putIfAbsent(
-					factory.routeTrigger(), factory);
-			if (existing != null) {
-				throw new IllegalStateException("multiple route creator factories register trigger '"
-						+ factory.routeTrigger() + "'");
-			}
-		}
-		if (!defaultRouteCreatorFactoryMap.containsKey(ExecutionPolicyRouteConfiguration.ROUTE_TRIGGER)) {
-			throw new IllegalStateException("no connector registers the standard execution-policy route");
-		}
-		return defaultRouteCreatorFactoryMap;
 	}
 
 	/**

@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.camel.builder.RouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -226,11 +226,11 @@ class OperationPropertyWriteTest {
 
 	// ---- models: the opcua-method fixture, its Operation bound to a Setpoint variable ----
 
-	private RoutesConfiguration compile() throws Exception {
+	private RoutePlan compile() throws Exception {
 		return compile(null);
 	}
 
-	private RoutesConfiguration compile(String browsePath) throws Exception {
+	private RoutePlan compile(String browsePath) throws Exception {
 		JsonObject aid = json(resource("opcua-method/aid.json")).getAsJsonObject();
 		JsonObject opcua = child(aid, "interface_opcua");
 		child(child(opcua, "EndpointMetadata"), "base").addProperty("value", "opc.tcp://127.0.0.1:" + devicePort);
@@ -291,7 +291,7 @@ class OperationPropertyWriteTest {
 		var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:" + aas.getAddress().getPort())));
 		assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-		return compiled.bundles().get(0).configuration();
+		return compiled.bundles().get(0).route();
 	}
 
 	private static JsonObject key(String type, String value) {

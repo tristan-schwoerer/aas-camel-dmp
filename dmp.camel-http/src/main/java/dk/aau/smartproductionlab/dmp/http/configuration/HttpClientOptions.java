@@ -12,7 +12,7 @@ import java.util.UUID;
 import org.apache.camel.CamelContext;
 import org.apache.camel.component.http.HttpClientConfigurer;
 import org.apache.hc.client5.http.impl.classic.HttpClientBuilder;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 
 /**
  * The one set of client options of every HTTP endpoint the DMP opens: polls, writes, observations and actions

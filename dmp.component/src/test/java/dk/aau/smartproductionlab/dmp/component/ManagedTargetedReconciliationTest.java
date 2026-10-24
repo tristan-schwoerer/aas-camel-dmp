@@ -28,7 +28,7 @@ class ManagedTargetedReconciliationTest {
 			@SuppressWarnings("resource") // this test owns the component lifecycle
 			var component = new ManagedDmpRuntime(settings).component();
 			component.startComponent();
-			try (var service = new MappingReconciliationService(component, discovery, runtimeSettings, 16, 8, 3000)) {
+			try (var service = new MappingReconciliationService(component, discovery, 16, 8, 3000)) {
 				var reports = new AtomicInteger();
 				service.setReportListener(report -> { if (report.complete() && !report.superseded()) reports.incrementAndGet(); });
 				assertEquals(2, service.reconcileNow().installedOrUpdated());

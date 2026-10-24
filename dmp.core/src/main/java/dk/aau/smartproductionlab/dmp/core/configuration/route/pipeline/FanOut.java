@@ -35,10 +35,8 @@ import java.util.Set;
 import org.apache.camel.AggregationStrategy;
 import org.apache.camel.Exchange;
 import org.apache.camel.model.ProcessorDefinition;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.EndpointIdentityProvider;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload;
@@ -107,18 +105,16 @@ public final class FanOut {
 	 * @param transformerEndpoints
 	 *            the mapping's transformers (run once)
 	 * @param sinkEndpoints
-	 *            the endpoint of each of {@code routeConfig}'s sinks, in order
+	 *            the endpoint of each of {@code sinks}, in order
 	 */
-	public static void apply(ProcessorDefinition<?> route, RoutesConfiguration routesConfiguration,
-			RouteConfiguration routeConfig, String[] transformerEndpoints, String[] sinkEndpoints, String routeId) {
-		apply(route, routesConfiguration, routeConfig, transformerEndpoints, sinkEndpoints,
-				routeId, AffordanceValidation.configuredMode());
+	public static void apply(ProcessorDefinition<?> route, List<Sink> sinks, String[] transformerEndpoints,
+			String[] sinkEndpoints, String routeId) {
+		apply(route, sinks, transformerEndpoints, sinkEndpoints, routeId, AffordanceValidation.configuredMode());
 	}
 
-	static void apply(ProcessorDefinition<?> route, RoutesConfiguration routesConfiguration,
-			RouteConfiguration routeConfig, String[] transformerEndpoints, String[] sinkEndpoints,
-			String routeId, AffordanceValidation.Mode mode) {
-		String[] configIds = routeConfig.getDatasinks().toArray(String[]::new);
+	static void apply(ProcessorDefinition<?> route, List<Sink> sinks, String[] transformerEndpoints,
+			String[] sinkEndpoints, String routeId, AffordanceValidation.Mode mode) {
+		String[] configIds = sinks.stream().map(Sink::id).toArray(String[]::new);
 		if (configIds.length != sinkEndpoints.length)
 			throw new IllegalArgumentException("route " + routeId + ": one endpoint per sink is required");
 
@@ -144,26 +140,25 @@ public final class FanOut {
 		Map<String, AffordanceValidation> payloadValidators = new LinkedHashMap<>();
 		Map<String, AffordanceValidation> memberValidators = new LinkedHashMap<>();
 		for (int i = 0; i < sinkEndpoints.length; i++) {
-			DataSinkConfiguration config = routesConfiguration.getDatasinks().get(configIds[i]);
-			valuePaths.put(configIds[i], config == null ? null : config.getValuePath());
-			memberValidators.put(configIds[i], new AffordanceValidation(
-					config == null ? null : config.getSchema(), "sink " + configIds[i], mode));
-			if (config != null && !config.handlesValuePathInternally()
-					&& config.getPayloadGroup() != null && !config.getPayloadGroup().isBlank()) {
-				String group = config.getPayloadGroup();
+			Sink config = sinks.get(i);
+			valuePaths.put(configIds[i], config.valuePath());
+			memberValidators.put(configIds[i], new AffordanceValidation(config.schema(), "sink " + configIds[i], mode));
+			if (!config.endpoint().appliesValuePath()
+					&& config.payloadGroup() != null && !config.payloadGroup().isBlank()) {
+				String group = config.payloadGroup();
 				groupKeys[i] = group;
 				String previousEndpoint = groupEndpoints.putIfAbsent(group, sinkEndpoints[i]);
 				if (previousEndpoint != null
 						&& !sameDestination(previousEndpoint, sinkEndpoints[i])) {
 					throw new IllegalArgumentException("payloadGroup " + group + " has different endpoint URIs");
 				}
-				if (groupSchemas.containsKey(group) && !Objects.equals(groupSchemas.get(group), config.getPayloadSchema())) {
+				if (groupSchemas.containsKey(group) && !Objects.equals(groupSchemas.get(group), config.payloadSchema())) {
 					throw new IllegalArgumentException("payloadGroup " + group + " has different payload schemas");
 				}
-				groupSchemas.put(group, config.getPayloadSchema());
+				groupSchemas.put(group, config.payloadSchema());
 				groupLast.put(group, i);
 				groupMembers.computeIfAbsent(group, ignored -> new ArrayList<>()).add(configIds[i]);
-				payloadValidators.putIfAbsent(group, new AffordanceValidation(config.getPayloadSchema(),
+				payloadValidators.putIfAbsent(group, new AffordanceValidation(config.payloadSchema(),
 						"payloadGroup " + group, mode));
 			}
 		}
@@ -191,6 +186,7 @@ public final class FanOut {
 		// route count is a function of mappings, not of sinks.
 		for (int i = 0; i < sinkEndpoints.length; i++) {
 			final String configId = configIds[i];
+			final Sink sink = sinks.get(i);
 			final String group = groupKeys[i];
 			final boolean sendGroup = group != null && groupLast.get(group) == i;
 			final String endpoint = group == null ? sinkEndpoints[i] : groupEndpoints.get(group);
@@ -201,16 +197,14 @@ public final class FanOut {
 				restoreBranchState(exchange);
 				KeyedSnapshot result = snapshotOf(exchange);
 				exchange.setProperty(SINK_RESULT_PROPERTY, result);
-				exchange.getMessage().setBody(selectedValue(result, configId, routesConfiguration));
+				exchange.getMessage().setBody(selectedValue(result, sink));
 			});
 			// every sink is attempted; failures are collected and reported once
 			// at the end rather than aborting the remaining sinks
 			attempt.process(e -> {
 						Object member = e.getMessage().getBody();
 						memberValidators.get(configId).outgoing(member == JsonPointer.JSON_NULL ? null : member);
-						DataSinkConfiguration sinkConfig = routesConfiguration.getDatasinks().get(configId);
-						if (sinkConfig != null && sinkConfig.getSinkId() != null)
-							sinkValues(e).put(sinkConfig.getSinkId(), member);
+						if (sink.sinkId() != null) sinkValues(e).put(sink.sinkId(), member);
 						if (group != null) {
 							if (sendGroup && groupFailures(e).contains(group)) {
 								throw new IllegalArgumentException("payloadGroup " + group + " has a failed member");
@@ -226,11 +220,11 @@ public final class FanOut {
 							}
 						} else {
 							e.getMessage().setBody(assemble(member,
-									e.getProperty(SINK_RESULT_PROPERTY, KeyedSnapshot.class), configId, routesConfiguration));
+									e.getProperty(SINK_RESULT_PROPERTY, KeyedSnapshot.class), sink));
 						}
 					});
 			if (group == null || sendGroup) {
-				boolean jsonPayload = declaresJsonPayload(routesConfiguration, configId);
+				boolean jsonPayload = sink.jsonPayload();
 				attempt.process(e -> {
 					dispatchJobs(e).add(new DispatchJob(routeId, configId, endpoint,
 							e.getMessage().getBody(), jsonPayload));
@@ -359,11 +353,6 @@ public final class FanOut {
 		return (List<DispatchJob>) exchange.getProperty(DISPATCH_JOBS_PROPERTY);
 	}
 
-	private static boolean declaresJsonPayload(RoutesConfiguration configuration, String configId) {
-		DataSinkConfiguration sink = configuration.getDatasinks().get(configId);
-		return sink != null && sink.requiresJsonWireEncoding();
-	}
-
 	private static void collectDispatchOutcomes(Exchange exchange) {
 		List<?> outcomes = exchange.getProperty(DISPATCH_OUTCOMES_PROPERTY, List.class);
 		if (outcomes == null) return;
@@ -426,15 +415,13 @@ public final class FanOut {
 				|| BRANCH_BASE_HEADERS.equals(key);
 	}
 
-	private static Object selectedValue(KeyedSnapshot result, String configId,
-			RoutesConfiguration routesConfiguration) {
-		DataSinkConfiguration config = routesConfiguration.getDatasinks().get(configId);
-		if (config != null && config.getSinkId() != null && !config.getSinkId().isBlank()) {
-			if (!result.has(config.getSinkId())) {
-				throw new IllegalArgumentException("Sink '" + configId
-						+ "': SinkId '" + config.getSinkId() + "' not present in the transform result");
+	private static Object selectedValue(KeyedSnapshot result, Sink config) {
+		if (config.sinkId() != null && !config.sinkId().isBlank()) {
+			if (!result.has(config.sinkId())) {
+				throw new IllegalArgumentException("Sink '" + config.id()
+						+ "': SinkId '" + config.sinkId() + "' not present in the transform result");
 			}
-			Object value = result.value(config.getSinkId());
+			Object value = result.value(config.sinkId());
 			return value == null ? JsonPointer.JSON_NULL : value;
 		}
 		return result.root();
@@ -488,17 +475,12 @@ public final class FanOut {
 	}
 
 	/** The same shaping step, over an arbitrary (possibly transformed) value. */
-	private static Object assemble(Object value, KeyedSnapshot result, String dataSinkId,
-			RoutesConfiguration routesConfiguration) {
-		DataSinkConfiguration config = dataSinkId == null
-				? null
-				: routesConfiguration.getDatasinks().get(dataSinkId);
-		if (config == null) return value;
-		String valuePath = config.getValuePath();
-		if (config.handlesValuePathInternally()) {
+	private static Object assemble(Object value, KeyedSnapshot result, Sink config) {
+		String valuePath = config.valuePath();
+		if (config.endpoint().appliesValuePath()) {
 			return valuePath == null || valuePath.isBlank() ? value : result.root();
 		}
-		return PayloadAssembler.assemble(java.util.Collections.singletonMap(dataSinkId, value),
-				List.of(dataSinkId), java.util.Collections.singletonMap(dataSinkId, valuePath));
+		return PayloadAssembler.assemble(java.util.Collections.singletonMap(config.id(), value),
+				List.of(config.id()), java.util.Collections.singletonMap(config.id(), valuePath));
 	}
 }

@@ -176,8 +176,7 @@ class RepositoryDiscoveryTest {
 				return new FakeAasRepository.Response(404, "{}");
 			});
 			var discovery = discovery(repository);
-			try (var service = new MappingReconciliationService(component, discovery,
-					new ConnectorConfigurationFactory.RuntimeSettings(repository.uri()), 16, 8, 60_000)) {
+			try (var service = new MappingReconciliationService(component, discovery, 16, 8, 60_000)) {
 				holder.set(service);
 				service.reconcileNow();
 				assertTrue(late.get(), "the event arrived during the scan");

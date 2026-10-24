@@ -42,7 +42,6 @@ import org.awaitility.Awaitility;
 import dk.aau.smartproductionlab.dmp.management.repository.FakeAasRepository;
 import dk.aau.smartproductionlab.dmp.management.repository.PublishedModels;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.RuntimeSettings;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import dk.aau.smartproductionlab.dmp.management.repository.KafkaControlEventRouteBuilder;

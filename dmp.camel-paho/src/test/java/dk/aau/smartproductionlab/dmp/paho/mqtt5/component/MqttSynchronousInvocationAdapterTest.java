@@ -1,6 +1,8 @@
 package dk.aau.smartproductionlab.dmp.paho.mqtt5.component;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -14,26 +16,24 @@ import org.junit.jupiter.api.Test;
 
 public class MqttSynchronousInvocationAdapterTest {
 	@Test
-	void inventoryIdentifiesDerivedRequestReplyEndpointWithoutPublishing() {
+	void theCompiledEndpointIsTheOnlyOneTheInvocationOwns() {
 		var adapter = new MqttSynchronousInvocationAdapter();
+		String uri = "dmp-paho-mqtt5:command?brokerUrl=tcp://127.0.0.1:1883&name=c&replyTopic=reply/channel&replyTimeout=4";
 		var schema = new SynchronousInvocationAdapter.InvocationSchema(Map.of(), Set.of(), Map.of(), Set.of(),
 				Map.of("requestReply", true, "responseTopic", "reply/channel", "timeoutSeconds", 4));
-		assertEquals(Set.of("paho-mqtt5-inout:command?brokerUrl=tcp://127.0.0.1:1883"
-				+ "&replyTopic=reply/channel&replyTimeout=4"),
-				adapter.ownedEndpointUris("paho-mqtt5:command?brokerUrl=tcp://127.0.0.1:1883", schema));
+		assertTrue(adapter.supports(uri));
+		assertFalse(adapter.supports("paho-mqtt5:command?brokerUrl=tcp://127.0.0.1:1883"), "upstream endpoints are not actions");
+		assertEquals(Set.of(uri), adapter.ownedEndpointUris(uri, schema));
 	}
 
 	@Test
 	void compiledRequestReplyEndpointIsInvokedAsIsAndItsJsonReplyDecoded() throws Exception {
-		// The compiler's operation sinks are already paho-mqtt5-inout URIs; the reply arrives
-		// as JSON text and must reach the operation as an object, or the caller gets no outputs.
+		// The reply arrives as JSON text and must reach the operation as an object, or the caller gets no outputs.
 		var adapter = new MqttSynchronousInvocationAdapter();
-		String uri = "paho-mqtt5-inout:CMD/Halt?brokerUrl=tcp://127.0.0.1:1883&clientId=c&replyTopic=DATA/Halt&replyTimeout=30";
+		String uri = "dmp-paho-mqtt5:CMD/Halt?brokerUrl=tcp://127.0.0.1:1883&name=c&replyTopic=DATA/Halt&replyTimeout=30";
 		var schema = new SynchronousInvocationAdapter.InvocationSchema(Map.of(), Set.of(), Map.of(), Set.of(), Map.of());
-		assertEquals(true, adapter.supports(uri));
-		assertEquals(Set.of(uri), adapter.ownedEndpointUris(uri, schema));
 		var camel = new DefaultCamelContext();
-		camel.addComponent("paho-mqtt5-inout", new org.apache.camel.support.DefaultComponent() {
+		camel.addComponent(DmpPahoMqtt5Component.SCHEME, new org.apache.camel.support.DefaultComponent() {
 			@Override
 			protected org.apache.camel.Endpoint createEndpoint(String endpointUri, String remaining, Map<String, Object> parameters) {
 				parameters.clear();
@@ -43,6 +43,7 @@ public class MqttSynchronousInvocationAdapterTest {
 						return new org.apache.camel.support.DefaultProducer(this) {
 							@Override
 							public void process(org.apache.camel.Exchange exchange) {
+								assertEquals(org.apache.camel.ExchangePattern.InOut, exchange.getPattern());
 								exchange.getMessage().setBody("{\"State\": \"SUCCESS\", \"Outcome\": 0, \"Uuid\": \"u-1\"}");
 							}
 						};
@@ -68,14 +69,16 @@ public class MqttSynchronousInvocationAdapterTest {
 	@Test
 	void requiresDeclaredRequestReplyBeforePublishing() {
 		var adapter = new MqttSynchronousInvocationAdapter();
+		String withoutReply = "dmp-paho-mqtt5:command?brokerUrl=tcp://127.0.0.1:1883&name=c";
+		var schema = new SynchronousInvocationAdapter.InvocationSchema(Map.of(), Set.of(), Map.of(), Set.of(), Map.of());
 		ConnectorInvocationException failure = assertThrows(ConnectorInvocationException.class,
-				() -> invoke(adapter, new DefaultCamelContext(), "paho-mqtt5:command", Map.of("value", 1),
-					new SynchronousInvocationAdapter.InvocationSchema(
-							Map.of(), Set.of(), Map.of(), Set.of(), Map.of())));
+				() -> invoke(adapter, new DefaultCamelContext(), withoutReply, Map.of("value", 1), schema));
 		assertEquals(ConnectorInvocationException.Category.CONFIGURATION, failure.getCategory());
 		assertEquals("MQTT_REQUEST_REPLY_NOT_DECLARED", failure.getConnectorCode());
-		assertThrows(ConnectorInvocationException.class, () -> adapter.ownedEndpointUris("paho-mqtt5:command",
-				new SynchronousInvocationAdapter.InvocationSchema(Map.of(), Set.of(), Map.of(), Set.of(), Map.of())));
+		assertThrows(ConnectorInvocationException.class, () -> adapter.ownedEndpointUris(withoutReply, schema));
+		// An invoke-only action (requestReply=false) needs none.
+		assertEquals(Set.of(withoutReply), adapter.ownedEndpointUris(withoutReply, new SynchronousInvocationAdapter.InvocationSchema(
+				Map.of(), Set.of(), Map.of(), Set.of(), Map.of("requestReply", false))));
 	}
 
 	@Test
@@ -98,7 +101,7 @@ public class MqttSynchronousInvocationAdapterTest {
 
 	@Test
 	void untypedTransportFailureDoesNotCopyCredentialBearingMessagesIntoDetails() {
-		String secret = "paho-mqtt5:command?password=not-public&userName=private";
+		String secret = "dmp-paho-mqtt5:command?password=not-public&userName=private";
 		var failure = MqttSynchronousInvocationAdapter.translateFailure(new IllegalStateException(secret));
 		assertEquals("MQTT_REQUEST_FAILED", failure.getConnectorCode());
 		assertEquals(Map.of(), failure.getDetails());

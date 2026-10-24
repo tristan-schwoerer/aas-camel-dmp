@@ -17,8 +17,6 @@ import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
@@ -50,7 +48,7 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 	private volatile CompletableFuture<?> inFlight;
 	private volatile InputStream stream;
 	private volatile long lastRead;
-	private ScheduledExecutorService watchdog;
+	private dk.aau.smartproductionlab.dmp.core.execution.DmpExecutors.Ticker watchdog;
 	private final Duration idleTimeout;
 
 	DmpHttpObserveConsumer(DmpHttpObserveEndpoint endpoint, Processor processor) {
@@ -68,9 +66,8 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		if (endpoint.subprotocol() == DmpHttpObserveComponent.Subprotocol.SSE) {
 			// A stream whose peer vanished without a FIN never ends a read; closing it does.
 			long period = Math.max(10, Math.min(10_000, idleTimeout.toMillis() / 4));
-			watchdog = getEndpoint().getCamelContext().getExecutorServiceManager()
-					.newSingleThreadScheduledExecutor(this, "dmp-http-observe-idle");
-			watchdog.scheduleWithFixedDelay(this::closeIfIdle, period, period, TimeUnit.MILLISECONDS);
+			watchdog = dk.aau.smartproductionlab.dmp.core.execution.DmpExecutors.of(getEndpoint().getCamelContext())
+					.every(Duration.ofMillis(period), Duration.ofMillis(period), this::closeIfIdle);
 		}
 	}
 
@@ -84,7 +81,7 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		}
 		if (executor != null) getEndpoint().getCamelContext().getExecutorServiceManager().shutdownNow(executor);
 		executor = null;
-		if (watchdog != null) getEndpoint().getCamelContext().getExecutorServiceManager().shutdownNow(watchdog);
+		if (watchdog != null) watchdog.cancel(Duration.ofSeconds(1));
 		watchdog = null;
 		if (client != null) client.shutdownNow();
 		client = null;

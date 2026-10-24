@@ -5,12 +5,11 @@ import java.util.stream.Collectors;
 
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.EndpointIdentityProvider;
 
-/** Groups per-sink MQTT endpoints by broker/topic/options, excluding only clientId. */
+/** Groups per-sink MQTT endpoints by broker/topic/options, excluding only the endpoint's own name. */
 public final class MqttEndpointIdentityProvider implements EndpointIdentityProvider {
 	@Override
 	public boolean supports(String endpointUri) {
-		return endpointUri != null && (endpointUri.startsWith("paho-mqtt5:")
-				|| endpointUri.startsWith("paho-mqtt5-inout:"));
+		return endpointUri != null && endpointUri.startsWith(DmpPahoMqtt5Component.SCHEME + ":");
 	}
 
 	@Override
@@ -19,7 +18,7 @@ public final class MqttEndpointIdentityProvider implements EndpointIdentityProvi
 		if (query < 0) return endpointUri;
 		String[] sharedOptions = endpointUri.substring(query + 1).split("&");
 		return endpointUri.substring(0, query) + "?" + Arrays.stream(sharedOptions)
-				.filter(option -> !option.startsWith("clientId="))
+				.filter(option -> !option.startsWith("name="))
 				.sorted().collect(Collectors.joining("&"));
 	}
 }

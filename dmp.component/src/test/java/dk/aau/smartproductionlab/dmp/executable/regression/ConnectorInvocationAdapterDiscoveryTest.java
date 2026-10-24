@@ -17,7 +17,7 @@ public class ConnectorInvocationAdapterDiscoveryTest {
 				.load(SynchronousInvocationAdapter.class).stream()
 				.map(ServiceLoader.Provider::get).toList();
 		assertTrue(adapters.stream().anyMatch(a -> a.supports("dmp-milo-client:test")));
-		assertTrue(adapters.stream().anyMatch(a -> a.supports("paho-mqtt5:command")));
+		assertTrue(adapters.stream().anyMatch(a -> a.supports("dmp-paho-mqtt5:command")));
 		assertTrue(adapters.stream().anyMatch(a -> a.supports("http://device/action")));
 		assertFalse(adapters.stream().anyMatch(a -> a.supports("dmp-plc4x:modbus-tcp://device")),
 				"a PLC4X action trigger is the dmp-plc4x producer's acknowledged tag write");

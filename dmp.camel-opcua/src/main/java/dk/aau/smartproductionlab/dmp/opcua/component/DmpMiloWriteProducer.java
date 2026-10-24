@@ -75,7 +75,7 @@ final class DmpMiloWriteProducer extends MiloClientProducer {
 					exchange.getMessage().setBody(OpcUaStructures.decoded(result, client));
 					Map<String, Object> schema = readSchema(result, client);
 					if (schema != null)
-						exchange.getMessage().setHeader(dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter.DEVICE_SCHEMA_HEADER, schema);
+						exchange.getMessage().setHeader(dk.aau.smartproductionlab.dmp.core.plan.Source.DEVICE_SCHEMA_HEADER, schema);
 				}
 				callback.done(done);
 			});
@@ -109,7 +109,7 @@ final class DmpMiloWriteProducer extends MiloClientProducer {
 		});
 	}
 
-	/** The read variable's own type (SourceEventAdapter#DEVICE_SCHEMA_HEADER); null for a pending or multi-node Read. */
+	/** The read variable's own type (Source#DEVICE_SCHEMA_HEADER); null for a pending or multi-node Read. */
 	private static Map<String, Object> readSchema(Object result, OpcUaClient client) {
 		return result instanceof List<?> values && values.size() == 1 ? OpcUaStructures.deviceSchema(values.get(0), client) : null;
 	}

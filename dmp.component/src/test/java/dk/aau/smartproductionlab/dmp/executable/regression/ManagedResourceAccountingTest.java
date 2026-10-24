@@ -12,14 +12,14 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.CamelContext;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource.AccountingEntry;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
+import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource.AccountingEntry;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.Test;
 
@@ -30,14 +30,12 @@ class ManagedResourceAccountingTest {
 		CamelContext context() { return camelContext; }
 		@Override public void close() { stopComponent(); }
 	}
-	private static RoutesConfiguration configuration(String id, DataTransformerConfiguration transformer) {
-		var route = new RouteConfiguration("execution-policy", List.of(), List.of("transform"), List.of());
-		route.setRouteId(id);
-		return new RoutesConfiguration(Map.of(), Map.of("transform", transformer), Map.of(), List.of(route));
+	private static MappingRoute configuration(String id, Endpoint transformer) {
+		return new MappingRoute(id, List.of(), transformer, List.of(), null);
 	}
-	private static LuaTransformerConfiguration lua(String id, LuaCompiledSource source) {
-		var transformer = new LuaTransformerConfiguration(id, source);
-		return transformer;
+	/** Each build of the script binds its own {@code LuaBinding} of the (possibly shared) compiled source. */
+	private static LuaScript lua(LuaCompiledSource source) {
+		return new LuaScript(source);
 	}
 	private static LuaCompiledSource source() { return LuaCompiledSource.fromBytes(SCRIPT, "accounting", 256); }
 
@@ -45,8 +43,8 @@ class ManagedResourceAccountingTest {
 	void sharedCompiledSourceIsCountedOnceWithSharedThenExclusiveOwnerAttribution() throws Exception {
 		try (var runtime = new Runtime()) {
 			var source = source();
-			var first = runtime.installBundle("first", configuration("first", lua("first-lua", source)));
-			var second = runtime.installBundle("second", configuration("second", lua("second-lua", source)));
+			var first = runtime.installBundle("first", configuration("first", lua(source)));
+			var second = runtime.installBundle("second", configuration("second", lua(source)));
 			assertEquals((long) SCRIPT.length, runtime.resourceMetrics().get("luaSourceRetainedBytes"));
 			assertEquals(2L, runtime.resourceMetrics().get("luaBindings"));
 			assertEquals((long) SCRIPT.length, runtime.ownerResourceMetrics(first).get("sharedLuaSourceRetainedBytes"));
@@ -66,8 +64,8 @@ class ManagedResourceAccountingTest {
 	@Test
 	void equalContentInDistinctAllocationsIsNotMistakenForSharedMemory() throws Exception {
 		try (var runtime = new Runtime()) {
-			var first = runtime.installBundle("first", configuration("first", lua("first-lua", source())));
-			var second = runtime.installBundle("second", configuration("second", lua("second-lua", source())));
+			var first = runtime.installBundle("first", configuration("first", lua(source())));
+			var second = runtime.installBundle("second", configuration("second", lua(source())));
 			assertEquals(2L * SCRIPT.length, runtime.resourceMetrics().get("luaSourceRetainedBytes"));
 			assertEquals((long) SCRIPT.length, runtime.ownerResourceMetrics(first).get("exclusiveLuaSourceRetainedBytes"));
 			assertEquals((long) SCRIPT.length, runtime.ownerResourceMetrics(second).get("exclusiveLuaSourceRetainedBytes"));
@@ -78,9 +76,9 @@ class ManagedResourceAccountingTest {
 	void stagedAbandonmentDropsOnlyItsAttributionAndDoesNotCreateSockets() throws Exception {
 		try (var runtime = new Runtime()) {
 			var source = source();
-			var installed = runtime.installBundle("first", configuration("first", lua("first-lua", source)));
+			var installed = runtime.installBundle("first", configuration("first", lua(source)));
 			var staged = runtime.stageBundle("candidate", runtime.nextBundleGeneration("candidate"),
-					() -> configuration("candidate", lua("candidate-lua", source)));
+					configuration("candidate", lua(source)));
 			assertEquals(1L, runtime.resourceMetrics().get("stagedBundles"));
 			assertEquals((long) SCRIPT.length, runtime.ownerResourceMetrics(installed).get("sharedLuaSourceRetainedBytes"));
 			staged.close();
@@ -117,10 +115,8 @@ class ManagedResourceAccountingTest {
 					return new AccountedEndpoint(uri, this);
 				}
 			});
-			var transform = new DataTransformerConfiguration() {
-				@Override public String getConnectionURI() { return "accounted:shared"; }
-			};
-			var staged = runtime.stageBundle("first", runtime.nextBundleGeneration("first"), () -> configuration("first", transform));
+			var transform = Endpoint.of("accounted:shared");
+			var staged = runtime.stageBundle("first", runtime.nextBundleGeneration("first"), configuration("first", transform));
 			assertEquals(0L, runtime.resourceMetrics().get("mqttObservedOpenTcpSockets"));
 			assertNull(runtime.context().hasEndpoint("accounted:shared"), "metrics must not create a staged endpoint");
 			var first = runtime.installBundle(staged);
@@ -139,11 +135,16 @@ class ManagedResourceAccountingTest {
 		}
 	}
 
-	private static final class RetryingResource extends DataTransformerConfiguration implements ManagedRouteResource {
+	private static final class RetryingResource implements ManagedRouteResource {
 		private int closes;
 		private boolean unreadable;
-		RetryingResource() { super("retry"); }
-		@Override public String getConnectionURI() { return "direct:accounting-retry"; }
+		/** A transformation whose build owns this resource. */
+		Endpoint endpoint() {
+			return resources -> {
+				resources.own(this);
+				return "direct:accounting-retry";
+			};
+		}
 		@Override public void bind(CamelContext context) { }
 		@Override public Map<String, Long> metrics() {
 			if (unreadable) throw new IllegalStateException("private-native-error");
@@ -158,7 +159,7 @@ class ManagedResourceAccountingTest {
 			var resource = new RetryingResource();
 			resource.unreadable = true;
 			resource.closes = 1;
-			var bundle = runtime.installBundle("unreadable", configuration("unreadable", resource));
+			var bundle = runtime.installBundle("unreadable", configuration("unreadable", resource.endpoint()));
 			assertEquals(1L, runtime.resourceMetrics().get("accountingReadFailures"));
 			assertEquals(1L, runtime.ownerResourceMetrics(bundle).get("accountingReadFailures"));
 			assertFalse(runtime.resourceMetrics().toString().contains("private-native-error"));
@@ -168,7 +169,7 @@ class ManagedResourceAccountingTest {
 	@Test
 	void failedCleanupRetainsAttributionUntilSuccessfulRetryAndFiltersUnknownKeys() throws Exception {
 		try (var runtime = new Runtime()) {
-			var bundle = runtime.installBundle("retry", configuration("retry", new RetryingResource()));
+			var bundle = runtime.installBundle("retry", configuration("retry", new RetryingResource().endpoint()));
 			assertThrows(IllegalStateException.class, () -> runtime.removeBundle(bundle));
 			assertEquals(13L, runtime.ownerResourceMetrics(bundle).get("luaSourceRetainedBytes"));
 			assertFalse(runtime.resourceMetrics().containsKey("password-do-not-export"));
@@ -192,20 +193,9 @@ class ManagedResourceAccountingTest {
 					});
 				}
 			});
-			var config = configuration("draining", lua("drain-lua", source()));
-			var input = new DataSourceConfiguration() {
-				@Override public String getConnectionURI() { return "direct:accounting-input"; }
-			};
-			input.setSourceId("value");
-			config.setDatasources(Map.of("input", input));
-			var sink = new DataSinkConfiguration() {
-				@Override public String getConnectionURI() { return "direct:accounting-blocker"; }
-			};
-			sink.setSinkId("value");
-			config.setDatasinks(Map.of("out", sink));
-			var route = new RouteConfiguration("execution-policy", List.of("input"), List.of("transform"), List.of("out"));
-			route.setRouteId("draining");
-			config.setRoutes(List.of(route));
+			var input = new Source("input", "value", Endpoint.of("direct:accounting-input"), Source.Delivery.OBSERVED, 0);
+			var sink = new Sink("out", "value", Endpoint.of("direct:accounting-blocker"));
+			var config = new MappingRoute("draining", List.of(input), lua(source()), List.of(sink), null);
 			var bundle = runtime.installBundle("draining", config);
 			try (var template = runtime.context().createProducerTemplate()) {
 				try {

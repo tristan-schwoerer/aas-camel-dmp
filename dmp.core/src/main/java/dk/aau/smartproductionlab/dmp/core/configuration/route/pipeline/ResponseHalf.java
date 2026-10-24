@@ -8,11 +8,10 @@ import java.util.Map;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Response;
+import dk.aau.smartproductionlab.dmp.core.plan.Response.ResponseSource;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.PlanBuild;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import org.slf4j.Logger;
@@ -32,19 +31,20 @@ public final class ResponseHalf {
 
 	private final String routeId;
 	private final String uri;
-	private final List<Map<String, Object>> sourceBindings;
+	private final List<ResponseSource> sourceBindings;
 	private final Map<String, Object> sinksMeta = new LinkedHashMap<>();
 	private final ResponseSinkFanOutProcessor writer;
 
-	private ResponseHalf(RouteBuilder routeBuilder, RoutesConfiguration routesConfiguration,
-			RouteConfiguration routeConfig, String routeId, String responseLuaUri) {
+	/** The response half of {@code routeId}, a mapping its sources trigger: its routes on {@code routeBuilder}. */
+	public ResponseHalf(RouteBuilder routeBuilder, PlanBuild build, Response response, String routeId) {
 		this.routeId = routeId;
 		this.uri = "direct:" + routeId + "-response";
-		this.sourceBindings = routeConfig.getResponseSourceBindings();
-		List<Map<String, Object>> targets = ResponseSinkTargets.resolve(routeBuilder, routesConfiguration, routeId,
-				routeConfig.getResponseSinkBindings());
-		for (Map<String, Object> target : targets)
-			sinksMeta.put(String.valueOf(target.get("sinkId")), TransformerMeta.sink(String.valueOf(target.get("endpoint"))));
+		this.sourceBindings = response.sources();
+		String responseLuaUri = build.uri(response.transformation());
+		List<ResponseSinkFanOutProcessor.Target> targets = ResponseSinkTargets.resolve(routeBuilder, build, routeId,
+				response.sinks());
+		for (ResponseSinkFanOutProcessor.Target target : targets)
+			sinksMeta.put(target.sinkId(), TransformerMeta.sink(target.endpoint()));
 		this.writer = ResponseSinkFanOutProcessor.ordered(routeBuilder.getContext(), routeId, targets);
 		if (routeBuilder instanceof DmpRouteBuilder managed) managed.registerManagedResource(writer);
 
@@ -52,19 +52,10 @@ public final class ResponseHalf {
 		register(routeBuilder, writeRouteId);
 		writer.configureWrite(routeBuilder.from("direct:" + writeRouteId).routeId(writeRouteId));
 		register(routeBuilder, routeId + "-response");
-		var response = routeBuilder.from(uri).routeId(routeId + "-response").doTry();
-		response.to(responseLuaUri).process(this::prepareWrites);
-		writer.configureOrderedDispatch(response, "direct:" + writeRouteId);
-		response.doCatch(Exception.class).process(this::responseFailed).end();
-	}
-
-	/** The mapping's response half, or null when it has no ResponseTransformation. */
-	public static ResponseHalf of(RouteBuilder routeBuilder, RoutesConfiguration routesConfiguration,
-			RouteConfiguration routeConfig, String routeId) {
-		String transformer = routeConfig.getResponseTransformer();
-		if (transformer == null) return null;
-		String[] lua = RouteCreatorHelper.getDataTransformerEndpoints(routesConfiguration, List.of(transformer), routeId);
-		return new ResponseHalf(routeBuilder, routesConfiguration, routeConfig, routeId, lua[0]);
+		var flow = routeBuilder.from(uri).routeId(routeId + "-response").doTry();
+		flow.to(responseLuaUri).process(this::prepareWrites);
+		writer.configureOrderedDispatch(flow, "direct:" + writeRouteId);
+		flow.doCatch(Exception.class).process(this::responseFailed).end();
 	}
 
 	/** The route running the response half on a copy of the evaluation (a Content Enricher). */
@@ -80,10 +71,10 @@ public final class ResponseHalf {
 		Map<String, Object> written = FanOut.writtenValues(exchange);
 		Map<String, Object> sources = new LinkedHashMap<>();
 		Map<String, Object> times = new LinkedHashMap<>();
-		for (Map<String, Object> binding : sourceBindings) {
-			Object value = written.get(String.valueOf(binding.get("sinkId")));
+		for (ResponseSource binding : sourceBindings) {
+			Object value = written.get(binding.sinkId());
 			sources.putAll(ResponseProjectionProcessor.project(value, List.of(binding)));
-			times.put(String.valueOf(binding.get("sourceId")), TransformerMeta.source(java.time.Instant.now()));
+			times.put(binding.sourceId(), TransformerMeta.source(java.time.Instant.now()));
 		}
 		prepare(exchange, sources, times, TransformerMeta.finished(invocation(exchange), "Succeeded", null));
 	}
@@ -98,15 +89,15 @@ public final class ResponseHalf {
 	private void prepare(Exchange exchange, Map<String, Object> sources, Map<String, Object> times,
 			Map<String, Object> invocation) {
 		Object requestSources = exchange.getProperty(REQUEST_SOURCES);
-		exchange.setProperty(DataTransformerConfiguration.REQUEST_SOURCES,
+		exchange.setProperty(TransformerMeta.REQUEST_SOURCES,
 				requestSources == null ? new LinkedHashMap<String, Object>() : requestSources);
-		exchange.setProperty(DataTransformerConfiguration.META, TransformerMeta.of(times, sinksMeta, invocation));
+		exchange.setProperty(TransformerMeta.PROPERTY, TransformerMeta.of(times, sinksMeta, invocation));
 		exchange.getMessage().setBody(sources);
 	}
 
 	private void prepareWrites(Exchange exchange) {
 		@SuppressWarnings("unchecked")
-		Map<String, Object> meta = exchange.getProperty(DataTransformerConfiguration.META, Map.class);
+		Map<String, Object> meta = exchange.getProperty(TransformerMeta.PROPERTY, Map.class);
 		Object invocation = meta == null ? null : meta.get("invocation");
 		boolean succeeded = invocation instanceof Map<?, ?> map && "Succeeded".equals(map.get("outcome"));
 		// A failed evaluation's response usually writes only its log sinks: omitted SinkIds are expected.
@@ -121,7 +112,7 @@ public final class ResponseHalf {
 
 	@SuppressWarnings("unchecked")
 	private static Map<String, Object> invocation(Exchange exchange) {
-		Map<String, Object> meta = exchange.getProperty(DataTransformerConfiguration.META, Map.class);
+		Map<String, Object> meta = exchange.getProperty(TransformerMeta.PROPERTY, Map.class);
 		Object invocation = meta == null ? null : meta.get("invocation");
 		return invocation instanceof Map<?, ?> map ? (Map<String, Object>) map
 				: TransformerMeta.invocation(java.time.Instant.now());

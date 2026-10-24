@@ -10,10 +10,8 @@ import java.util.Map;
 
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import org.junit.jupiter.api.Test;
 
@@ -21,20 +19,11 @@ class NativeValueBoundaryTest {
 	@Test
 	void normalizedScalarsRemainNativeThroughFanIn() throws Exception {
 		try (DefaultCamelContext context = new DefaultCamelContext()) {
-			DataSourceConfiguration source = new DataSourceConfiguration("endpoint", null, 0) {
-				@Override
-				public String getConnectionURI() {
-					return "direct:source";
-				}
-			};
-			source.setSourceId("AuthoredId");
-			RouteConfiguration route = new RouteConfiguration("execution-policy", List.of("endpoint"),
-					List.of(), List.of());
-			try (FanIn fanIn = new FanIn(route, new RoutesConfiguration(List.of(source), List.of(), List.of(),
-					List.of(route)), AffordanceValidation.Mode.ON)) {
+			Source source = new Source("endpoint", "AuthoredId", Endpoint.of("direct:source"), Source.Delivery.OBSERVED, 0);
+			try (FanIn fanIn = new FanIn("route", List.of(source), Map.of(), AffordanceValidation.Mode.ON)) {
 				for (Object value : List.of(7L, 1.5, true, false, "103.5", "{\"value\":7}")) {
 					var exchange = new DefaultExchange(context);
-					exchange.setProperty(SourceEventAdapter.NORMALIZED_VALUE_PROPERTY, true);
+					exchange.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
 					exchange.getMessage().setBody(value);
 					fanIn.disassemble("endpoint").process(exchange);
 					assertTrue(fanIn.contributed(exchange));
@@ -66,28 +55,25 @@ class NativeValueBoundaryTest {
 
 	@Test
 	void retiringAFanInBundleClearsItsReadinessSnapshot() throws Exception {
-		DataSourceConfiguration first = source("first", "one");
-		DataSourceConfiguration second = source("second", "two");
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of("first", "second"),
-				List.of(), List.of());
+		Source first = source("first", "one");
+		Source second = source("second", "two");
 		try (DefaultCamelContext context = new DefaultCamelContext()) {
-			try (FanIn fanIn = new FanIn(route, new RoutesConfiguration(List.of(first, second), List.of(), List.of(),
-					List.of(route)))) {
+			try (FanIn fanIn = new FanIn("route", List.of(first, second), Map.of())) {
 				var firstExchange = new DefaultExchange(context);
-				firstExchange.setProperty(SourceEventAdapter.NORMALIZED_VALUE_PROPERTY, true);
+				firstExchange.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
 				firstExchange.getMessage().setBody(1L);
 				fanIn.disassemble("first").process(firstExchange);
 				assertFalse(fanIn.gatePredicate().matches(firstExchange));
 
 				var secondExchange = new DefaultExchange(context);
-				secondExchange.setProperty(SourceEventAdapter.NORMALIZED_VALUE_PROPERTY, true);
+				secondExchange.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
 				secondExchange.getMessage().setBody(2L);
 				fanIn.disassemble("second").process(secondExchange);
 				assertTrue(fanIn.gatePredicate().matches(secondExchange));
 
 				fanIn.close();
 				var afterRetirement = new DefaultExchange(context);
-				afterRetirement.setProperty(SourceEventAdapter.NORMALIZED_VALUE_PROPERTY, true);
+				afterRetirement.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
 				afterRetirement.getMessage().setBody(3L);
 				fanIn.disassemble("second").process(afterRetirement);
 				assertFalse(fanIn.gatePredicate().matches(afterRetirement));
@@ -95,11 +81,7 @@ class NativeValueBoundaryTest {
 		}
 	}
 
-	private static DataSourceConfiguration source(String id, String sourceId) {
-		DataSourceConfiguration source = new DataSourceConfiguration(id, null, 0) {
-			@Override public String getConnectionURI() { return "direct:" + id; }
-		};
-		source.setSourceId(sourceId);
-		return source;
+	private static Source source(String id, String sourceId) {
+		return new Source(id, sourceId, Endpoint.of("direct:" + id), Source.Delivery.OBSERVED, 0);
 	}
 }

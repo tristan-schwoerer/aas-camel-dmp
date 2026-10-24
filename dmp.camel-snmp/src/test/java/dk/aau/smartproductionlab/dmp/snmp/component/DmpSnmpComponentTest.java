@@ -50,13 +50,21 @@ class DmpSnmpComponentTest {
 	}
 
 	@Test void aBoundCommunityReachesTheAgentAndStaysOutOfTheUri() throws Exception {
-		var source = new dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSourceConfiguration("source", "127.0.0.1",
+		var endpoint = new dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpEndpoint("127.0.0.1",
 				agent.port(), "1.3.6.1.2.1.1.1.0", "SNMPv2c", "pr1v&te#");
-		source.bind(camel);
-		assertTrue(!source.getConnectionURI().contains("pr1v"), source.getConnectionURI());
-		assertEquals("test device", camel.createConsumerTemplate().receiveBody(source.getConnectionURI(), 2000));
+		assertTrue(!endpoint.toString().contains("pr1v"), endpoint.toString());
+		var owned = new java.util.ArrayList<dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource>();
+		String source = endpoint.uri(new dk.aau.smartproductionlab.dmp.core.plan.BundleResources() {
+			@Override public <T extends dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource> T own(T resource) {
+				try { resource.bind(camel); } catch (Exception e) { throw new IllegalStateException(e); }
+				owned.add(resource);
+				return resource;
+			}
+		});
+		assertTrue(!source.contains("pr1v"), source);
+		assertEquals("test device", camel.createConsumerTemplate().receiveBody(source, 2000));
 		assertEquals("pr1v&te#", agent.lastCommunity());
-		source.close();
+		for (var resource : owned) resource.close();
 	}
 
 	@Test void aGetReadsTheObjectAsJson() {

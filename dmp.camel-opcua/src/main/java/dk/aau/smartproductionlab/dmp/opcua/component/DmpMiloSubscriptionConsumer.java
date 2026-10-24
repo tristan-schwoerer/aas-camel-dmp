@@ -2,8 +2,7 @@
  * SPDX-License-Identifier: MIT */
 package dk.aau.smartproductionlab.dmp.opcua.component;
 
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.Exchange;
@@ -15,7 +14,7 @@ import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaMonitoredItem;
 import org.eclipse.milo.opcua.sdk.client.subscriptions.OpcUaSubscription;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter;
+import dk.aau.smartproductionlab.dmp.core.execution.DmpExecutors;
 import java.util.Map;
 import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.UInteger;
 import org.slf4j.Logger;
@@ -43,8 +42,8 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 
 	private final DmpMiloClientEndpoint endpoint;
 	private MiloClientConnection connection;
-	private ScheduledExecutorService watchdog;
-	private ScheduledFuture<?> watch;
+	/** Checks the subscription every 500 ms on the shared workers. */
+	private DmpExecutors.Ticker watch;
 	private volatile OpcUaClient subscribedClient;
 	private volatile OpcUaSubscription subscription;
 	private volatile java.util.Optional<Map<String, Object>> deviceSchema;
@@ -61,15 +60,15 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 	protected void doStart() throws Exception {
 		super.doStart();
 		connection = endpoint.createConnection();
-		watchdog = endpoint.getCamelContext().getExecutorServiceManager()
-				.newSingleThreadScheduledExecutor(this, "dmp-milo-subscription");
-		watch = watchdog.scheduleWithFixedDelay(this::ensureSubscription, 0, WATCH_PERIOD_MS, TimeUnit.MILLISECONDS);
+		watch = DmpExecutors.of(endpoint.getCamelContext()).every(Duration.ZERO, Duration.ofMillis(WATCH_PERIOD_MS),
+				this::ensureSubscription);
 	}
 
 	@Override
 	protected void doStop() throws Exception {
-		if (watch != null) watch.cancel(false);
-		if (watchdog != null) endpoint.getCamelContext().getExecutorServiceManager().shutdownNow(watchdog);
+		// A setup in progress ends first, so the subscription it creates is deleted below (bounded by the request timeout).
+		if (watch != null) watch.cancel(Duration.ofSeconds(35));
+		watch = null;
 		deleteSubscription();
 		if (connection != null) endpoint.releaseConnection(connection);
 		connection = null;
@@ -133,7 +132,7 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 	private void deliver(Object value, Map<String, Object> schema) {
 		Exchange exchange = createExchange(true);
 		exchange.getMessage().setBody(value);
-		if (schema != null) exchange.getMessage().setHeader(SourceEventAdapter.DEVICE_SCHEMA_HEADER, schema);
+		if (schema != null) exchange.getMessage().setHeader(dk.aau.smartproductionlab.dmp.core.plan.Source.DEVICE_SCHEMA_HEADER, schema);
 		try {
 			getProcessor().process(exchange);
 		} catch (Exception failure) {

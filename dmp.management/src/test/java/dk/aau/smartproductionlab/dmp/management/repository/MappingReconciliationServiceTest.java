@@ -10,9 +10,14 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.camel.builder.RouteBuilder;
+
+import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
+import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.CompiledBundle;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.DesiredBundle;
@@ -32,8 +37,7 @@ class MappingReconciliationServiceTest {
 	void noOpStalePreservationConfirmedMissingStopAndMappingRemovalConvergeIndependently() {
 		Runtime runtime = new Runtime();
 		AtomicReference<RepositoryDiscovery.Scan> desired = new AtomicReference<>(scan(valid("first"), true));
-		var service = service(runtime, desired::get,
-				candidate -> () -> configuration(candidate.desired().bundle().routeId()));
+		var service = service(runtime, desired::get);
 		runtime.startComponent();
 		try {
 			var first = service.reconcileNow();
@@ -98,10 +102,9 @@ class MappingReconciliationServiceTest {
 		Runtime runtime = new Runtime();
 		AtomicReference<MappingReconciliationService> serviceRef = new AtomicReference<>();
 		AtomicBoolean invalidateDuringStage = new AtomicBoolean(true);
-		var service = service(runtime, () -> scan(valid("first"), true), candidate -> () -> {
+		var service = service(runtime, () -> scan(valid("first", () -> {
 			if (invalidateDuringStage.getAndSet(false)) serviceRef.get().invalidate("urn:dependency");
-			return configuration(candidate.desired().bundle().routeId());
-		});
+		}), true));
 		serviceRef.set(service);
 		runtime.startComponent();
 		try {
@@ -122,7 +125,7 @@ class MappingReconciliationServiceTest {
 		java.util.concurrent.atomic.AtomicInteger scans = new java.util.concurrent.atomic.AtomicInteger();
 		var service = service(runtime, () -> scans.getAndIncrement() == 0
 				? new RepositoryDiscovery.Scan(false, "repository-transient_failure", Set.of(), Set.of(), Map.of(), Map.of(), List.of())
-				: scan(valid("first"), true), candidate -> () -> configuration(candidate.desired().bundle().routeId()), 100);
+				: scan(valid("first"), true), 100);
 		runtime.startComponent();
 		try {
 			service.start();
@@ -141,7 +144,7 @@ class MappingReconciliationServiceTest {
 		Runtime runtime = new Runtime();
 		var longs = seriesCandidate("urn:aimc:a", "bundle-a", "station_state", "xs:long");
 		var doubles = seriesCandidate("urn:aimc:b", "bundle-b", "station_state", "xs:double");
-		var service = service(runtime, () -> scan(longs, doubles), candidate -> () -> candidate.desired().bundle().configuration());
+		var service = service(runtime, () -> scan(longs, doubles));
 		runtime.startComponent();
 		try {
 			var report = service.reconcileNow();
@@ -166,7 +169,7 @@ class MappingReconciliationServiceTest {
 		var desired = new DesiredMapping("mapping-a", 0, null, List.of(failure), Set.of(), null, null, List.of("Sinks/value/1"));
 		var issue = new ConnectorConfigurationFactory.Issue("MappingConfigurations/value/0/Sources/value/0/forms/mqv_qos",
 				"mapping-a", "MQTT QoS must be between 0 and 2");
-		var bundle = new DesiredBundle(desired, null, List.of(issue), fingerprint(configuration(BUNDLE)));
+		var bundle = new DesiredBundle(desired, null, List.of(issue), fingerprint(plan(BUNDLE)));
 		assertEquals(List.of(new MappingReconciliationService.Diagnostic("Sinks/value/1", "not found: repository resource not found"),
 				new MappingReconciliationService.Diagnostic("Sources/value/0/forms/mqv_qos", "MQTT QoS must be between 0 and 2")),
 				MappingReconciliationService.diagnostics(bundle));
@@ -188,8 +191,7 @@ class MappingReconciliationServiceTest {
 		var doubles = seriesCandidate("urn:aimc:a", "bundle-a", "station_state", "xs:double");
 		var floats = seriesCandidate("urn:aimc:b", "bundle-b", "station_state", "xs:float");
 		var elsewhere = seriesCandidate("urn:aimc:c", "bundle-c", "dosing", "xs:long");
-		var service = service(runtime, () -> scan(doubles, floats, elsewhere),
-				candidate -> () -> candidate.desired().bundle().configuration());
+		var service = service(runtime, () -> scan(doubles, floats, elsewhere));
 		runtime.startComponent();
 		try {
 			var report = service.reconcileNow();
@@ -211,7 +213,7 @@ class MappingReconciliationServiceTest {
 				first.key(), first, second.key(), second);
 		var scan = new RepositoryDiscovery.Scan(true, "", Set.of("urn:aimc:a", "urn:aimc:b"), Set.of(),
 				mappings, Map.of(), List.of());
-		var service = service(runtime, () -> scan, candidate -> () -> configuration(candidate.desired().bundle().routeId()));
+		var service = service(runtime, () -> scan);
 		runtime.startComponent();
 		try {
 			var report = service.reconcileNow();
@@ -237,8 +239,7 @@ class MappingReconciliationServiceTest {
 		var first = candidate("urn:aimc:a", "a", 0, "bundle-a", "a", "dependency-a");
 		var second = candidate("urn:aimc:b", "b", 0, "bundle-b", "b", "dependency-b");
 		AtomicReference<RepositoryDiscovery.Scan> desired = new AtomicReference<>(scan(first, second));
-		var service = new MappingReconciliationService(runtime, desired::get,
-				value -> () -> configuration(value.desired().bundle().routeId()), 1, 8, 60_000);
+		var service = new MappingReconciliationService(runtime, desired::get, 1, 8, 60_000);
 		runtime.startComponent();
 		try {
 			for (int i = 0; i < 4; i++) {
@@ -262,7 +263,7 @@ class MappingReconciliationServiceTest {
 	void noSurvivingBundleAfterFailedReplacementCanInstallAgain() {
 		Runtime runtime = new Runtime();
 		AtomicReference<RepositoryDiscovery.Scan> desired = new AtomicReference<>(scan(valid("first"), true));
-		var service = service(runtime, desired::get, value -> () -> configuration(value.desired().bundle().routeId()));
+		var service = service(runtime, desired::get);
 		runtime.startComponent();
 		try {
 			service.reconcileNow();
@@ -282,7 +283,7 @@ class MappingReconciliationServiceTest {
 	void failedRemovalRemainsVisibleUntilOwnedBundleIsRetired() {
 		Runtime runtime = new Runtime();
 		AtomicReference<RepositoryDiscovery.Scan> desired = new AtomicReference<>(scan(valid("first"), true));
-		var service = service(runtime, desired::get, value -> () -> configuration(value.desired().bundle().routeId()));
+		var service = service(runtime, desired::get);
 		runtime.startComponent();
 		try {
 			service.reconcileNow();
@@ -308,7 +309,7 @@ class MappingReconciliationServiceTest {
 		var after = candidate("urn:aimc", "named", 0, "named-bundle", "same", "dependency");
 		assertEquals(before.key(), after.key());
 		AtomicReference<RepositoryDiscovery.Scan> desired = new AtomicReference<>(scan(before));
-		var service = service(runtime, desired::get, value -> () -> configuration(value.desired().bundle().routeId()));
+		var service = service(runtime, desired::get);
 		runtime.startComponent();
 		try {
 			service.reconcileNow();
@@ -329,7 +330,7 @@ class MappingReconciliationServiceTest {
 		var service = service(runtime, () -> {
 			scans.incrementAndGet();
 			return scan(null, false);
-		}, value -> () -> new RoutesConfiguration());
+		});
 		var worker = new ManualScheduler();
 		try {
 			service.invalidate("urn:dependency");
@@ -359,7 +360,7 @@ class MappingReconciliationServiceTest {
 		var service = service(runtime, () -> {
 			reference.get().invalidate("noisy-dependency");
 			return scan(noisy, healthy);
-		}, value -> () -> configuration(value.desired().bundle().routeId()));
+		});
 		reference.set(service);
 		runtime.startComponent();
 		try {
@@ -377,14 +378,13 @@ class MappingReconciliationServiceTest {
 	@Test
 	void dependencyInvalidationDuringStageDiscardsOnlyItsAimcAndReleasesAbandonedGeneration() {
 		Runtime runtime = new Runtime();
-		var noisy = candidate("urn:noisy", "noisy", 0, "noisy-bundle", "old", "noisy-dependency");
-		var healthy = candidate("urn:healthy", "healthy", 0, "healthy-bundle", "current", "healthy-dependency");
 		AtomicBoolean invalidateDuringStage = new AtomicBoolean(true);
 		AtomicReference<MappingReconciliationService> reference = new AtomicReference<>();
-		var service = service(runtime, () -> scan(noisy, healthy), value -> () -> {
-			if (value.key().equals(noisy.key()) && invalidateDuringStage.getAndSet(false)) reference.get().invalidate("noisy-dependency");
-			return configuration(value.desired().bundle().routeId());
+		var noisy = candidate("urn:noisy", "noisy", 0, "noisy-bundle", "old", "noisy-dependency", () -> {
+			if (invalidateDuringStage.getAndSet(false)) reference.get().invalidate("noisy-dependency");
 		});
+		var healthy = candidate("urn:healthy", "healthy", 0, "healthy-bundle", "current", "healthy-dependency");
+		var service = service(runtime, () -> scan(noisy, healthy));
 		reference.set(service);
 		runtime.startComponent();
 		try {
@@ -403,17 +403,17 @@ class MappingReconciliationServiceTest {
 	@Test
 	void trackingOverflowFencesAllStagedWorkAndRetainsFullRepairObligation() {
 		Runtime runtime = new Runtime();
-		var first = candidate("urn:first", "first", 0, "first-bundle", "old", "first-dependency");
-		var second = candidate("urn:second", "second", 0, "second-bundle", "current", "second-dependency");
 		AtomicBoolean overflowDuringStage = new AtomicBoolean(true);
 		AtomicReference<MappingReconciliationService> reference = new AtomicReference<>();
-		var service = new MappingReconciliationService(runtime, () -> scan(first, second), value -> () -> {
+		Runnable overflow = () -> {
 			if (overflowDuringStage.getAndSet(false)) {
 				reference.get().invalidate("first-dependency");
 				reference.get().invalidate("second-dependency");
 			}
-			return configuration(value.desired().bundle().routeId());
-		}, 8, 1, 60_000);
+		};
+		var first = candidate("urn:first", "first", 0, "first-bundle", "old", "first-dependency", overflow);
+		var second = candidate("urn:second", "second", 0, "second-bundle", "current", "second-dependency", overflow);
+		var service = new MappingReconciliationService(runtime, () -> scan(first, second), 8, 1, 60_000);
 		reference.set(service);
 		runtime.startComponent();
 		try {
@@ -434,7 +434,7 @@ class MappingReconciliationServiceTest {
 		var service = service(runtime, () -> {
 			if (eventDuringScan.getAndSet(false)) reference.get().invalidate("urn:new-aimc");
 			return scan();
-		}, value -> () -> new RoutesConfiguration());
+		});
 		reference.set(service);
 		try {
 			assertTrue(service.reconcileNow().superseded(), "unknown newly created membership still obliges a follow-up scan");
@@ -446,8 +446,7 @@ class MappingReconciliationServiceTest {
 	void successfulPassesScheduleNothingAndEventsRunTargetedPasses() {
 		Runtime runtime = new Runtime();
 		java.util.concurrent.atomic.AtomicInteger scans = new java.util.concurrent.atomic.AtomicInteger();
-		var service = service(runtime, () -> { scans.incrementAndGet(); return scan(valid("first"), true); },
-				candidate -> () -> configuration(candidate.desired().bundle().routeId()));
+		var service = service(runtime, () -> { scans.incrementAndGet(); return scan(valid("first"), true); });
 		var worker = new ManualScheduler();
 		runtime.startComponent();
 		try {
@@ -463,10 +462,10 @@ class MappingReconciliationServiceTest {
 		} finally { service.close(); runtime.stopComponent(); }
 	}
 
-	/** Distinct per route identity and trigger data, like the compiled plans these fixtures stand in for. */
-	private static EffectiveFingerprint fingerprint(RoutesConfiguration configuration) {
-		return EffectiveFingerprint.ofValue(configuration.getRoutes().stream()
-				.map(route -> List.of(String.valueOf(route.getRouteId()), String.valueOf(route.getTriggerData()))).toList());
+	/** Distinct per route identity and Operation identity, like the compiled plans these fixtures stand in for. */
+	private static EffectiveFingerprint fingerprint(RoutePlan plan) {
+		return EffectiveFingerprint.ofValue(List.of(plan.routeId(),
+				plan instanceof OperationRoute operation ? String.valueOf(operation.identity()) : ""));
 	}
 
 	private static RepositoryDiscovery.Scan scan(RepositoryDiscovery.MappingCandidate... candidates) {
@@ -478,7 +477,13 @@ class MappingReconciliationServiceTest {
 
 	private static RepositoryDiscovery.MappingCandidate candidate(String aimc, String identity, int index,
 			String bundleId, String version, String dependency) {
-		var configuration = configuration(bundleId + "-" + version);
+		return candidate(aimc, identity, index, bundleId, version, dependency, () -> { });
+	}
+
+	/** A candidate whose plan runs {@code onStage} whenever it is staged. */
+	private static RepositoryDiscovery.MappingCandidate candidate(String aimc, String identity, int index,
+			String bundleId, String version, String dependency, Runnable onStage) {
+		var configuration = staging(plan(bundleId + "-" + version), onStage);
 		var fingerprint = fingerprint(configuration);
 		var plan = new MappingPlan(identity, index, List.of(), List.of(), WireModel.Presence.absent(),
 				WireModel.Presence.absent(), WireModel.Presence.absent(), WireModel.Presence.absent(),
@@ -491,15 +496,13 @@ class MappingReconciliationServiceTest {
 	}
 
 	private static MappingReconciliationService service(Runtime runtime,
-			MappingReconciliationService.ScanProvider scan,
-			MappingReconciliationService.DefinitionFactory definitions) {
-		return new MappingReconciliationService(runtime, scan, definitions, 32, 16, 60_000);
+			MappingReconciliationService.ScanProvider scan) {
+		return new MappingReconciliationService(runtime, scan, 32, 16, 60_000);
 	}
 
 	private static MappingReconciliationService service(Runtime runtime,
-			MappingReconciliationService.ScanProvider scan,
-			MappingReconciliationService.DefinitionFactory definitions, long retryMillis) {
-		return new MappingReconciliationService(runtime, scan, definitions, 32, 16, retryMillis);
+			MappingReconciliationService.ScanProvider scan, long retryMillis) {
+		return new MappingReconciliationService(runtime, scan, 32, 16, retryMillis);
 	}
 
 	private static RepositoryDiscovery.Scan scan(DesiredBundle candidate, boolean complete) {
@@ -511,8 +514,13 @@ class MappingReconciliationServiceTest {
 	}
 
 	private static DesiredBundle valid(String version) {
+		return valid(version, () -> { });
+	}
+
+	/** A valid mapping whose plan runs {@code onStage} whenever it is staged. */
+	private static DesiredBundle valid(String version, Runnable onStage) {
 		String routeId = BUNDLE + "-" + version;
-		RoutesConfiguration configuration = configuration(routeId);
+		RoutePlan configuration = staging(plan(routeId), onStage);
 		var plan = new MappingPlan("mapping-a", 0, List.of(), List.of(), WireModel.Presence.absent(),
 				WireModel.Presence.absent(), WireModel.Presence.absent(), WireModel.Presence.absent(),
 				WireModel.Presence.absent(), List.of());
@@ -528,17 +536,17 @@ class MappingReconciliationServiceTest {
 				"safe test failure");
 		var desired = new DesiredMapping("mapping-a", 0, null, List.of(failure),
 				Set.of(new MappingPlanCompiler.Dependency("submodel", "urn:dependency")));
-		var configuration = configuration(BUNDLE);
-		var fingerprint = fingerprint(configuration);
+		var fingerprint = fingerprint(plan(BUNDLE));
 		return new DesiredBundle(desired, null, List.of(), fingerprint);
 	}
 
 	private static RepositoryDiscovery.MappingCandidate restCandidate(String aimc, String identity,
 			String bundleId, String restPath) {
-		RouteConfiguration route = new RouteConfiguration("bridge", List.of(), List.of(), List.of());
-		route.setRouteId(bundleId);
-		route.setTriggerData(Map.of("restPath", restPath));
-		RoutesConfiguration configuration = new RoutesConfiguration(Map.of(), Map.of(), Map.of(), List.of(route));
+		var command = new OperationRoute.Command(new Sink("command", null, Endpoint.of("mock:" + bundleId)), List.of(),
+				false, Map.of(), List.of(), Map.of(), List.of(), null, Map.of());
+		var caller = new OperationRoute.Caller(Map.of(), Map.of(), Map.of(), Map.of(), List.of(), Map.of(), null);
+		var configuration = new OperationRoute(bundleId, new OperationRoute.Identity(restPath, "invoke", null, null),
+				Endpoint.of("direct:request-" + bundleId), List.of(), command, caller, null);
 		var fingerprint = fingerprint(configuration);
 		var bundle = new CompiledBundle(identity, 0, bundleId, bundleId, configuration, fingerprint);
 		var plan = new MappingPlan(identity, 0, List.of(), List.of(), WireModel.Presence.absent(),
@@ -553,12 +561,9 @@ class MappingReconciliationServiceTest {
 	/** A mapping writing the field Count of {@code measurement} as {@code valueType}. */
 	private static RepositoryDiscovery.MappingCandidate seriesCandidate(String aimc, String bundleId, String measurement,
 			String valueType) {
-		var sink = new dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2DataSinkConfiguration("sink-" + bundleId,
-				measurement, "ap2030", "Time", Map.of(), List.of(new dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn("Count", valueType)));
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of(), List.of(), List.of());
-		route.setRouteId(bundleId);
-		RoutesConfiguration configuration = new RoutesConfiguration(Map.of(),
-				Map.of(), Map.of(sink.getUniqueId(), sink), List.of(route));
+		var series = new dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint(measurement, "ap2030", "Time",
+				Map.of(), List.of(new dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn("Count", valueType)), null, null);
+		var configuration = new MappingRoute(bundleId, List.of(), null, List.of(new Sink("sink-" + bundleId, null, series)), null);
 		var fingerprint = fingerprint(configuration);
 		var bundle = new CompiledBundle(bundleId, 0, bundleId, bundleId, configuration, fingerprint);
 		var plan = new MappingPlan(bundleId, 0, List.of(), List.of(), WireModel.Presence.absent(),
@@ -569,10 +574,18 @@ class MappingReconciliationServiceTest {
 		return new RepositoryDiscovery.MappingCandidate(key, new DesiredBundle(desired, bundle, List.of(), fingerprint));
 	}
 
-	private static RoutesConfiguration configuration(String routeId) {
-		RouteConfiguration route = new RouteConfiguration("execution-policy", List.of(), List.of(), List.of());
-		route.setRouteId(routeId);
-		return new RoutesConfiguration(Map.of(), Map.of(), Map.of(), List.of(route));
+	/** A mapping without sources or sinks: staging it installs only its collector route. */
+	private static MappingRoute plan(String routeId) {
+		return new MappingRoute(routeId, List.of(), null, List.of(), null);
+	}
+
+	/** {@code plan}, running {@code onStage} each time a bundle builds it. */
+	private static RoutePlan staging(RoutePlan plan, Runnable onStage) {
+		return new RoutePlan() {
+			@Override public String routeId() { return plan.routeId(); }
+			@Override public void build(RouteBuilder builder) { onStage.run(); plan.build(builder); }
+			@Override public List<Endpoint> endpoints() { return plan.endpoints(); }
+		};
 	}
 
 	private static final class Runtime extends DmpComponent {

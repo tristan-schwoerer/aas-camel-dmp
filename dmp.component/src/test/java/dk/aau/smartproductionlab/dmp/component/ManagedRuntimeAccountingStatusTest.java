@@ -12,11 +12,11 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.CamelContext;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataTransformerConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteConfiguration;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
-import dk.aau.smartproductionlab.dmp.lua.configuration.LuaTransformerConfiguration;
+import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
+import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
+import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -27,10 +27,8 @@ class ManagedRuntimeAccountingStatusTest {
 		Runtime() throws Exception { super(); camelContext.start(); }
 		@Override public void close() { stopComponent(); }
 	}
-	private static RoutesConfiguration configuration(DataTransformerConfiguration transformer) {
-		var route = new RouteConfiguration("execution-policy", List.of(), List.of("transform"), List.of());
-		route.setRouteId("private-mapping");
-		return new RoutesConfiguration(Map.of(), Map.of("transform", transformer), Map.of(), List.of(route));
+	private static MappingRoute configuration(Endpoint transformer) {
+		return new MappingRoute("private-mapping", List.of(), transformer, List.of(), null);
 	}
 
 	@Test
@@ -39,7 +37,7 @@ class ManagedRuntimeAccountingStatusTest {
 		try (var runtime = new Runtime()) {
 			ManagedRuntimeStatus.beginManaged();
 			ManagedRuntimeStatus.trackReconciliation(null, runtime);
-			var bundle = runtime.installBundle("private-bundle", configuration(new LuaTransformerConfiguration("private-lua",
+			var bundle = runtime.installBundle("private-bundle", configuration(new LuaScript(
 					LuaCompiledSource.fromBytes(bytes, "private-script", 256))));
 			var status = ManagedRuntimeStatus.asMap();
 			var owners = (List<?>) status.get("resourceOwners");
@@ -58,9 +56,14 @@ class ManagedRuntimeAccountingStatusTest {
 		}
 	}
 
-	private static final class BlockingClose extends DataTransformerConfiguration implements ManagedRouteResource {
+	private static final class BlockingClose implements ManagedRouteResource {
 		final CountDownLatch closing = new CountDownLatch(1), release = new CountDownLatch(1);
-		@Override public String getConnectionURI() { return "direct:private-transform"; }
+		Endpoint endpoint() {
+			return resources -> {
+				resources.own(this);
+				return "direct:private-transform";
+			};
+		}
 		@Override public void bind(CamelContext context) { }
 		@Override public synchronized void close() throws Exception {
 			closing.countDown();
@@ -75,7 +78,7 @@ class ManagedRuntimeAccountingStatusTest {
 		try (var runtime = new Runtime()) {
 			ManagedRuntimeStatus.beginManaged();
 			ManagedRuntimeStatus.trackReconciliation(null, runtime);
-			var bundle = runtime.installBundle("private-bundle", configuration(resource));
+			var bundle = runtime.installBundle("private-bundle", configuration(resource.endpoint()));
 			var removal = workers.submit(() -> runtime.removeBundle(bundle));
 			try {
 				assertTrue(resource.closing.await(2, TimeUnit.SECONDS));

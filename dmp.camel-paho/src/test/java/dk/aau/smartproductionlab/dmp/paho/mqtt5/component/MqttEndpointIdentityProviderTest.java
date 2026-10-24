@@ -7,9 +7,9 @@ import org.junit.jupiter.api.Test;
 
 class MqttEndpointIdentityProviderTest {
 	@Test
-	void perSinkClientIdsShareDestinationOnlyWhenOtherOptionsMatch() {
-		String first = "paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&clientId=dmp-uuid&qos=1";
-		String sibling = "paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&clientId=dmp-mode&qos=1";
+	void perSinkNamesShareDestinationOnlyWhenOtherOptionsMatch() {
+		String first = "dmp-paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&name=dmp-uuid&qos=1";
+		String sibling = "dmp-paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&name=dmp-mode&qos=1";
 		MqttEndpointIdentityProvider provider = new MqttEndpointIdentityProvider();
 		assertTrue(provider.identity(first).equals(provider.identity(sibling)));
 		assertFalse(provider.identity(first).equals(provider.identity(
@@ -19,8 +19,8 @@ class MqttEndpointIdentityProviderTest {
 
 	@Test
 	void queryOptionOrderDoesNotChangeDestinationIdentity() {
-		String first = "paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&clientId=one&qos=1";
-		String second = "paho-mqtt5:device/command?qos=1&clientId=two&brokerUrl=tcp://broker:1883";
+		String first = "dmp-paho-mqtt5:device/command?brokerUrl=tcp://broker:1883&name=one&qos=1";
+		String second = "dmp-paho-mqtt5:device/command?qos=1&name=two&brokerUrl=tcp://broker:1883";
 		MqttEndpointIdentityProvider provider = new MqttEndpointIdentityProvider();
 		assertTrue(provider.identity(first).equals(provider.identity(second)));
 	}

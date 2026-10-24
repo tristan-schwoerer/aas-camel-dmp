@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RoutesConfiguration;
+import dk.aau.smartproductionlab.dmp.core.plan.RoutePlan;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
 import dk.aau.smartproductionlab.dmp.management.model.WireProjection;
@@ -77,7 +77,7 @@ class SnmpBindingTest {
 		await().atMost(Duration.ofSeconds(10)).until(() -> new OctetString("ops@example.com").equals(agent.get("1.3.6.1.2.1.1.4.0")));
 	}
 
-	private RoutesConfiguration compile() throws Exception {
+	private RoutePlan compile() throws Exception {
 		JsonObject aid = JsonParser.parseString(resource("snmp/aid.json")).getAsJsonObject();
 		child(child(child(aid, "interface_snmp"), "EndpointMetadata"), "base").addProperty("value", "snmp://127.0.0.1:" + agent.port() + "/");
 		try (var repository = new FakeAasRepository()) {
@@ -90,7 +90,7 @@ class SnmpBindingTest {
 			var compiled = new ConnectorConfigurationFactory().createBundles(plan.value(),
 					new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://127.0.0.1:" + aas.getAddress().getPort())));
 			assertTrue(compiled.issues().isEmpty(), String.valueOf(compiled.issues()));
-			return compiled.bundles().get(0).configuration();
+			return compiled.bundles().get(0).route();
 		}
 	}
 

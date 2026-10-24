@@ -33,8 +33,8 @@ import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource.AccountedEndpoint;
-import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource.AccountingEntry;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource.AccountedEndpoint;
+import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource.AccountingEntry;
 import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
 
 /**
@@ -43,7 +43,7 @@ import dk.aau.smartproductionlab.dmp.lua.sandbox.LuaCompiledSource;
  * <p>
  * URI syntax: {@code lua:managed:<binding>?timeoutSeconds=2},
  * where {@code <binding>} names a {@link LuaCompiledSource} bound in the Camel
- * registry by its {@code LuaTransformerConfiguration}. Lua is never read from files.
+ * registry by its {@code LuaBinding}. Lua is never read from files.
  *
  * @author aas-camel-dmp
  */
