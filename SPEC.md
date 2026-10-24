@@ -758,7 +758,8 @@ end
   explicit logging: `Time = meta.sources.State.time`,
   `Outcome = meta.invocation.outcome`.
 - Lua arrives only as AIMC Blobs and is compiled once per mapping in memory
-  (`LuaCompiledSource`); identical sources share one compiled prototype.
+  (`LuaCompiledSource`); identical sources share one compiled prototype, also
+  across mappings. Its chunk is named `transformation`; errors name the mapping.
 - Each invocation gets fresh, isolated globals. Inputs are converted from
   decoded Java values (maps, lists, scalars, null markers, bytes) to native Lua
   values; results are converted back. No JSON text crosses the boundary; Lua
@@ -767,11 +768,22 @@ end
   becomes a `Long`, up to 2^53−1).
 - Sandbox: base functions, `math`, `table`, `string`, `json`, `os.clock`. No
   `io`, other `os`, `require`/`load*`/`dofile`, `debug`, `luajava`, `package`,
-  `coroutine`.
-- Guards: CPU budget per invocation via instruction-count hook (default 2 s), a
-  maximum script size, and the contract checks (`aimc_main` exists, result is a
-  table). There is no per-script memory cap; the JVM heap (`-Xmx`, default
-  512 MB in the image) is shared by all mappings.
+  `coroutine`. `print` writes to the application log at DEBUG (logger
+  `dk.aau.smartproductionlab.dmp.lua.print`).
+- Guards: a time budget per invocation (default 2 s, wall time from the
+  invocation's start, the conversion of its sources included), checked every
+  10 000 VM instructions and every 10 000 steps of the pattern matcher; a
+  timeout cannot be caught with `pcall` or `xpcall`. `string.find`, `match`,
+  `gmatch` and `gsub` use a matcher of the DMP's own that counts against the
+  budget; it answers as LuaJ 3.0.1's (its character classes, a start past the
+  end clamped), except where LuaJ fails with a Java exception or never ends (an
+  empty pattern, `%f`, `gmatch` after an empty match), which follow Lua 5.2.
+  `string.rep`, `table.concat`, `gsub` and `json.decode` are held to 16 MiB.
+  Values nested deeper than 200 levels (or a table that contains itself) fail
+  the conversion. Plus a maximum script size and the contract checks
+  (`aimc_main` exists, result is a table). There is no per-script memory cap
+  (`..` in a loop can still grow a string); the JVM heap (`-Xmx`, default 512 MB
+  in the image) is shared by all mappings.
 
 ## 9. Connector capabilities
 

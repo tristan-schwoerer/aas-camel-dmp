@@ -55,6 +55,8 @@ public final class LuaJsonCodec {
 	/** Largest integer a Lua (double) number represents exactly: 2^53 - 1. */
 	private static final double MAX_EXACT_LUA_INTEGER = 9007199254740991.0;
 	private static final Object NULL_MARKER = new Object();
+	/** The deepest value converted either way; deeper (or a table that contains itself) is an error. */
+	static final int MAX_DEPTH = 200;
 
 	private LuaJsonCodec() {
 	}
@@ -81,13 +83,17 @@ public final class LuaJsonCodec {
 	 * JVM reflection / module access is involved).
 	 */
 	public static LuaValue toLua(Object jsonValue) {
+		return toLua(jsonValue, 0);
+	}
+
+	private static LuaValue toLua(Object jsonValue, int depth) {
 		if (jsonValue == null || jsonValue == JsonPointer.JSON_NULL) {
 			return new LuaUserdata(NULL_MARKER);
 		}
 		if (jsonValue instanceof Map) {
 			LuaTable table = new JsonObjectTable();
 			for (Map.Entry<?, ?> entry : ((Map<?, ?>) jsonValue).entrySet()) {
-				table.set(String.valueOf(entry.getKey()), toLua(entry.getValue()));
+				table.set(String.valueOf(entry.getKey()), toLua(entry.getValue(), deeper(depth)));
 			}
 			return table;
 		}
@@ -95,7 +101,7 @@ public final class LuaJsonCodec {
 			LuaTable table = new JsonArrayTable();
 			int i = 1;
 			for (Object item : (List<?>) jsonValue) {
-				table.set(i++, toLua(item));
+				table.set(i++, toLua(item, deeper(depth)));
 			}
 			return table;
 		}
@@ -116,6 +122,16 @@ public final class LuaJsonCodec {
 
 	/** Converts a Lua value to a JSON-compatible decoded Java value. */
 	public static Object fromLua(LuaValue value) {
+		return fromLua(value, 0);
+	}
+
+	private static int deeper(int depth) {
+		if (depth >= MAX_DEPTH)
+			throw new LuaError("value nested deeper than " + MAX_DEPTH + " levels (a table that contains itself?)");
+		return depth + 1;
+	}
+
+	private static Object fromLua(LuaValue value, int depth) {
 		if (value.isnil()) {
 			return null;
 		}
@@ -154,12 +170,12 @@ public final class LuaJsonCodec {
 			return number;
 		}
 		if (value.istable()) {
-			return toJavaMapOrList(value.checktable());
+			return toJavaMapOrList(value.checktable(), deeper(depth));
 		}
 		return value.tojstring();
 	}
 
-	private static Object toJavaMapOrList(LuaTable table) {
+	private static Object toJavaMapOrList(LuaTable table, int depth) {
 		boolean hasNumeric = false;
 		boolean hasOther = false;
 		int maxIndex = 0;
@@ -188,7 +204,7 @@ public final class LuaJsonCodec {
 			if (maxIndex != numericCount) {
 				throw new LuaError("cannot encode a sparse Lua array as JSON");
 			}
-			return readArray(table);
+			return readArray(table, depth);
 		}
 		if (table instanceof JsonArrayTable) {
 			return List.of();
@@ -201,19 +217,19 @@ public final class LuaJsonCodec {
 				break;
 			}
 			key = n.arg1();
-			map.put(key.tojstring(), fromLua(n.arg(2)));
+			map.put(key.tojstring(), fromLua(n.arg(2), depth));
 		}
 		return map;
 	}
 
-	private static List<Object> readArray(LuaTable table) {
+	private static List<Object> readArray(LuaTable table, int depth) {
 		List<Object> list = new ArrayList<>();
 		for (int i = 1;; i++) {
 			LuaValue item = table.get(i);
 			if (item.isnil()) {
 				break;
 			}
-			list.add(fromLua(item));
+			list.add(fromLua(item, depth));
 		}
 		for (int i = 1; i <= list.size(); i++) {
 			if (table.get(i).isnil()) {
@@ -258,6 +274,8 @@ public final class LuaJsonCodec {
 	private static final class DecodeFunction extends org.luaj.vm2.lib.OneArgFunction {
 		@Override
 		public LuaValue call(LuaValue arg) {
+			if (arg.checkstring().length() > LuaSandbox.MAX_STRING_BYTES)
+				throw new LuaError("json.decode failed: input longer than " + LuaSandbox.MAX_STRING_BYTES + " bytes");
 			try {
 				Object parsed = JsonCodec.parseJson(arg.checkjstring());
 				return toLua(parsed);

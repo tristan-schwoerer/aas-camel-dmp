@@ -78,8 +78,23 @@ public class LuaProducer extends DefaultProducer {
 		// not thread-safe, and blobs may mutate their environment).
 		Globals globals = LuaSandbox.createGlobals();
 		LuaTimeoutHook.install(globals, endpoint.getTimeoutSeconds());
-		globals.set("meta", meta(exchange));
+		try {
+			setBody(exchange, transform(exchange, globals));
+		} catch (LuaError e) {
+			throw new RuntimeException("Lua transformation '" + endpoint.getDiagnosticIdentity() + "' failed: "
+					+ e.getMessage().strip(), e);
+		} catch (LuaTimeoutHook.BudgetExceeded e) {
+			throw new RuntimeException("Lua transformation '" + endpoint.getDiagnosticIdentity() + "' failed: "
+					+ e.getMessage(), e);
+		} finally {
+			LuaTimeoutHook.release();
+		}
+		LOGGER.debug("Lua transformation '{}' applied to exchange {}", endpoint.getDiagnosticIdentity(), exchange.getExchangeId());
+	}
 
+	/** Runs the blob against the exchange's sources, within the budget; the result keyed by SinkId. */
+	private Object transform(Exchange exchange, Globals globals) {
+		globals.set("meta", meta(exchange));
 		// Bind the pre-compiled prototype to the fresh environment and run the
 		// top-level chunk (defines aimc_main) — no re-parsing/re-compiling.
 		endpoint.getSource().runChunk(globals);
@@ -92,30 +107,19 @@ public class LuaProducer extends DefaultProducer {
 
 		Object body = getBody(exchange);
 		LuaValue sources = buildSources(body);
-
-		LuaValue result;
-		try {
-			// An Operation's response transformation: aimc_main(sources, requestSources).
-			Object requestSources = exchange.getProperty(DataTransformerConfiguration.REQUEST_SOURCES);
-			result = requestSources == null ? aimcMain.invoke(sources).arg1()
-					: aimcMain.invoke(sources, LuaJsonCodec.toLua(requestSources)).arg1();
-		} catch (LuaError e) {
-			throw new RuntimeException("Lua transformation '" + endpoint.getDiagnosticIdentity() + "' failed: "
-					+ e.getMessage(), e);
-		}
+		// An Operation's response transformation: aimc_main(sources, requestSources).
+		Object requestSources = exchange.getProperty(DataTransformerConfiguration.REQUEST_SOURCES);
+		LuaValue result = requestSources == null ? aimcMain.invoke(sources).arg1()
+				: aimcMain.invoke(sources, LuaJsonCodec.toLua(requestSources)).arg1();
 
 		if (!result.istable()) {
 			throw new IllegalStateException("Lua blob '" + endpoint.getDiagnosticIdentity()
 					+ "' must return a table (map keyed by SinkId), got: " + result.typename());
 		}
-
 		Object javaResult = LuaJsonCodec.fromLua(result);
-		setBody(exchange, javaResult);
-
 		LOGGER.debug("lua {}: input-keys={} result={}", endpoint.getDiagnosticIdentity(),
 				((Map<?, ?>) body).keySet(), javaResult);
-
-		LOGGER.debug("Lua transformation '{}' applied to exchange {}", endpoint.getDiagnosticIdentity(), exchange.getExchangeId());
+		return javaResult;
 	}
 
 	/** The exchange's {@link DataTransformerConfiguration#META}; {@code sources} and {@code sinks} are always tables. */

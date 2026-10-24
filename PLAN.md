@@ -107,35 +107,24 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
 - O3: JFR events `dk.aau.smartproductionlab.dmp.Evaluation` and `.SinkWrite`
   (SPEC §10).
 
-### H2. Lua budget (`dmp.camel-lua`)
+### H2. Lua budget — done (2026-10-23)
 
-One replacement for the hook settles both safety and speed.
-
-- **Hook.** A minimal instruction counter replaces LuaJ's `DebugLib`, which
-  runs per instruction and makes all Lua about 3× slower (measured). The
-  counter is a `DebugLib` subclass set as `Globals.debuglib` (a public field),
-  whose `onCall`/`onReturn` do nothing, so the `debug` table and the `package`
-  stand-in are no longer loaded. The timeout becomes an `Error`, not a
-  `LuaError`: LuaJ 3.0.1's `pcall` catches `LuaError` and `Exception` only
-  (checked in its bytecode). Today `pcall` swallows the timeout and a loop
-  around `pcall` never ends.
-- **Library calls.** Functions that run as one instruction in Java get caps:
-  - the result length of `string.rep` and `table.concat`;
-  - the input size of `json`.
-- **Patterns.** `find`/`match`/`gmatch`/`gsub` get a matcher of the DMP's own
-  that counts steps against the same budget. A length cap does not bound
-  backtracking: the review's reproducer has a 2000-character subject.
-  LuaJ's matcher is internal to its `StrLib` and the build has no LuaJ
-  sources, so this is a port of Lua 5.2's pattern matcher (`lstrlib.c`, MIT),
-  checked against LuaJ's results in tests.
-
-  `LuaJsonCodec` gets a depth and cycle guard (today a cyclic result is a
-  `StackOverflowError`). `print` goes to the log at DEBUG, not to stdout.
-- **Shared prototype.** Identical Lua shares one compiled prototype across
-  mappings, as SPEC §8 states (today the cache key includes the mapping).
-- **SPEC §8:** the budget is wall time from the start of the invocation.
-- **Tests:** the review's reproducers as unit tests: a `pcall` loop,
-  `string.rep("x", 2^30)`, a backtracking pattern and a cyclic result.
+- The budget is a counting `DebugLib` set as `Globals.debuglib`; its timeout is an
+  `Error` that `pcall`/`xpcall` cannot catch. A compute loop runs 2.6× faster
+  than with LuaJ's `DebugLib` (475 → 185 ms; 172 ms without any hook).
+- `string.find`/`match`/`gmatch`/`gsub` use `LuaPatterns`, a port of Lua 5.2's
+  matcher that counts against the budget, also through the shared string
+  metatable (`s:find(p)`). Compared with LuaJ's on thousands of cases it
+  answers alike, with LuaJ's character classes (read from LuaJ itself); where
+  LuaJ throws or never ends (141 of the compared cases: empty patterns, `%f`,
+  `gmatch` after an empty match) it answers as Lua 5.2.
+- 16 MiB caps on `string.rep`, `table.concat`, `gsub` and `json.decode`; a
+  depth and cycle guard (200) in `LuaJsonCodec`; `print` to the log at DEBUG;
+  no Lua compiler in the sandbox.
+- Identical Lua shares one prototype across mappings (chunk `transformation`).
+- Tests: the review's reproducers (`LuaBudgetTest`) and the LuaJ comparison
+  (`LuaPatternsTest`). Still open (Deferred): a memory cap, so `..` in a loop
+  can still grow a string up to the heap.
 
 ### H3. Reconciliation and events (`dmp.management`)
 

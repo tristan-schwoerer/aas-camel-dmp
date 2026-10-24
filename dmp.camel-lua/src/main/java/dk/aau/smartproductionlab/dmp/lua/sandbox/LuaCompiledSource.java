@@ -35,8 +35,17 @@ import java.util.Objects;
 
 import org.luaj.vm2.Globals;
 
-/** An immutable, eagerly compiled Lua source supplied by a managed runtime. */
+/**
+ * An immutable, eagerly compiled Lua source supplied by a managed runtime. Identical sources share one compiled
+ * prototype, whichever mapping they belong to (SPEC §8); its chunk is named {@value #CHUNK_NAME}, and the
+ * {@code lua:} producer names the mapping in its errors.
+ */
 public final class LuaCompiledSource {
+	/** The chunk name of every compiled source: a shared prototype belongs to no one mapping. */
+	static final String CHUNK_NAME = "transformation";
+	/** Compiled prototypes by the SHA-256 of their source; a prototype no source holds any more can be collected. */
+	private static final java.util.Map<String, java.lang.ref.WeakReference<CompiledLuaScript>> PROTOTYPES = new java.util.HashMap<>();
+
 	private final byte[] bytes;
 	private final String diagnosticIdentity;
 	private final String contentIdentity;
@@ -52,7 +61,26 @@ public final class LuaCompiledSource {
 
 	/** Validates the byte limit and Lua syntax before returning the resource. */
 	public static LuaCompiledSource fromBytes(byte[] sourceBytes, String diagnosticIdentity, long maxScriptBytes) {
-		return fromBytes(sourceBytes, diagnosticIdentity, maxScriptBytes, CompiledLuaScript::compile);
+		return fromBytes(sourceBytes, diagnosticIdentity, maxScriptBytes, LuaCompiledSource::shared);
+	}
+
+	/** The compiled prototype of {@code source}, shared with every identical source. */
+	private static CompiledLuaScript shared(String source, String diagnosticIdentity) {
+		String key = sha256(source.getBytes(StandardCharsets.UTF_8));
+		synchronized (PROTOTYPES) {
+			var cached = PROTOTYPES.get(key);
+			CompiledLuaScript script = cached == null ? null : cached.get();
+			if (script != null) return script;
+			PROTOTYPES.values().removeIf(reference -> reference.get() == null);
+		}
+		CompiledLuaScript compiled = CompiledLuaScript.compile(source, CHUNK_NAME);
+		synchronized (PROTOTYPES) {
+			var cached = PROTOTYPES.get(key);
+			CompiledLuaScript script = cached == null ? null : cached.get();
+			if (script != null) return script;
+			PROTOTYPES.put(key, new java.lang.ref.WeakReference<>(compiled));
+			return compiled;
+		}
 	}
 
 	static LuaCompiledSource fromBytes(byte[] sourceBytes, String diagnosticIdentity, long maxScriptBytes,
@@ -103,6 +131,11 @@ public final class LuaCompiledSource {
 	/** SHA-256 of the exact source bytes; suitable for effective fingerprints. */
 	public String contentIdentity() {
 		return contentIdentity;
+	}
+
+	/** The compiled prototype, for tests. */
+	CompiledLuaScript compiled() {
+		return compiledScript;
 	}
 
 	public void runChunk(Globals globals) {

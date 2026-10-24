@@ -92,15 +92,20 @@ class LuaSandboxTest {
 		try (var loader = new java.net.URLClassLoader(classpath, ClassLoader.getPlatformClassLoader())) {
 			var sandbox = loader.loadClass(LuaSandbox.class.getName()).getMethod("createGlobals");
 			Object poisoner = sandbox.invoke(null);
-			run(poisoner, "string.sub = function() return 'poisoned' end");
+			run(loader, poisoner, "string.sub = function() return 'poisoned' end");
 			Object other = sandbox.invoke(null);
-			Object result = run(other, "return ('abc'):sub(1, 1)");
+			run(loader, other, "result = ('abc'):sub(1, 1)");
+			Object result = other.getClass().getMethod("get", String.class).invoke(other, "result");
 			assertEquals("a", result.getClass().getMethod("tojstring").invoke(result));
 		}
 	}
 
-	private static Object run(Object globals, String chunk) throws Exception {
-		Object function = globals.getClass().getMethod("load", String.class).invoke(globals, chunk);
-		return function.getClass().getMethod("call").invoke(function);
+	/** Runs {@code chunk} in {@code globals}, both of {@code loader}, compiled as the DMP compiles blobs. */
+	private static void run(ClassLoader loader, Object globals, String chunk) throws Exception {
+		Class<?> compiled = loader.loadClass(CompiledLuaScript.class.getName());
+		Object script = compiled.getMethod("compile", String.class, String.class).invoke(null, chunk, "test");
+		Object prototype = script.getClass().getMethod("prototype").invoke(script);
+		for (var method : compiled.getMethods())
+			if (method.getName().equals("runChunk")) method.invoke(null, prototype, globals);
 	}
 }

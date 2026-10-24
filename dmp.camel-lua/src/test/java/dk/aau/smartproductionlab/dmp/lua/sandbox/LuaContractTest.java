@@ -59,7 +59,7 @@ class LuaContractTest {
 	void test01LoadBlobDefinesAimcMain() throws IOException {
 		String script = blob("simple.lua");
 		Globals globals = LuaSandbox.createGlobals();
-		globals.load(script, "@simple.lua").call();
+		CompiledLuaScript.runChunk(CompiledLuaScript.compile(script, "simple.lua").prototype(), globals);
 
 		LuaValue aimcMain = globals.get("aimc_main");
 		assertTrue(aimcMain.isfunction(), "aimc_main must exist after loading");
@@ -261,7 +261,7 @@ class LuaContractTest {
 	@Test
 	void test03InfiniteLoopTimesOut() throws IOException {
 		long start = System.nanoTime();
-		LuaError error = assertThrows(LuaError.class, () -> run(
+		var error = assertThrows(LuaTimeoutHook.BudgetExceeded.class, () -> run(
 				blob("infinite.lua"), "@infinite.lua", java.util.Map.of(), 0.5));
 		long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
@@ -305,7 +305,15 @@ class LuaContractTest {
 	private static Object run(String script, String chunkName, Object sources, double timeoutSeconds) {
 		Globals globals = LuaSandbox.createGlobals();
 		LuaTimeoutHook.install(globals, timeoutSeconds);
-		globals.load(script, chunkName.startsWith("@") ? chunkName : "@" + chunkName).call();
+		try {
+			return evaluate(globals, script, chunkName, sources);
+		} finally {
+			LuaTimeoutHook.release();
+		}
+	}
+
+	private static Object evaluate(Globals globals, String script, String chunkName, Object sources) {
+		CompiledLuaScript.runChunk(CompiledLuaScript.compile(script, chunkName.replaceFirst("^@", "")).prototype(), globals);
 		LuaValue aimcMain = globals.get("aimc_main");
 		if (!aimcMain.isfunction()) {
 			throw new IllegalArgumentException("Blob must define the AIMC entry point: function aimc_main(sources)");
