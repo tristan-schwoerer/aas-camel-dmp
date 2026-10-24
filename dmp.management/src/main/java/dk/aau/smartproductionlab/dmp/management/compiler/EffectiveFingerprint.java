@@ -35,7 +35,13 @@ import dk.aau.smartproductionlab.dmp.management.model.WireModel;
  */
 public final class EffectiveFingerprint {
 	/** An AAS element target, reduced to its submodel identity and the element's shape. */
-	private record DirectValue(String submodelId, String submodelIdShort, Reference submodelSemanticId, SubmodelElement element) { }
+	/** An AAS element target: its submodel's identity, the element's structure, and the Operation it belongs to. */
+	private record DirectValue(String submodelId, String submodelIdShort, Reference submodelSemanticId, SubmodelElement element,
+			SubmodelElement operation) {
+		DirectValue(String submodelId, String submodelIdShort, Reference submodelSemanticId, SubmodelElement element) {
+			this(submodelId, submodelIdShort, submodelSemanticId, element, null);
+		}
+	}
 	private record SeriesValue(DirectValue container, TimeSeriesProjection.Series projection) { }
 	private record EndpointValue(String id, Reference reference, WireModel.Presence<String> pollingInterval,
 			WireModel.Presence<String> evaluation, Object target) { }
@@ -134,9 +140,12 @@ public final class EffectiveFingerprint {
 	private static Object target(MappingPlanCompiler.Target target) {
 		if (target instanceof MappingPlanCompiler.DirectTarget direct) {
 			var resolved = direct.resolved();
-			SubmodelElement element = resolved.element() instanceof Property property ? Aas.withoutValue(property) : resolved.element();
+			// Values are not configuration (SPEC §5.3): only the structure counts, at every depth. A Source on an
+			// Operation's variable counts the whole Operation, whose delegation URL and variables shape the bridge.
 			return new DirectValue(resolved.submodel().getId(), resolved.submodel().getIdShort(),
-					resolved.submodel().getSemanticId(), element);
+					resolved.submodel().getSemanticId(), Aas.withoutValues(resolved.element()),
+					resolved.operation() == null || resolved.operation() == resolved.element() ? null
+							: Aas.withoutValues(resolved.operation()));
 		}
 		if (target instanceof MappingPlanCompiler.SeriesTarget series) {
 			var segment = series.segment();

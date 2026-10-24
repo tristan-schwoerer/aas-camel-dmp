@@ -78,7 +78,7 @@ public final class MqttControlEventRouteBuilder extends RouteBuilder {
 		route(VALUE_ROUTE, "sm-repository/" + settings.repositoryId() + "/submodels/#", "-values", false).autoStartup(false)
 				.process(exchange -> {
 					AasControlEvent event = event(exchange);
-					if (hub.listensTo(event.resourceId()) && event.canonical() != null) hub.publish(event.canonical(), Map.of());
+					if (hub.listensTo(event.resourceId()) && event.json() != null) hub.publish(event.json(), Map.of());
 				});
 		new ValueFeedSwitch(getContext(), VALUE_ROUTE, hub, java.time.Duration.ofSeconds(30));
 	}

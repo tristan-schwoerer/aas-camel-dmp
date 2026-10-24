@@ -79,7 +79,11 @@ public final class MappingPlanCompiler {
 		public Plan(List<MappingPlan> mappings) { this(null, mappings); }
 		public Plan { mappings=List.copyOf(mappings); }
 	}
-	/** A submodel whose change can change the mapping; with a {@code path}, only that element subtree of it. */
+	/**
+	 * A submodel whose change can change the mapping; with a {@code path}, only that element subtree of it. Of a
+	 * {@code submodel} dependency only the structure counts; of a {@code series} (a TimeSeries container) the
+	 * values, too.
+	 */
 	public record Dependency(String kind, String id, String path) {
 		public Dependency(String kind, String id) { this(kind, id, null); }
 	}
@@ -161,7 +165,8 @@ public final class MappingPlanCompiler {
 				if(endpoint.target() instanceof DirectTarget target) metadataDependencies(target.resolved().element(),dependencies);
 				// The Record and InfluxDb2Target lie beside the referenced segment: the series container is read, too.
 				if(endpoint.target() instanceof SeriesTarget series) {
-					dependencies.add(new Dependency("submodel",series.segment().submodel().getId(),series.seriesPath()));
+					// Its values count, too: the segments' StartTime, EndTime and State are the period.
+					dependencies.add(new Dependency("series",series.segment().submodel().getId(),series.seriesPath()));
 					// Elements the Record references are part of its row shape.
 					for(Reference referenced:series.projection().references()) {
 						List<Key> keys=Aas.keys(referenced);

@@ -263,7 +263,7 @@ final class AasPropertyEventProcessor implements Processor {
 		}
 		JsonElement parsed;
 		try {
-			parsed = body instanceof String
+			parsed = body instanceof JsonObject shared ? shared : body instanceof String
 					? JsonParser.parseString((String) body) : GSON.toJsonTree(body);
 		} catch (RuntimeException e) {
 			return null;

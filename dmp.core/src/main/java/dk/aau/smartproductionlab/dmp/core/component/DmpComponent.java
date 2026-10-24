@@ -334,10 +334,13 @@ public class DmpComponent {
 			if (!staged.consumed) {
 				try { staged.close(); } catch (Exception cleanup) { failure.addSuppressed(cleanup); }
 			}
-			// Never resurrect removed state on behalf of work superseded by a delete/update.
-			if (!managedBundles.containsKey(previous.bundleId) && currentGeneration(staged)) {
+			// The previous bundle comes back rather than leave the mapping without one, also when an invalidation
+			// fenced the replacement meanwhile: the pass it queued replaces (or removes) the restored bundle in turn.
+			// A removal cannot interleave (this component is synchronized); a dropped generation means none is wanted.
+			AtomicLong fence = generations.get(previous.bundleId);
+			if (!managedBundles.containsKey(previous.bundleId) && fence != null) {
 				try {
-					StagedBundle restore = stageBundle(previous.bundleId, staged.generation, previous.definitionFactory);
+					StagedBundle restore = stageBundle(previous.bundleId, fence.get(), previous.definitionFactory);
 					try {
 						validateFreshDefinition(previous.configuration, restore.configuration);
 						activate(restore);
@@ -370,11 +373,6 @@ public class DmpComponent {
 		if (staged == null || !stagedBundles.contains(staged) || staged.consumed) {
 			throw new IllegalArgumentException("staged bundle is not owned by this component or has already been consumed");
 		}
-	}
-
-	private boolean currentGeneration(StagedBundle staged) {
-		AtomicLong fence = generations.get(staged.bundleId);
-		return fence != null && fence.get() == staged.generation;
 	}
 
 	private void requireGeneration(String bundleId, long generation) {
@@ -418,12 +416,20 @@ public class DmpComponent {
 			model().addRestDefinitions(reservations.stream().map(DmpRouteBuilder.RestReservation::definition).distinct().toList(), false);
 			model().addRouteDefinitions(definitions);
 			restEndpoints.putAll(captureRestEndpointUris(reservations));
+			// REST listeners first: gated until the bundle is active, they answer "unavailable" while the rest
+			// starts (devices connect), so a replaced Operation's path is never unserved for longer than the swap.
+			Set<String> restRoutes = new LinkedHashSet<>();
+			for (var reservation : reservations) if (reservation.restRouteId() != null) restRoutes.add(reservation.restRouteId());
+			for (String routeId : routeIds) {
+				if (restRoutes.contains(routeId)) camelContext.getRouteController().startRoute(routeId);
+			}
 			for (String routeId : routeIds) {
 				if (!candidate.getIngressInventory().contains(routeId)) camelContext.getRouteController().startRoute(routeId);
 			}
 			requireGeneration(bundleId, staged.generation);
 			for (String routeId : routeIds) {
-				if (candidate.getIngressInventory().contains(routeId)) camelContext.getRouteController().startRoute(routeId);
+				if (candidate.getIngressInventory().contains(routeId) && !restRoutes.contains(routeId))
+					camelContext.getRouteController().startRoute(routeId);
 			}
 			for (String routeId : routeIds) {
 				var route = camelContext.getRoute(routeId);

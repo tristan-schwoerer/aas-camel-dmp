@@ -94,7 +94,8 @@ public final class MappingReconciliationService implements AutoCloseable {
 	private final Map<MappingKey, MutableStatus> statuses = new LinkedHashMap<>();
 	/** Installations per mapping since start; dropped with the mapping's status. Not a fence. */
 	private final Map<MappingKey, Long> revisions = new LinkedHashMap<>();
-	private volatile Map<String, Set<String>> activeBundleDependencies = Map.of();
+	/** Per dependency, the bundles it concerns (installed or being installed); fenced on its invalidation. */
+	private final Map<String, Set<String>> activeBundleDependencies = new java.util.concurrent.ConcurrentHashMap<>();
 	private final Map<String, Long> dependencyEpochs = new LinkedHashMap<>();
 	private long fullRescanEpoch;
 	private final AtomicLong invalidationEpoch = new AtomicLong();
@@ -112,6 +113,11 @@ public final class MappingReconciliationService implements AutoCloseable {
 	private volatile long retryNotBeforeNanos;
 	private volatile int overflowMappings;
 	private volatile boolean scanned;
+	/** Events accepted while a pass reads the repository, decided again once its index is in place. */
+	private final List<AasControlEvent> heldEvents = new ArrayList<>();
+	private boolean discovering;
+	private boolean heldOverflow;
+	private static final int MAX_HELD_EVENTS = 10_000;
 
 	public MappingReconciliationService(DmpComponent component, RepositoryDiscovery discovery, RuntimeSettings runtime,
 			int maxMappings, int maxQueuedInvalidations, long retryMillis) {
@@ -182,11 +188,43 @@ public final class MappingReconciliationService implements AutoCloseable {
 		reportListener = listener == null ? ignored -> { } : listener;
 	}
 
-	/** Invalidates what a relevant repository event concerns; irrelevant events are dropped. */
+	/**
+	 * Invalidates what a relevant repository event concerns; irrelevant events are dropped. Relevance is judged
+	 * against the desired state the last pass found. While a pass reads the repository, that state is about to
+	 * change (at startup it is empty), so the event is also held and judged again against what the pass found.
+	 */
 	public void acceptEvent(AasControlEvent event) {
 		if (closed) throw new IllegalStateException("reconciliation service is closed");
-		if (!relevance.test(event)) { ignoredEvents.incrementAndGet(); return; }
+		if (event.ignored()) { ignoredEvents.incrementAndGet(); return; }
+		boolean held = hold(event);
+		if (!relevance.test(event)) { if (!held) ignoredEvents.incrementAndGet(); return; }
 		invalidate(event.fullRescan() ? null : event.resourceId());
+	}
+
+	private boolean hold(AasControlEvent event) {
+		synchronized (heldEvents) {
+			if (!discovering) return false;
+			if (heldEvents.size() < MAX_HELD_EVENTS) heldEvents.add(event);
+			else heldOverflow = true;
+			return true;
+		}
+	}
+
+	/** Around a pass's repository reads: hold the events that arrive meanwhile, then judge them against its result. */
+	private void discovering(boolean started) {
+		List<AasControlEvent> held;
+		boolean overflow;
+		synchronized (heldEvents) {
+			discovering = started;
+			if (started) return;
+			held = List.copyOf(heldEvents);
+			overflow = heldOverflow;
+			heldEvents.clear();
+			heldOverflow = false;
+		}
+		if (overflow) { invalidate(null); return; }
+		for (AasControlEvent event : held)
+			if (relevance.test(event)) invalidate(event.fullRescan() ? null : event.resourceId());
 	}
 
 	/** Accepts an event invalidation into bounded tracking; overflow schedules a full repair. */
@@ -204,7 +242,7 @@ public final class MappingReconciliationService implements AutoCloseable {
 				dependencyEpochs.clear();
 			} else dependencyEpochs.put(dependencyId, epoch);
 			Set<String> affected = full ? activeBundleDependencies.values().stream().flatMap(Set::stream)
-					.collect(java.util.stream.Collectors.toSet()) : activeBundleDependencies.getOrDefault(dependencyId, Set.of());
+					.collect(java.util.stream.Collectors.toSet()) : Set.copyOf(activeBundleDependencies.getOrDefault(dependencyId, Set.of()));
 			for (String bundleId : affected) component.fenceBundleGeneration(bundleId);
 		}
 		queueScan();
@@ -226,10 +264,12 @@ public final class MappingReconciliationService implements AutoCloseable {
 				changedIds = full ? null : Set.copyOf(dependencyEpochs.keySet());
 			}
 			Scan scan;
+			discovering(true);
 			try {
 				scan = trackedScanProvider == null ? scanProvider.scan() : trackedScanProvider.apply(changedIds);
 			}
 			catch (RuntimeException failure) { return failWholeScan("repository-scan-failed"); }
+			finally { discovering(false); }
 			if (!scan.complete()) return failWholeScan(scan.failureCategory());
 			scanned = true;
 			int changed = 0, unchanged = 0, removed = 0;
@@ -249,7 +289,7 @@ public final class MappingReconciliationService implements AutoCloseable {
 					continue;
 				}
 				if (!scan.mappings().containsKey(key)) {
-					if (retire(entry.getValue())) { active.remove(key); statuses.remove(key); revisions.remove(key); refreshReverseDependencies(); removed++; }
+					if (retire(entry.getValue())) { active.remove(key); statuses.remove(key); revisions.remove(key); removed++; }
 					else {
 						mark(key, State.STALE, null, entry.getValue().fingerprint().exported(),
 								entry.getValue().handle().generation(), "bundle-removal-failed");
@@ -295,7 +335,7 @@ public final class MappingReconciliationService implements AutoCloseable {
 				}
 				if (!candidate.desired().valid()) {
 					if (previous != null && confirmedMissingDependency(candidate.desired())) {
-						if (retire(previous)) { active.remove(candidate.key()); refreshReverseDependencies(); removed++; previous = null; }
+						if (retire(previous)) { active.remove(candidate.key()); removed++; previous = null; }
 						else {
 						mark(candidate.key(), State.FAILED, candidate.desired().fingerprint().exported(),
 								previous.fingerprint().exported(), previous.handle().generation(), "bundle-removal-failed");
@@ -320,14 +360,12 @@ public final class MappingReconciliationService implements AutoCloseable {
 						continue;
 					}
 					active.remove(candidate.key());
-					refreshReverseDependencies();
 					previous = null;
 				}
 				if (previous != null && previous.handle().active()
 						&& previous.fingerprint().sameEffectiveConfiguration(desiredFingerprint)) {
 					active.put(candidate.key(), new Active(candidate.key(), previous.bundleId(), previous.handle(),
 							desiredFingerprint, dependencyIds(candidate)));
-					refreshReverseDependencies();
 					mark(candidate.key(), State.INSTALLED, desiredFingerprint.exported(), desiredFingerprint.exported(),
 							previous.handle().generation(), "");
 					unchanged++;
@@ -343,7 +381,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 					if (superseded(epoch, candidate.key(), dependencies)) {
 						staged.close();
 						if (previous == null) component.abandonUninstalledBundle(bundleId);
-						refreshReverseDependencies();
 						superseded = true;
 						continue;
 					}
@@ -351,7 +388,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 							? component.installBundle(staged) : component.replaceBundle(previous.handle(), staged);
 					active.put(candidate.key(), new Active(candidate.key(), bundleId, installed, desiredFingerprint,
 							dependencyIds(candidate)));
-					refreshReverseDependencies();
 					revisions.merge(candidate.key(), 1L, Long::sum);
 					mark(candidate.key(), State.INSTALLED, desiredFingerprint.exported(), desiredFingerprint.exported(), generation, "");
 					changed++;
@@ -367,7 +403,6 @@ public final class MappingReconciliationService implements AutoCloseable {
 						active.remove(candidate.key());
 						component.abandonUninstalledBundle(candidate.desired().bundle().bundleId());
 					}
-					refreshReverseDependencies();
 					mark(candidate.key(), State.FAILED, desiredFingerprint.exported(),
 							surviving == null || previous == null ? null : previous.fingerprint().exported(),
 							surviving == null ? 0 : surviving.generation(), "bundle-installation-failed",
@@ -376,6 +411,7 @@ public final class MappingReconciliationService implements AutoCloseable {
 					categories.add("bundle-installation-failed");
 				}
 			}
+			refreshReverseDependencies();
 			appliedEpoch = epoch;
 			synchronized (dependencyEpochs) {
 				superseded |= epoch != invalidationEpoch.get();
@@ -437,23 +473,22 @@ public final class MappingReconciliationService implements AutoCloseable {
 		return Set.copyOf(ids);
 	}
 
+	/**
+	 * Rebuilds the reverse dependencies from the active bundles, dropping what a pass staged but did not install.
+	 * Once per pass; within it, {@link #publishPendingDependencies} adds to them bundle by bundle.
+	 */
 	private void refreshReverseDependencies() {
 		Map<String, Set<String>> reverse = new LinkedHashMap<>();
 		for (Active installed : active.values()) for (String dependency : installed.dependencies())
-			reverse.computeIfAbsent(dependency, ignored -> new LinkedHashSet<>()).add(installed.bundleId());
-		Map<String, Set<String>> immutable = new LinkedHashMap<>();
-		reverse.forEach((id, bundleIds) -> immutable.put(id, Set.copyOf(bundleIds)));
-		activeBundleDependencies = Map.copyOf(immutable);
+			reverse.computeIfAbsent(dependency, ignored -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(installed.bundleId());
+		activeBundleDependencies.keySet().retainAll(reverse.keySet());
+		activeBundleDependencies.putAll(reverse);
 	}
 
+	/** Before a bundle installs: it concerns its dependencies from now on, so their invalidation fences it. */
 	private void publishPendingDependencies(String bundleId, Set<String> dependencies) {
-		Map<String, Set<String>> next = new LinkedHashMap<>();
-		activeBundleDependencies.forEach((id, bundleIds) -> next.put(id, new LinkedHashSet<>(bundleIds)));
 		for (String dependency : dependencies)
-			next.computeIfAbsent(dependency, ignored -> new LinkedHashSet<>()).add(bundleId);
-		Map<String, Set<String>> immutable = new LinkedHashMap<>();
-		next.forEach((id, bundleIds) -> immutable.put(id, Set.copyOf(bundleIds)));
-		activeBundleDependencies = Map.copyOf(immutable);
+			activeBundleDependencies.computeIfAbsent(dependency, ignored -> java.util.concurrent.ConcurrentHashMap.newKeySet()).add(bundleId);
 	}
 
 	private static boolean confirmedMissingDependency(DesiredBundle desired) {
@@ -629,7 +664,8 @@ public final class MappingReconciliationService implements AutoCloseable {
 		return categories.stream().anyMatch(category -> category.equals("aimc-fetch-failed")
 				|| category.equals("aimc-membership-unconfirmed") || category.startsWith("bundle-")
 				|| category.equals("aimc-scan-timeout") || category.equals("aimc-scan-interrupted")
-				|| category.contains("transient_failure") || category.startsWith("repository-"));
+				|| category.contains("transient_failure") || category.contains("unauthorized")
+				|| category.startsWith("repository-"));
 	}
 
 	private void scheduleRetry(long delayMillis) {

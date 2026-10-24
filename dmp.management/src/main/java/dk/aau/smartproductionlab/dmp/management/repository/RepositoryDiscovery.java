@@ -13,7 +13,6 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.eclipse.digitaltwin.aas4j.v3.model.Property;
 import org.eclipse.digitaltwin.aas4j.v3.model.Reference;
 import org.eclipse.digitaltwin.aas4j.v3.model.Submodel;
 import dk.aau.smartproductionlab.dmp.aas.model.Aas;
@@ -70,9 +69,14 @@ public final class RepositoryDiscovery {
 		}
 	}
 
-	/** What events can concern: the AIMCs, and per dependency submodel the referenced element paths. */
-	private record Index(Set<String> aimcIds, Map<String, Set<String>> paths, Set<String> wholeSubmodels) {
-		static final Index EMPTY = new Index(Set.of(), Map.of(), Set.of());
+	/**
+	 * What events can concern: the AIMCs, and per dependency submodel the referenced element paths. Of most paths
+	 * only the structure counts; of {@code valuePaths} (TimeSeries containers, whose segments carry their period)
+	 * the values, too.
+	 */
+	private record Index(Set<String> aimcIds, Map<String, Set<String>> paths, Set<String> wholeSubmodels,
+			Map<String, Set<String>> valuePaths) {
+		static final Index EMPTY = new Index(Set.of(), Map.of(), Set.of(), Map.of());
 	}
 
 	private static final int MAX_TRACKED_AIMCS = 10_000;
@@ -151,12 +155,16 @@ public final class RepositoryDiscovery {
 		Index current = index;
 		Set<String> affected = new LinkedHashSet<>();
 		Map<String, AimcState> reread = new LinkedHashMap<>();
+		Map<String, AimcState> probeFailures = new LinkedHashMap<>();
 		for (String id : changed) {
 			if (aimcs.containsKey(id)) continue;
 			if (current.paths().containsKey(id)) { resolver.evict(Set.of(id)); continue; }
 			if (!aimcScope.isEmpty() && !aimcScope.contains(id)) continue;
 			var probe = repository.getSubmodel(id);
 			if (probe.found() && WireProjection.isAimc(probe.value())) reread.put(id, project(probe.value()));
+			// A new submodel that could not be read may be an AIMC: kept as a failed one, read again on retry.
+			else if (!probe.found() && transientFailure(probe.status()))
+				probeFailures.put(id, AimcState.failure(id, probe.status(), "aimc-fetch-failed"));
 		}
 		for (AimcState state : aimcs.values()) {
 			if (changed.contains(state.id()) || state.failed() && transientFailure(state.failureStatus())) {
@@ -169,19 +177,26 @@ public final class RepositoryDiscovery {
 			if (reread.containsKey(state.id()) || affected.contains(state.id()) || state.aimc() == null) continue;
 			boolean depends = state.mappings().stream().anyMatch(bundle -> bundle.desired().dependencies().stream()
 					.map(Dependency::id).anyMatch(changed::contains));
-			if (depends) reread.put(state.id(), state);
+			// A mapping whose dependency could not be read for a while is compiled again (its failed reads were evicted).
+			boolean retry = state.mappings().stream().anyMatch(bundle -> bundle.desired().failures().stream()
+					.anyMatch(failure -> transientFailure(failure.status())));
+			if (depends || retry) reread.put(state.id(), state);
 		}
 		// An AIMC that is gone or no longer an AIMC drops its mappings.
 		affected.forEach(aimcs::remove);
+		probeFailures.forEach(aimcs::putIfAbsent);
 		compile(reread);
 		return result();
 	}
 
 	/**
 	 * Whether a repository event can change desired state. Element events are compared with the referenced
-	 * paths; a Property update that only changes the value of a referenced Property is not a change.
+	 * paths, and an update that changes only values of what they reference, of any element type, is not a
+	 * change (SPEC §5.3: values are not configuration), nor is a submodel update that leaves the referenced
+	 * elements' structure as it was. Only a TimeSeries container's values count (its segments' period).
 	 */
 	public boolean relevant(AasControlEvent event) {
+		if (event.ignored()) return false;
 		if (event.fullRescan()) return true;
 		String type = event.type() == null ? "" : event.type();
 		if (type.startsWith("AAS_")) return false;
@@ -190,19 +205,56 @@ public final class RepositoryDiscovery {
 		if (current.aimcIds().contains(id)) return true;
 		Set<String> referenced = current.paths().get(id);
 		if (referenced != null) {
-			if (!type.startsWith("SME_") || event.elementPath() == null || current.wholeSubmodels().contains(id)) return true;
+			if (current.wholeSubmodels().contains(id)) return true;
+			Set<String> values = current.valuePaths().getOrDefault(id, Set.of());
+			if ("SM_UPDATED".equals(type)) return !values.isEmpty() || !sameStructure(id, referenced, event.submodel());
+			if (!type.startsWith("SME_") || event.elementPath() == null) return true;
 			String path = event.elementPath().replace('/', '.');
 			boolean overlaps = referenced.stream().anyMatch(read -> AasReferenceResolver.within(read, path)
 					|| AasReferenceResolver.within(path, read));
 			if (!overlaps) return false;
-			// Only now, for a referenced Property, is the event's element parsed.
-			if ("SME_UPDATED".equals(type) && resolver.cachedElement(id, path).orElse(null) instanceof Property property
-					&& event.propertyShape() != null && Aas.withoutValue(property).equals(event.propertyShape())) return false;
-			return true;
+			if (!"SME_UPDATED".equals(type)) return true;
+			if (values.stream().anyMatch(series -> AasReferenceResolver.within(series, path) || AasReferenceResolver.within(path, series)))
+				return true;
+			// Only now is the event's element parsed.
+			return !sameStructure(id, path, referenced, event.element());
 		}
 		if (!aimcScope.isEmpty() && !aimcScope.contains(id)) return false;
 		if (!"SM_CREATED".equals(type) && !"SM_UPDATED".equals(type)) return false;
 		return event.semanticIds() == null || event.semanticIds().contains(WireProjection.AIMC);
+	}
+
+	/** Whether the element updated at {@code path} leaves every referenced element it concerns as structured as read. */
+	private boolean sameStructure(String id, String path, Set<String> referenced, org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElement updated) {
+		if (updated == null) return false;
+		for (String read : referenced) {
+			org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElement before, after;
+			if (AasReferenceResolver.within(read, path)) {
+				// The update carries the referenced element inside it.
+				before = resolver.cachedElement(id, read).orElse(null);
+				after = AasReferenceResolver.descend(updated, read.substring(path.length()));
+			} else if (AasReferenceResolver.within(path, read)) {
+				before = resolver.cachedElement(id, path).orElse(null);
+				after = updated;
+			} else continue;
+			if (before == null || after == null || !Aas.withoutValues(before).equals(Aas.withoutValues(after))) return false;
+		}
+		return true;
+	}
+
+	/** Whether an updated submodel leaves its identity and every referenced element's structure as read. */
+	private boolean sameStructure(String id, Set<String> referenced, Submodel updated) {
+		if (updated == null) return false;
+		Submodel header = resolver.cachedHeader(id).orElse(null);
+		if (header == null || !Objects.equals(header.getIdShort(), updated.getIdShort())
+				|| !Objects.equals(header.getSemanticId(), updated.getSemanticId())
+				|| !Objects.equals(header.getSupplementalSemanticIds(), updated.getSupplementalSemanticIds())) return false;
+		for (String read : referenced) {
+			var before = resolver.cachedElement(id, read).orElse(null);
+			var after = AasReferenceResolver.elementAt(updated, read);
+			if (before == null || after == null || !Aas.withoutValues(before).equals(Aas.withoutValues(after))) return false;
+		}
+		return true;
 	}
 
 	/** Every submodel the current desired state depends on, AIMCs included. */
@@ -264,6 +316,7 @@ public final class RepositoryDiscovery {
 
 	private void reindex() {
 		Map<String, Set<String>> paths = new LinkedHashMap<>();
+		Map<String, Set<String>> valuePaths = new LinkedHashMap<>();
 		Set<String> whole = new LinkedHashSet<>();
 		for (AimcState state : aimcs.values()) {
 			if (state.aimc() == null) continue;
@@ -278,13 +331,16 @@ public final class RepositoryDiscovery {
 					if (dependency.id().equals(state.id())) continue;
 					Set<String> referenced = paths.computeIfAbsent(dependency.id(), ignored -> new LinkedHashSet<>());
 					if (dependency.path() != null) referenced.add(dependency.path());
+					if ("series".equals(dependency.kind()) && dependency.path() != null)
+						valuePaths.computeIfAbsent(dependency.id(), ignored -> new LinkedHashSet<>()).add(dependency.path());
 				}
 		}
 		// An AID is consumed whole; a dependency without referenced paths (a ReferenceElement target) concerns all of it.
 		for (var entry : paths.entrySet()) if (entry.getValue().isEmpty() || resolver.cachedAid(entry.getKey())) whole.add(entry.getKey());
-		Map<String, Set<String>> frozen = new LinkedHashMap<>();
+		Map<String, Set<String>> frozen = new LinkedHashMap<>(), frozenValues = new LinkedHashMap<>();
 		paths.forEach((id, set) -> frozen.put(id, Set.copyOf(set)));
-		index = new Index(Set.copyOf(aimcs.keySet()), Map.copyOf(frozen), Set.copyOf(whole));
+		valuePaths.forEach((id, set) -> frozenValues.put(id, Set.copyOf(set)));
+		index = new Index(Set.copyOf(aimcs.keySet()), Map.copyOf(frozen), Set.copyOf(whole), Map.copyOf(frozenValues));
 	}
 
 	private Scan result() {

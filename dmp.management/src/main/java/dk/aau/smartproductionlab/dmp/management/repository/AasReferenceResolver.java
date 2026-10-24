@@ -197,6 +197,34 @@ public final class AasReferenceResolver {
 		return -1;
 	}
 
+	/** The element at {@code relativePath} below {@code element} (an empty path: the element itself), or null. */
+	public static SubmodelElement descend(SubmodelElement element, String relativePath) {
+		String rest = relativePath.startsWith(".") ? relativePath.substring(1) : relativePath;
+		if (element == null || rest.isEmpty()) return element;
+		SubmodelElement current = element;
+		for (String segment : segments(rest)) {
+			current = child(Aas.children(current), segment);
+			if (current == null) return null;
+		}
+		return current;
+	}
+
+	/** The element at {@code idShortPath} in {@code submodel}, or null. */
+	public static SubmodelElement elementAt(Submodel submodel, String idShortPath) {
+		SubmodelElement current = null;
+		for (String segment : segments(idShortPath)) {
+			current = child(current == null ? Aas.nonNull(submodel.getSubmodelElements()) : Aas.children(current), segment);
+			if (current == null) return null;
+		}
+		return current;
+	}
+
+	/** The submodel's identity and semantics as last read, without its elements. */
+	public Optional<Submodel> cachedHeader(String submodelId) {
+		Entry entry = entries.get(submodelId);
+		return entry == null || entry.failed() ? Optional.empty() : Optional.ofNullable(entry.header().value());
+	}
+
 	/** True when {@code path} is {@code ancestor} or lies below it. */
 	public static boolean within(String path, String ancestor) {
 		return path.equals(ancestor) || path.startsWith(ancestor + ".") || path.startsWith(ancestor + "[");

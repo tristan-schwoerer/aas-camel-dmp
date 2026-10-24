@@ -104,6 +104,92 @@ class RepositoryDiscoveryTest {
 	}
 
 	@Test
+	void aDependencyThatFailedTransientlyIsReadAgainByARetryThatNamesNothing() throws Exception {
+		// The retry pass after a transient failure refreshes no changed ids: the failed reads must be retried anyway.
+		try (var repository = fixture()) {
+			String data = path(DATA_ID);
+			repository.override("busy", request -> request.startsWith(data) ? new FakeAasRepository.Response(503, "{}") : null);
+			var discovery = discovery(repository);
+			var blocked = discovery.scan().mappings().values().iterator().next();
+			assertEquals(AasRepositoryClient.Status.TRANSIENT_FAILURE, blocked.desired().desired().failures().get(0).status());
+			repository.clearOverride("busy");
+			var retried = discovery.refresh(Set.of()).mappings().values().iterator().next();
+			assertTrue(retried.desired().desired().failures().isEmpty(), retried.desired().desired().failures().toString());
+		}
+	}
+
+	@Test
+	void aNewSubmodelThatCouldNotBeReadIsKeptAsAFailedAimcAndReadAgain() throws Exception {
+		try (var repository = fixture()) {
+			var discovery = discovery(repository);
+			discovery.scan();
+			String newId = "urn:new/submodels/AIMC";
+			repository.put(aimc(newId, ref(AID_ID, "interface_http", "InteractionMetadata", "properties", "Temperature"), refProperty(DATA_ID, "Speed")));
+			repository.override("new", request -> request.startsWith(path(newId)) ? new FakeAasRepository.Response(503, "{}") : null);
+			var unread = discovery.refresh(Set.of(newId));
+			assertTrue(unread.failures().stream().anyMatch(failure -> failure.aimcId().equals(newId)
+					&& failure.category().equals("aimc-fetch-failed")), "the pass reports it, so it is retried");
+			repository.clearOverride("new");
+			var retried = discovery.refresh(Set.of());
+			assertTrue(retried.mappings().keySet().stream().anyMatch(key -> key.aimcId().equals(newId)), "the retry adopts the new AIMC");
+		}
+	}
+
+	@Test
+	void valueUpdatesOfAReferencedCollectionAreNotChangesButItsStructureIs() throws Exception {
+		try (var repository = fixture()) {
+			// A second mapping writes the whole Status collection.
+			repository.put(aimc("urn:collection/submodels/AIMC", ref(AID_ID, "interface_http", "InteractionMetadata", "properties", "Temperature"),
+					"{\"type\":\"ModelReference\",\"keys\":[" + key("Submodel", DATA_ID) + "," + key("SubmodelElementCollection", "Status") + "]}"));
+			var discovery = discovery(repository);
+			discovery.scan();
+			String element = "{\"type\":\"SME_UPDATED\",\"id\":\"" + DATA_ID + "\",\"smElementPath\":\"Status\",\"smElement\":%s}";
+			String status = "{\"modelType\":\"SubmodelElementCollection\",\"idShort\":\"Status\",\"value\":["
+					+ "{\"modelType\":\"Property\",\"idShort\":\"State\",\"valueType\":\"xs:int\",\"value\":\"%s\"}%s]}";
+			assertFalse(relevant(discovery, element.formatted(status.formatted("9", ""))),
+					"a write of the collection's values is data: its mapping is not compiled again");
+			assertTrue(relevant(discovery, element.formatted(status.formatted("1",
+					",{\"modelType\":\"Property\",\"idShort\":\"Mode\",\"valueType\":\"xs:string\"}"))), "a new member is structure");
+			String others = ",{\"modelType\":\"Property\",\"idShort\":\"Speed\",\"valueType\":\"xs:double\",\"value\":\"%s\"},"
+					+ "{\"modelType\":\"Property\",\"idShort\":\"Unrelated\",\"valueType\":\"xs:int\",\"value\":\"3\"}";
+			String updated = "{\"type\":\"SM_UPDATED\",\"id\":\"" + DATA_ID + "\",\"submodel\":%s}";
+			assertFalse(relevant(discovery, updated.formatted(submodel(DATA_ID, "urn:semantic:data",
+					"[" + status.formatted("4", "") + others.formatted("8") + "]"))), "a batch update of values changes nothing");
+			assertTrue(relevant(discovery, updated.formatted(submodel(DATA_ID, "urn:semantic:data",
+					"[" + status.formatted("4", "").replace("xs:int", "xs:long") + others.formatted("8") + "]"))),
+					"a referenced valueType changed with the batch");
+		}
+	}
+
+	@Test
+	void anEventDuringTheInitialScanIsJudgedAgainstWhatTheScanFound() throws Exception {
+		// The AID is created while the scan reads it: the scan finds none, and its creation event arrives while the
+		// desired state is still empty. Judged then, it concerns nothing; judged once the scan is done, it does.
+		var component = new dk.aau.smartproductionlab.dmp.core.component.DmpComponent();
+		component.startComponent();
+		try (var repository = fixture()) {
+			var holder = new java.util.concurrent.atomic.AtomicReference<MappingReconciliationService>();
+			var late = new java.util.concurrent.atomic.AtomicBoolean();
+			repository.override("late-aid", request -> {
+				if (!request.startsWith(path(AID_ID)) || !late.compareAndSet(false, true)) return null;
+				holder.get().acceptEvent(AasControlEvent.parse("{\"type\":\"SM_CREATED\",\"id\":\"" + AID_ID + "\",\"submodel\":" + aid() + "}"));
+				return new FakeAasRepository.Response(404, "{}");
+			});
+			var discovery = discovery(repository);
+			try (var service = new MappingReconciliationService(component, discovery,
+					new ConnectorConfigurationFactory.RuntimeSettings(repository.uri()), 16, 8, 60_000)) {
+				holder.set(service);
+				service.reconcileNow();
+				assertTrue(late.get(), "the event arrived during the scan");
+				assertEquals(1, service.acceptedInvalidationCount(), "the AID's creation concerns the blocked mapping");
+				assertTrue(service.repairPending(), "so a pass reads it");
+			}
+		} finally {
+			component.stopComponent();
+		}
+	}
+
+	@Test
 	void refreshReReadsOnlyTheChangedSubmodelAndTheAimcsDependingOnIt() throws Exception {
 		try (var repository = fixture()) {
 			var discovery = discovery(repository);
@@ -152,7 +238,7 @@ class RepositoryDiscoveryTest {
 			String state = "{\"modelType\":\"Property\",\"idShort\":\"State\",\"valueType\":\"xs:int\",\"value\":\"1\"}";
 			assertFalse(relevant(discovery, "{\"type\":\"AAS_UPDATED\",\"id\":\"" + OWNER + "\"}"), "shells no longer matter");
 			assertTrue(relevant(discovery, "{\"type\":\"SME_UPDATED\",\"id\":\"" + AIMC_ID + "\",\"smElementPath\":\"x\"}"));
-			assertTrue(relevant(discovery, "not json"), "an unreadable event asks for a full rescan");
+			assertFalse(relevant(discovery, "not json"), "an unreadable event is ignored");
 
 			String element = "{\"type\":\"SME_UPDATED\",\"id\":\"" + DATA_ID + "\",\"smElementPath\":\"%s\",\"smElement\":%s}";
 			assertFalse(relevant(discovery, element.formatted("Status.State", state.replace("\"1\"", "\"2\""))),

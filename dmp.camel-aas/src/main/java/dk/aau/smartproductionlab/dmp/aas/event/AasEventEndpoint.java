@@ -49,7 +49,7 @@ final class AasEventEndpoint extends DefaultEndpoint implements org.apache.camel
 		@Override public String submodelId() { return submodelId; }
 		@Override public String idShortPath() { return idShortPath; }
 
-		@Override public void deliver(String event, Map<String, Object> headers) {
+		@Override public void deliver(com.google.gson.JsonObject event, Map<String, Object> headers) {
 			ExecutorService current = executor;
 			if (current == null || current.isShutdown()) return;
 			current.execute(() -> {

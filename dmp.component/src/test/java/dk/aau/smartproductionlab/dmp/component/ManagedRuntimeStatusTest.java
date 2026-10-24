@@ -60,9 +60,12 @@ class ManagedRuntimeStatusTest {
 		} finally { observer.close(); context.stop(); }
 	}
 
-	@Test void dependencyOutageIsNotReadyAndMappingDetailsRemainCredentialFree() {
+	@Test void dependencyOutageDegradesWithoutTakingTheProcessOutOfServiceAndDetailsRemainCredentialFree() {
 		ManagedRuntimeStatus.beginManaged();
 		ManagedRuntimeStatus.controlRouteStarted();
+		ManagedRuntimeStatus.publish(new MappingReconciliationService.Report(false, false, 0, 0, 0, List.of(),
+				List.of("repository-transient_failure")));
+		assertFalse(ManagedRuntimeStatus.snapshot().ready(), "not ready before the initial scan completed");
 		var key = new dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery.MappingKey(
 				"private-aimc", "private-mapping", 0);
 		ManagedRuntimeStatus.publish(new MappingReconciliationService.Report(true, false, 0, 0, 0,
@@ -70,7 +73,14 @@ class ManagedRuntimeStatusTest {
 						"new-digest", "old-digest", 7, "mapping-resolution-transient_failure", 3)),
 				List.of("mapping-resolution-transient_failure")));
 		assertEquals(ManagedRuntimeStatus.State.DEGRADED, ManagedRuntimeStatus.snapshot().state());
-		assertFalse(ManagedRuntimeStatus.snapshot().ready());
+		assertTrue(ManagedRuntimeStatus.snapshot().ready(), "one unreachable dependency does not make the DMP unhealthy (SPEC §4.4)");
+		ManagedRuntimeStatus.publish(new MappingReconciliationService.Report(false, false, 0, 0, 0, List.of(),
+				List.of("repository-transient_failure")));
+		assertTrue(ManagedRuntimeStatus.snapshot().ready(), "nor does a later pass the repository did not answer");
+		ManagedRuntimeStatus.publish(new MappingReconciliationService.Report(true, false, 0, 0, 0,
+				List.of(new MappingReconciliationService.MappingStatus(key, MappingReconciliationService.State.STALE,
+						"new-digest", "old-digest", 7, "mapping-resolution-transient_failure", 3)),
+				List.of("mapping-resolution-transient_failure")));
 		var status = ManagedRuntimeStatus.asMap();
 		assertEquals(false, status.get("converged"));
 		var details = (java.util.Map<?, ?>) ((List<?>) status.get("mappings")).get(0);

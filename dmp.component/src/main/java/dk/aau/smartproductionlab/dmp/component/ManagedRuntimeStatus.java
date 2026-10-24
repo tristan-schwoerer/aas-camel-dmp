@@ -75,14 +75,18 @@ public final class ManagedRuntimeStatus {
 		// The package-private non-Kafka route factory is only a test fixture.
 		var control = observer == null ? new ManagedControlReadiness.Snapshot(CONTROL_ROUTE_STARTED.get(), "control-assignment-pending")
 				: observer.snapshot();
-		boolean ready = CONTROL_ROUTE_STARTED.get() && control.ready() && report.complete() && !report.superseded() && !transientFailure;
-		State state = ready ? State.READY : CONTROL_ROUTE_STARTED.get() ? State.DEGRADED : State.STARTING;
+		// Ready (SPEC §4.4): the initial scan completed once and the event transport is connected. A later pass that
+		// fails, or a mapping that cannot install, degrades the status without taking the process out of service.
+		boolean initialScanComplete = old.initialScanComplete() || report.complete();
+		boolean ready = CONTROL_ROUTE_STARTED.get() && control.ready() && initialScanComplete;
+		boolean degraded = !report.complete() || report.superseded() || transientFailure;
+		State state = !CONTROL_ROUTE_STARTED.get() ? State.STARTING : ready && !degraded ? State.READY : State.DEGRADED;
 		String category = !control.ready() ? control.category()
 				: firstCategory(report.categories(), report.complete() ? "" : "repository-scan-incomplete");
-		if (old.state() == state && old.ready() == ready && old.initialScanComplete() == report.complete()
+		if (old.state() == state && old.ready() == ready && old.initialScanComplete() == initialScanComplete
 				&& old.installedMappings() == installed && old.blockedMappings() == blocked && old.staleMappings() == stale
 				&& old.failedMappings() == failed && old.category().equals(category)) return;
-		CURRENT.compareAndSet(old, new Snapshot(state, ready, report.complete(), installed, blocked, stale, failed,
+		CURRENT.compareAndSet(old, new Snapshot(state, ready, initialScanComplete, installed, blocked, stale, failed,
 				category, Instant.now().toString()));
 	}
 

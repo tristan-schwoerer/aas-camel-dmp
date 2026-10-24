@@ -103,15 +103,29 @@ This is the only full discovery. There is no periodic repair.
   `sm-repository/<repo>/submodels/+` and `…/submodels/+/submodelElements/#`).
   Both carry the same events: a batch update of a submodel arrives as one
   submodel event, never as per-Property value events. The parent workspace's
-  stacks use Kafka, for its committed offsets.
-- Parsing is lazy: event identity first; payload and AAS4J parsing only for
-  relevant events.
-- Relevance filter: events on unreferenced submodels, unreferenced elements and
-  value-only updates of referenced Properties are dropped. A relevant event
-  re-reads only that submodel and recompiles only the dependent AIMCs. An
-  unknown submodel is read once to see whether it is a new AIMC.
+  stacks use Kafka, for its committed offsets. Kafka is read in batches (up
+  to 500 events per poll, an incomplete batch after 100 ms); each partition's
+  offset is committed once per batch, after its events were accepted.
+- Parsing is lazy: the event identity is read by streaming over its top-level
+  members, skipping what it carries; the payload is parsed once, only when
+  something needs it, and shared by the relevance filter and the value feed.
+  An event of a type the DMP does not know (e.g. `SM_REF_ADDED` on
+  `aas-events`), or one it cannot read, is ignored and logged; one that names
+  no submodel asks for a full rescan.
+- Relevance filter: events on unreferenced submodels and unreferenced elements
+  are dropped, and so are updates that change only values of what a mapping
+  references, of any element type (a referenced collection's member values, a
+  batch update of a submodel's values): its structure without values is
+  compared with what was read. Only a TimeSeries container's values count, as
+  its segments carry their period. A relevant event re-reads only that
+  submodel and recompiles only the dependent AIMCs. An unknown submodel is read
+  once to see whether it is a new AIMC.
+- Events that arrive while a pass reads the repository are judged again
+  against what that pass found (at startup, against an empty state), so an
+  element created meanwhile is not missed.
 - A failed pass retries with backoff (`DMP_MANAGED_RETRY_INTERVAL_MS`, doubling
-  up to 16×).
+  up to 16×). The retry reads again what failed transiently: a dependency of a
+  mapping, an AIMC, or a new submodel that could not be read.
 - An MQTT broker that drops the persistent session loses the events of that gap
   until the next restart.
 
@@ -128,17 +142,24 @@ value from it, so batch updates reach event-sourced sources too.
 ### 4.4 Compilation and installation
 
 - Each mapping compiles to one plan with a fingerprint over its effective
-  inputs. An unchanged fingerprint keeps the installed bundle.
+  inputs: of an AAS element target its structure without values, and of a
+  Source on an Operation variable the whole Operation (its delegation URL and
+  variables). An unchanged fingerprint keeps the installed bundle.
 - A changed mapping is staged as an inactive candidate and swapped in under a
   generation fence; in-flight requests on the old bundle drain, and calls during
-  the swap receive "unavailable". Device actions are never retried or replayed.
+  the swap receive "unavailable" (the new bundle's REST listener starts first,
+  gated). A replacement that fails, also because an invalidation fenced it
+  meanwhile, brings the previous bundle back; the next pass replaces it. Device
+  actions are never retried or replayed.
 - A mapping that cannot compile is `blocked` with a category; it does not affect
   siblings. `/management/status` reports per-mapping state (`installed`,
   `blocked`, `stale`, `failed`), generation, a per-mapping revision (installations
   since start; display only, not a fence) and fingerprints; repository IDs
   appear only as SHA-256 tokens.
 - `/health` is 200 once the initial scan completed and the event transport is
-  connected (Kafka: assigned on every control topic).
+  connected (Kafka: assigned on every control topic). A later pass that fails
+  and mappings that are blocked, stale or failed leave it at 200;
+  `/management/status` reports them (`DEGRADED`, with a category).
 - There is no lease or cluster coordination: run exactly one DMP per set of
   mappings.
 

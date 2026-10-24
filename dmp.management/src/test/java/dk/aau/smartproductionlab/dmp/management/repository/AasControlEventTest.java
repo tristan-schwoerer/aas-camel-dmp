@@ -31,8 +31,9 @@ class AasControlEventTest {
 		assertEquals("Variables.State", element.elementPath());
 		assertFalse(element.fullRescan());
 
-		assertTrue(AasControlEvent.parse("not-json").fullRescan());
-		assertTrue(AasControlEvent.parse("{\"type\":\"UNKNOWN\",\"id\":\"urn:sm\"}").fullRescan());
+		assertTrue(AasControlEvent.parse("not-json").ignored(), "an unreadable event is ignored, not a rescan");
+		assertTrue(AasControlEvent.parse("{\"type\":\"SM_REF_ADDED\",\"id\":\"urn:aas\"}").ignored(),
+				"an event type the DMP does not know cannot concern a mapping");
 		assertTrue(AasControlEvent.parse("{\"type\":\"SM_DELETED\"}").fullRescan());
 		assertEquals("urn:sm", AasControlEvent.parse("{\"payload\":{\"notification\":{\"type\":\"SME_DELETED\","
 				+ "\"submodelId\":\"urn:sm\",\"smElementPath\":\"Variables.State\"}}}").resourceId());
@@ -43,7 +44,8 @@ class AasControlEventTest {
 		var created = AasControlEvent.parse("{\"type\":\"SM_CREATED\",\"id\":\"urn:sm\",\"submodel\":{\"modelType\":\"Submodel\","
 				+ "\"id\":\"urn:sm\",\"semanticId\":{\"type\":\"ExternalReference\",\"keys\":[{\"type\":\"GlobalReference\",\"value\":\"urn:aimc\"}]}}}");
 		assertEquals(Set.of("urn:aimc"), created.semanticIds());
-		assertTrue(created.canonical().contains("\"type\":\"SM_CREATED\""));
+		assertEquals("SM_CREATED", created.json().get("type").getAsString());
+		assertEquals("urn:sm", created.submodel().getId());
 		assertEquals(null, AasControlEvent.parse("{\"type\":\"SM_CREATED\",\"id\":\"urn:sm\"}").semanticIds(),
 				"no submodel in the event: semantics unknown");
 	}
@@ -58,15 +60,14 @@ class AasControlEventTest {
 		assertEquals("SME_UPDATED", updated.type());
 		assertEquals(id, updated.resourceId());
 		assertEquals("Status.State", updated.elementPath());
-		assertEquals("State", updated.propertyShape().getIdShort());
-		assertEquals(null, updated.propertyShape().getValue(), "the shape omits the value");
-		assertTrue(updated.canonical().contains("\"smElement\""));
+		assertEquals("State", updated.element().getIdShort());
+		assertTrue(updated.json().has("smElement"));
 
 		var valueWrite = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Status.State/value/updated", property);
 		assertEquals("SME_UPDATED", valueWrite.type());
 		assertEquals("Status.State", valueWrite.elementPath(), "the value topic names the element, not a child called value");
-		assertEquals("State", valueWrite.propertyShape().getIdShort());
-		assertTrue(valueWrite.canonical().contains("\"value\":\"3\""), "the payload carries the new value");
+		assertEquals("3", ((org.eclipse.digitaltwin.aas4j.v3.model.Property) valueWrite.element()).getValue(),
+				"the payload carries the new value");
 
 		var deleted = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Status/deleted", property);
 		assertEquals("SME_DELETED", deleted.type());
@@ -85,17 +86,17 @@ class AasControlEventTest {
 		var file = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Docs.Manual/attachment/updated", property);
 		assertEquals("SME_UPDATED", file.type());
 		assertEquals("Docs.Manual", file.elementPath());
-		assertEquals(null, file.propertyShape(), "an attachment event carries no element shape");
+		assertEquals(null, file.element(), "an attachment event carries no element");
 
 		var unparsed = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Busy/updated",
 				"not json".getBytes());
 		assertFalse(unparsed.fullRescan(), "an element event is identified by its topic; the payload is read only on demand");
 		assertEquals(id, unparsed.resourceId());
 		assertEquals("Busy", unparsed.elementPath());
-		assertEquals(null, unparsed.propertyShape(), "a payload that cannot be read has no shape");
-		assertEquals(null, unparsed.canonical());
+		assertEquals(null, unparsed.element(), "a payload that cannot be read has no element");
+		assertEquals(null, unparsed.json());
 		assertTrue(AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/created", "not json".getBytes()).fullRescan());
-		assertTrue(AasControlEvent.parseMqtt("aas-repository/aas-repo/shells/created", "{}".getBytes()).fullRescan());
+		assertTrue(AasControlEvent.parseMqtt("aas-repository/aas-repo/shells/created", "{}".getBytes()).ignored());
 	}
 
 	@Test
@@ -106,7 +107,7 @@ class AasControlEventTest {
 		String uri = route.endpointUri();
 		assertTrue(uri.contains("groupId=dmp-control"));
 		assertTrue(uri.contains("consumersCount=1"));
-		assertTrue(uri.contains("maxPollRecords=1"));
+		assertTrue(uri.contains("batching=true"), "one commit per poll, not per record");
 		assertTrue(uri.contains("autoCommitEnable=false"));
 		assertTrue(uri.contains("allowManualCommit=true"));
 		String values = route.valueEndpointUri();
@@ -144,10 +145,19 @@ class AasControlEventTest {
 			context.start();
 			var template = context.createProducerTemplate();
 			KafkaManualCommit commit = commits::incrementAndGet;
-			template.sendBodyAndHeader("direct:control", "{\"type\":\"SM_UPDATED\",\"id\":\"urn:sm\"}",
-					KafkaConstants.MANUAL_COMMIT, commit);
-			assertEquals(1, service.acceptedInvalidationCount());
-			assertEquals(1, commits.get());
+			// One poll is one batch: every record is accepted, then each partition is committed once.
+			List<org.apache.camel.Exchange> batch = new java.util.ArrayList<>();
+			for (String id : List.of("urn:sm", "urn:other")) {
+				var record = new org.apache.camel.support.DefaultExchange(context);
+				record.getMessage().setBody("{\"type\":\"SM_UPDATED\",\"id\":\"" + id + "\"}");
+				record.getMessage().setHeader(KafkaConstants.MANUAL_COMMIT, commit);
+				record.getMessage().setHeader(KafkaConstants.TOPIC, "aas-control");
+				record.getMessage().setHeader(KafkaConstants.PARTITION, 0);
+				batch.add(record);
+			}
+			template.sendBody("direct:control", batch);
+			assertEquals(2, service.acceptedInvalidationCount());
+			assertEquals(1, commits.get(), "one commit for the partition, after both records");
 		} finally {
 			service.close();
 			context.stop();

@@ -26,6 +26,7 @@ package dk.aau.smartproductionlab.dmp.executable.regression;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -359,7 +360,7 @@ class ManagedOrdinaryBundleLifecycleTest {
 	}
 
 	@Test
-	void replacementDrainsAcceptedWorkAndGenerationInvalidationPreventsRestoreOrActivation() throws Exception {
+	void replacementDrainsAcceptedWorkAndAFenceDuringTheDrainRestoresThePreviousBundle() throws Exception {
 		Runtime runtime = new Runtime();
 		var entered = new java.util.concurrent.CountDownLatch(1);
 		var release = new java.util.concurrent.CountDownLatch(1);
@@ -387,9 +388,12 @@ class ManagedOrdinaryBundleLifecycleTest {
 				release.countDown();
 				request.get(3, java.util.concurrent.TimeUnit.SECONDS);
 				assertThrows(java.util.concurrent.ExecutionException.class,
-						() -> replace.get(3, java.util.concurrent.TimeUnit.SECONDS));
-				assertNull(runtime.managedBundle("owner"));
+						() -> replace.get(3, java.util.concurrent.TimeUnit.SECONDS), "the fenced replacement is not activated");
 				assertNull(runtime.context().getRoute("new"));
+				var restored = runtime.managedBundle("owner");
+				assertNotNull(restored, "the mapping is not left without a bundle; the pass the fence queued replaces it");
+				assertTrue(restored.active());
+				assertNotNull(runtime.context().getRoute("old"));
 			} finally { template.stop(); }
 		} finally { release.countDown(); pool.shutdownNow(); runtime.stopComponent(); }
 	}

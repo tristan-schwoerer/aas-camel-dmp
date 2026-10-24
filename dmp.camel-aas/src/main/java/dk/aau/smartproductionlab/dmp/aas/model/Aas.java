@@ -177,17 +177,47 @@ public final class Aas {
 		return element instanceof Property property ? property.getValue() : null;
 	}
 
+
 	/**
-	 * The Property's shape: every field except its value. Two Properties with equal
-	 * shapes differ only by a value update, which needs no route change.
+	 * An element's structure without its values, at every depth: Property, File and Blob values, Range bounds
+	 * and MultiLanguageProperty texts are dropped (an MLP keeps its languages, which are structure); everything
+	 * else, references and qualifiers included, stays. Two elements that differ only in values have equal
+	 * structures.
 	 */
-	public static Property withoutValue(Property property) {
-		return new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultProperty.Builder()
-				.valueType(property.getValueType()).valueId(property.getValueId()).category(property.getCategory())
-				.idShort(property.getIdShort()).displayName(property.getDisplayName()).description(property.getDescription())
-				.extensions(property.getExtensions()).embeddedDataSpecifications(property.getEmbeddedDataSpecifications())
-				.semanticId(property.getSemanticId()).supplementalSemanticIds(property.getSupplementalSemanticIds())
-				.qualifiers(property.getQualifiers()).build();
+	public static SubmodelElement withoutValues(SubmodelElement element) {
+		if (element == null) return null;
+		com.google.gson.JsonElement json = com.google.gson.JsonParser.parseString(write(element));
+		stripValues(json);
+		return read(json.toString(), SubmodelElement.class);
+	}
+
+	private static void stripValues(com.google.gson.JsonElement json) {
+		if (json == null || !json.isJsonObject()) return;
+		com.google.gson.JsonObject element = json.getAsJsonObject();
+		com.google.gson.JsonElement type = element.get("modelType");
+		switch (type == null || !type.isJsonPrimitive() ? "" : type.getAsString()) {
+		case "Property", "File", "Blob" -> element.remove("value");
+		case "Range" -> { element.remove("min"); element.remove("max"); }
+		case "MultiLanguageProperty" -> {
+			if (element.get("value") instanceof com.google.gson.JsonArray texts)
+				for (com.google.gson.JsonElement text : texts)
+					if (text.isJsonObject()) text.getAsJsonObject().addProperty("text", "");
+		}
+		case "SubmodelElementCollection", "SubmodelElementList" -> each(element.get("value"), Aas::stripValues);
+		case "Entity" -> each(element.get("statements"), Aas::stripValues);
+		case "AnnotatedRelationshipElement" -> each(element.get("annotations"), Aas::stripValues);
+		case "Operation" -> {
+			for (String variables : new String[] { "inputVariables", "outputVariables", "inoutputVariables" })
+				each(element.get(variables), variable -> {
+					if (variable.isJsonObject()) stripValues(variable.getAsJsonObject().get("value"));
+				});
+		}
+		default -> { }
+		}
+	}
+
+	private static void each(com.google.gson.JsonElement array, java.util.function.Consumer<com.google.gson.JsonElement> action) {
+		if (array != null && array.isJsonArray()) array.getAsJsonArray().forEach(action);
 	}
 
 	public static List<Key> keys(Reference reference) {

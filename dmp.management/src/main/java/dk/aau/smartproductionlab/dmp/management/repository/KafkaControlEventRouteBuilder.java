@@ -66,7 +66,8 @@ public final class KafkaControlEventRouteBuilder extends RouteBuilder {
 		return "kafka:" + settings.topic() + "?brokers=" + settings.brokers()
 				+ "&groupId=" + settings.groupId()
 				+ "&clientId=" + clientId
-				+ "&consumersCount=1&maxPollRecords=1&autoOffsetReset=earliest&autoCommitEnable=false&allowManualCommit=true&breakOnFirstError=true";
+				+ "&consumersCount=1&batching=true&maxPollRecords=500&pollTimeoutMs=100&batchingIntervalMs=100"
+				+ "&autoOffsetReset=earliest&autoCommitEnable=false&allowManualCommit=true&breakOnFirstError=true";
 	}
 
 	/** The value feed: newest values only, never a backlog, nothing committed. */
@@ -93,20 +94,26 @@ public final class KafkaControlEventRouteBuilder extends RouteBuilder {
 		AasEventHub hub = AasEventComponent.hub(getContext());
 		from(valueEndpointUri()).routeId(VALUE_ROUTE).autoStartup(false).process(exchange -> {
 			AasControlEvent event = AasControlEvent.parse(exchange.getMessage().getBody());
-			if (!hub.listensTo(event.resourceId()) || event.canonical() == null) return;
+			if (!hub.listensTo(event.resourceId()) || event.json() == null) return;
 			Map<String, Object> headers = new java.util.HashMap<>();
 			for (String name : new String[] { KafkaConstants.TOPIC, KafkaConstants.PARTITION, KafkaConstants.OFFSET })
 				if (exchange.getMessage().getHeader(name) != null) headers.put(name, exchange.getMessage().getHeader(name));
-			hub.publish(event.canonical(), headers);
+			hub.publish(event.json(), headers);
 		});
 		new ValueFeedSwitch(getContext(), VALUE_ROUTE, hub, java.time.Duration.ofSeconds(30));
+		// Each poll is one batch: its events are accepted in order, then each partition's offset is committed once.
 		from(endpointUri()).routeId(CONTROL_ROUTE).process(exchange -> {
-			AasControlEvent event = AasControlEvent.parse(exchange.getMessage().getBody());
-			reconciliation.acceptEvent(event);
-			Object value = exchange.getMessage().getHeader(KafkaConstants.MANUAL_COMMIT);
-			if (!(value instanceof KafkaManualCommit commit))
-				throw new IllegalStateException("Kafka manual commit handle is unavailable");
-			commit.commit();
+			Map<String, KafkaManualCommit> commits = new java.util.LinkedHashMap<>();
+			for (Object item : exchange.getMessage().getBody(java.util.List.class)) {
+				org.apache.camel.Message record = ((org.apache.camel.Exchange) item).getMessage();
+				reconciliation.acceptEvent(AasControlEvent.parse(record.getBody()));
+				if (record.getHeader(KafkaConstants.MANUAL_COMMIT) instanceof KafkaManualCommit commit)
+					commits.put(record.getHeader(KafkaConstants.TOPIC) + "/" + record.getHeader(KafkaConstants.PARTITION), commit);
+			}
+			if (commits.isEmpty() && exchange.getMessage().getHeader(KafkaConstants.MANUAL_COMMIT) instanceof KafkaManualCommit last)
+				commits.put("batch", last);
+			if (commits.isEmpty()) throw new IllegalStateException("Kafka manual commit handle is unavailable");
+			commits.values().forEach(KafkaManualCommit::commit);
 		});
 	}
 }

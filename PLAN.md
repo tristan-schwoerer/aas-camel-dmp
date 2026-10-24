@@ -64,9 +64,9 @@ costs that would distort E2–E5 ([EVALUATION.md](EVALUATION.md)), and DataBridg
 leftovers. The work is grouped by cause, so that one change settles several
 findings. Every step lands with a regression test that fails before it.
 
-Order: H0, then H1 and H2 (independent), H3, H4, H5. H6 follows the paper's
-measurements unless decided otherwise. The E2/E3/E4 pilot (EVALUATION §7)
-starts after H1–H3; E5 after H4.
+Order: H0, then H1 and H2 (independent), H3, H4, H5, H6. All of it lands before
+the paper's measurements, so they evaluate the final version (decided
+2026-10-24).
 
 ### H0. Delete dead DataBridge code — done (2026-10-23)
 
@@ -126,50 +126,37 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
   (`LuaPatternsTest`). Still open (Deferred): a memory cap, so `..` in a loop
   can still grow a string up to the heap.
 
-### H3. Reconciliation and events (`dmp.management`)
+### H3. Reconciliation and events — done (2026-10-24)
 
-- **Structure without values.** One helper strips values recursively
-  (Property, SMC, SML, MLP, Range, File).
-  - The fingerprint uses it; today only a top-level Property loses its value.
-  - `relevant()` drops an SME_UPDATED of any element type whose structure is
-    unchanged.
-  - This ends the reinstall on every write of a collection sink, and the
-    recompiles on value writes.
-- **Retry what failed.** Dependency reads that failed transiently, and probes
-  of new AIMC ids, go into a retry set that the next pass re-reads. Today the
-  retry refreshes an empty set forever, the mapping stays blocked and
-  `/health` stays 503.
-- **Events during a pass.** Events accepted while a pass runs are checked
-  again against the index that pass produces; during the initial scan, all of
-  them. Today they are filtered against the old index (an empty one at
-  startup) and their offsets committed.
-- **Bridge fingerprint.** It includes the Operation when Sources address its
-  variables. Today a changed `invocationDelegation` keeps the old REST path.
-- **Event types.** Unknown and `AAS_*` event types are ignored, not a full
-  rescan. A malformed event is logged.
-- **Ingestion.**
-  - The event identity is read without parsing the whole event.
-  - One parse per event is shared by the control path, the value-feed hub and
-    every listener (today 3 + N parses, N = sources on that submodel).
-  - The Kafka control consumer polls batches and commits per batch (today
-    `maxPollRecords=1` and a synchronous commit per record).
-  - SPEC §4.2's lazy parsing then holds.
-- **`/health`.** Ready means the initial scan has completed and the event
-  transport is connected (SPEC §4.4, README). Mapping failures show only in
-  `/management/status`.
-- **Swap.**
-  - The REST path stays registered and answers "unavailable" during a swap;
-    today the caller gets a 404.
-  - The fence is checked before the old bundle is retired, so a fence during
-    the drain no longer leaves the mapping without a bundle.
-- **Cost per pass.** Reverse dependencies are built once per pass, and the
-  conflict checks run only over the changed mappings.
-- **Tests:**
-  - an AID that answers 503 at startup recovers;
-  - an AIMC deleted, or an AID created, during the initial scan;
-  - an SMC sink written at 1 Hz does not reinstall;
-  - a changed `invocationDelegation` reinstalls;
-  - reconcile time at N = 1000.
+- **Structure without values.** `Aas.withoutValues` strips values at every
+  depth (an MLP keeps its languages). The fingerprint of an AAS element target
+  uses it, and covers the Operation of a variable Source (delegation URL,
+  variables). `relevant()` compares the referenced elements' structure for an
+  SME_UPDATED of any type and for an SM_UPDATED carrying the submodel; only
+  TimeSeries containers (dependency kind `series`) keep their values relevant.
+- **Retry what failed.** A refresh compiles again every AIMC with a transiently
+  failed dependency; a new submodel whose first read failed is kept as a failed
+  AIMC and read again. Mapping-level `unauthorized` is retried, too.
+- **Events during a pass** are held and judged again against the index the
+  pass produced (also during the initial scan).
+- **Event types.** Unknown and unreadable events are ignored (logged); an
+  unreadable MQTT submodel event still asks for a full rescan.
+- **Ingestion.** The Kafka identity is read by streaming; the event is parsed
+  once and the tree shared with the value-feed listeners (`AasEventHub.publish(
+  JsonObject)`). The control consumer polls batches (500, 100 ms) and commits
+  each partition once per batch.
+- **`/health`** is ready once the initial scan completed and the transport is
+  connected; later failures degrade `/management/status` only.
+- **Swap.** REST listeners of a new bundle start first (gated, "unavailable");
+  a failed replacement, also a fenced one, restores the previous bundle.
+- **Cost per pass.** Reverse dependencies are maintained per bundle and rebuilt
+  once per pass. The conflict checks stay as they are: one linear pass each.
+- **Tests:** a transient AID failure retried by an empty refresh, a new AIMC
+  whose first read failed, collection values vs structure (element and
+  submodel events), an event during the initial scan (fails without the
+  holding), the Operation and collection fingerprints, batch commits, health,
+  and the restored bundle. Not tested directly: the REST 404 window during a
+  swap. Not done: reconcile time at N = 1000 (left to the E4 pilot).
 
 ### H4. Connector boundaries
 
@@ -201,7 +188,9 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
     lock.
   - Payloads are decoded as JSON whatever the schema's type (today a scalar
     schema hands Lua bytes).
-  - The default QoS is decision 2 below.
+  - Without `mqv_qos` the QoS is 0, the WoT MQTT binding's default (decided
+    2026-10-24). An invoke-only action (no `mqv_responseTopic`, e.g. Halt)
+    is then blocked unless `aas-model` authors its `mqv_qos`.
 - **OPC UA.**
   - A failed subscription setup deletes the subscription it created and backs
     off (today it leaks one every 500 ms onto the shared session).
@@ -210,8 +199,25 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
   - The device-schema check runs on the first Good sample.
   - Read and Write time out after 30 s.
   - Int64 writes are range-checked.
-  - Security is decision 3 below.
+  - Security: see the security item below.
 - **SNMP.** Printable UTF-8 octet strings come out as text.
+- **Security (AID `securityDefinitions`, decided 2026-10-24: cover what the
+  protocols allow).** In steps:
+  1. Confirm the vocabulary: AID 1.2's `security`/`securityDefinitions` (the
+     WoT TD schemes: nosec, basic, digest, bearer, psk, oauth2, apikey, auto,
+     combo) and OPC 10101's OPC UA terms (security mode and policy, user
+     tokens).
+  2. Decide where secrets come from (an open decision): the AID describes a
+     scheme, never its secret, and credentials in the href's user info end up
+     in the AAS repository. Proposed: a DMP-side secrets file (a mounted
+     Docker secret) keyed by endpoint or security definition.
+  3. HTTP basic, bearer and API key (header or query); TLS for `https` and
+     MQTT over TLS (`mqtts`), with basic credentials for MQTT.
+  4. OPC UA security modes and policies (Sign, SignAndEncrypt) with a client
+     certificate and a trust list for server certificates, and user-name and
+     certificate user tokens.
+  5. What is not implemented (digest, OAuth2 flows, PSK, `auto`) keeps
+     blocking the mapping, explicitly.
 - **Tests:**
   - list-index sink and read;
   - a secured repository;
@@ -253,20 +259,16 @@ and has no behaviour change.
 - A LICENSE file (MIT, with the DataBridge's notice); README and SPEC §13
   already point to it.
 
-### Decisions needed
+### Decided (2026-10-24)
 
-1. **Coalescing (H5).** Should triggers that arrive while a mapping evaluates
-   collapse into one evaluation (the union of `meta.sources.*.trigger`)?
-   Recommended: yes. Today they already evaluate the same snapshot once per
-   arrival.
-2. **MQTT QoS without `mqv_qos`.** The WoT binding default (0), or today's 2?
-   Recommended: 0, with `aas-model` authoring `mqv_qos` where it matters. QoS
-   0 blocks invoke-only actions, so those need it authored.
-3. **OPC UA security.** Support AID security definitions (Sign,
-   SignAndEncrypt, certificates), or document `None`? Recommended: document
-   now and defer; the lab servers run without security.
-4. **When to do H6.** Before or after the paper's measurements? Recommended:
-   after, unless the double compile shows up in E4's time-to-ready.
+1. **Coalescing (H5): not now.** Triggers that arrive while a mapping
+   evaluates keep evaluating one by one; revisit only if it becomes a
+   problem. (Operation calls are never merged in any case: each call is an
+   evaluation of its own.)
+2. **MQTT QoS without `mqv_qos`: 0**, the WoT binding default (H4).
+3. **Security: support the AID's security definitions** as far as the
+   protocols allow (H4, in steps); where secrets come from is still open.
+4. **H6 before the measurements**, so they evaluate the final version.
 
 ## Planned work
 

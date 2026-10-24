@@ -19,14 +19,15 @@ import com.google.gson.JsonParser;
  * same Camel context, so value changes reach routes without polling or a second broker subscription.
  *
  * <p>Events use the BaSyx Kafka shape ({@code type}, {@code id}, {@code smElementPath}, {@code smElement},
- * {@code submodel}); the MQTT consumer converts its topic and payload into that shape first.
+ * {@code submodel}); the MQTT consumer converts its topic and payload into that shape first. An event is parsed
+ * once and the same tree is handed to every listener it concerns, which only read it.
  */
 public final class AasEventHub {
 	/** One subscribed element. */
 	interface Listener {
 		String submodelId();
 		String idShortPath();
-		void deliver(String event, Map<String, Object> headers);
+		void deliver(JsonObject event, Map<String, Object> headers);
 	}
 
 	private final Map<String, Set<Listener>> listeners = new ConcurrentHashMap<>();
@@ -65,12 +66,15 @@ public final class AasEventHub {
 	 * update carries the subtree), or a whole-submodel update.
 	 */
 	public void publish(String event, Map<String, Object> headers) {
-		JsonObject object;
 		try {
 			JsonElement parsed = JsonParser.parseString(event);
-			if (!parsed.isJsonObject()) return;
-			object = parsed.getAsJsonObject();
-		} catch (RuntimeException malformed) { return; }
+			if (parsed.isJsonObject()) publish(parsed.getAsJsonObject(), headers);
+		} catch (RuntimeException malformed) { /* not an event */ }
+	}
+
+	/** Delivers a parsed event; the listeners share {@code object} and must not modify it. */
+	public void publish(JsonObject object, Map<String, Object> headers) {
+		if (object == null) return;
 		String id = text(object, "id");
 		Set<Listener> candidates = id == null ? null : listeners.get(id);
 		if (candidates == null) return;
@@ -82,7 +86,7 @@ public final class AasEventHub {
 				case "SM_CREATED", "SM_UPDATED" -> true;
 				default -> false;
 			};
-			if (concerned) listener.deliver(event, headers);
+			if (concerned) listener.deliver(object, headers);
 		}
 	}
 

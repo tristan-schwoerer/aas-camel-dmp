@@ -53,7 +53,7 @@ class TimeSeriesDiscoveryTest {
 					new RecordColumn("Location.y", "xs:double")), sink.getColumns(), "a reference counts as if declared inline");
 			assertTrue(sink.getConnectionURI().startsWith("dmp-influxdb2:station_state?"), sink.getConnectionURI());
 			assertFalse(sink.getConnectionURI().contains("token"));
-			assertTrue(bundle.desired().dependencies().contains(new MappingPlanCompiler.Dependency("submodel", VARIABLES, "State.Station")),
+			assertTrue(bundle.desired().dependencies().contains(new MappingPlanCompiler.Dependency("series", VARIABLES, "State.Station")),
 					bundle.desired().dependencies().toString());
 			assertTrue(bundle.desired().dependencies().contains(new MappingPlanCompiler.Dependency("submodel", PARAMETERS, "Location")),
 					"the referenced element is part of the row shape: " + bundle.desired().dependencies());
