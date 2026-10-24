@@ -158,74 +158,146 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
   and the restored bundle. Not tested directly: the REST 404 window during a
   swap. Not done: reconcile time at N = 1000 (left to the E4 pilot).
 
-### H4. Connector boundaries
+### H4. Connector boundaries (done 2026-10-24)
 
-- **AAS client (`dmp.camel-aas`).**
-  - One URL builder encodes the idShortPath (`Items[0]` fails on every write
-    today).
-  - Every data-plane request carries the repository authorization, shared with
-    discovery (today discovery succeeds and every sink or read gets 401).
-  - SMC/SML sinks are written as ValueOnly, with leaves as text by their
-    declared valueTypes. Check against BaSyx first.
-  - Reads use `sendAsync` with a timeout instead of a new thread per read.
-  - No INFO line per write.
-- **Credentials.** Every credential is bound in the Camel registry, as MQTT's
-  already are: the OPC UA user and password, HTTP Basic, the SNMP community.
-  None goes into a URI. This fixes the encoding bugs (`@`, `&`, `#` in a
-  password) and the clear-text exposure (Deferred: the credential redaction
-  audit).
-- **HTTP.** One option builder for polls, sinks, observation and actions:
-  - automatic retries off; today they are disabled only with `htv_headers`,
-    which contradicts SPEC §5.2;
-  - connect and response timeouts of 30 s, as actions have (today 180 s for
-    sinks);
-  - HTTP/1.1.
+- **AAS client (`dmp.camel-aas`), done.** One client per context
+  (`AasHttp`, bound in the registry) for reads, writes and value-feed
+  enrichment:
+  - one URL builder percent-encodes the idShortPath (`Items%5B0%5D`; BaSyx
+    answers a raw bracket with a 400);
+  - every request carries the repository authorization discovery uses;
+  - reads use `sendAsync` with the caller's timeout, no thread per read;
+  - no INFO line per write.
 
-  Long polls back off on connect timeouts; SSE gets an idle timeout.
-- **MQTT.**
-  - The reply topic is subscribed once per endpoint, not once per call.
-  - The publish no longer waits behind the subscription under the endpoint
-    lock.
-  - Payloads are decoded as JSON whatever the schema's type (today a scalar
-    schema hands Lua bytes).
+  Checked against BaSyx 2.0 (2026-10-24): `$value` accepts only text leaves
+  (a JSON number is a 500, also inside a collection), a collection only whole,
+  and a list's `$value` write keeps the old length and reorders the items.
+  So collections are written ValueOnly with every leaf as text, a list Sink is
+  rejected at compile time (its items are Sinks), and a structured value for a
+  Property is its JSON text. A list's length is no longer structure
+  (`Aas.withoutValues` keeps one item per distinct shape), so a sink that
+  appends to a list does not reinstall the mappings that read it.
+- **Credentials, done.** No credential goes into a URI any more; each is bound
+  in the Camel registry while its bundle lives and the URI only names it:
+  - OPC UA: camel-milo's `username`/`password` options as `BoundCredential`
+    references, with a salted `clientId` (`BoundCredential.connectionKey()`),
+    so endpoints of one server and user still share a session. The options
+    are in name order now (a `parallelStream` over a `HashMap` gave a
+    different URI per compile).
+  - HTTP Basic: an `Authorization` header in the bound client options (next
+    item), for polls, observations, sinks and actions; sinks and actions
+    accepted no credentials before.
+  - SNMP: the community as a registry reference.
+
+  Tested with a password holding `@`, `&`, `#` and `:` against a Milo server
+  (the session is the user's), a device for HTTP and an SNMP agent. Found on
+  the way: camel-milo always adds an anonymous identity after the user, so a
+  user that cannot authenticate (a token policy that needs an encrypted
+  password from a server without a certificate) falls back to an anonymous
+  session without a word. The security step (4) must not keep that fallback.
+- **HTTP, done.** One option set (`HttpClientOptions`, bound per endpoint)
+  for polls, sinks, observation and actions: automatic retries off, connect
+  and response timeouts of 30 s (an action's own timeout replaces them), the
+  form's static headers and Basic credentials. Observation uses HTTP/1.1, a
+  long poll backs off after a connect timeout (it counted as an idle poll),
+  and an event stream silent for 5 min is closed and reopened.
+- **MQTT, done.**
+  - The reply subscription is confirmed (SUBSCRIBE and its SUBACK) once per
+    connection and again after a reconnect, not once per call. A call held the
+    transport lock for that broker round trip, so calls on one endpoint queued
+    behind it; now a call only publishes under the lock.
+  - Every declared data schema means a JSON payload (the WoT default content
+    type), so a number or boolean reaches Lua typed instead of as bytes; a
+    `string` schema takes a JSON string or the bare text a device publishes.
   - Without `mqv_qos` the QoS is 0, the WoT MQTT binding's default (decided
-    2026-10-24). An invoke-only action (no `mqv_responseTopic`, e.g. Halt)
-    is then blocked unless `aas-model` authors its `mqv_qos`.
-- **OPC UA.**
+    2026-10-24; camel-paho's is 2), on sources, sinks and actions. An
+    invoke-only action (no `mqv_responseTopic`) without `mqv_qos` 1 or 2 is
+    blocked: the broker would not acknowledge it. aas-model authors `mqv_qos`
+    on every form, so nothing of the line changes.
+- **OPC UA, done.**
   - A failed subscription setup deletes the subscription it created and backs
-    off (today it leaks one every 500 ms onto the shared session).
-  - Browse paths are resolved once per session for Read and Call (SPEC §5.2).
-  - NodeIds are parsed without the regex that cuts at `)`.
-  - The device-schema check runs on the first Good sample.
-  - Read and Write time out after 30 s.
-  - Int64 writes are range-checked.
-  - Security: see the security item below.
-- **SNMP.** Printable UTF-8 octet strings come out as text.
-- **Security (AID `securityDefinitions`, decided 2026-10-24: cover what the
-  protocols allow).** In steps:
-  1. Confirm the vocabulary: AID 1.2's `security`/`securityDefinitions` (the
-     WoT TD schemes: nosec, basic, digest, bearer, psk, oauth2, apikey, auto,
-     combo) and OPC 10101's OPC UA terms (security mode and policy, user
-     tokens).
-  2. Decide where secrets come from (an open decision): the AID describes a
-     scheme, never its secret, and credentials in the href's user info end up
-     in the AAS repository. Proposed: a DMP-side secrets file (a mounted
-     Docker secret) keyed by endpoint or security definition.
-  3. HTTP basic, bearer and API key (header or query); TLS for `https` and
-     MQTT over TLS (`mqtts`), with basic credentials for MQTT.
-  4. OPC UA security modes and policies (Sign, SignAndEncrypt) with a client
-     certificate and a trust list for server certificates, and user-name and
-     certificate user tokens.
-  5. What is not implemented (digest, OAuth2 flows, PSK, `auto`) keeps
-     blocking the mapping, explicitly.
-- **Tests:**
-  - list-index sink and read;
-  - a secured repository;
-  - a password with `@&`;
-  - an HTTP sink to a hung server;
-  - a scalar MQTT source;
-  - a bad NodeId leaves no subscriptions behind;
-  - request/reply with 32 concurrent callers.
+    off (0.5 s doubling to 30 s). Before, a node that did not resolve left a
+    subscription on the shared session every 500 ms (7 in 3 s in the test).
+  - Browse paths are resolved once per session for Read and Call, as they
+    were for subscriptions and writes.
+  - The node is read from the endpoint URI without the regex that cut at `)`,
+    so NodeIds and browse paths may hold parentheses (`2:Pump(1)`; the
+    compiler rejected those browse paths for the regex's sake).
+  - The device-schema check takes the first Good sample (a Bad first sample
+    switched the check off for the subscription's life).
+  - Every session has a 30 s request timeout (camel-milo's `requestTimeout`;
+    Milo's default is 60 s), so Read, Write and Call end, and a Read waits at
+    most 35 s for its answer.
+  - Int64 and UInt64 writes are exact: a double beyond the range saturated, a
+    BigInteger wrapped, and UInt64 refused values above `Long.MAX_VALUE`.
+- **SNMP, done.** An octet string is text when it is valid UTF-8 without
+  control characters (snmp4j's test admits ASCII only, so `café` was hex), and
+  text is written as UTF-8 rather than the platform charset.
+- **Security (AID `security`/`securityDefinitions`), decided 2026-10-24.**
+  The AID says what an interface requires, in IDTA terms only; the DMP holds
+  the credentials. Secrets never live in the AAS: an AAS is meant to be
+  shared (AASX exports, registries, the web UI, `aas-model` in git), and the
+  WoT TD that AID's security model comes from describes the mechanism and
+  leaves the credentials to the consumer. AID 1.1 (§2.25–2.27) has no element
+  for a secret; AID 1.2 is the same as far as checked.
+  1. **What the DMP reads.** `security` on `EndpointMetadata` (all
+     interactions) or on a form (replacing it for that form), each a list of
+     references into the interface's `securityDefinitions`, all of which must
+     be satisfied. Per scheme: `scheme`; `name`, `in` (basic, apikey,
+     bearer, digest); `qop`; `format`; `token`, `scopes`, `flow` (oauth2);
+     `oneOf`/`allOf` (combo: `oneOf` takes the first scheme the DMP can
+     apply); `uav_securityMode`, `uav_securityPolicy`,
+     `uav_userIdentityToken`, `uav_issueToken` (OPC UA). An empty `security`
+     blocks the mapping: AID requires at least one reference, `nosec_sc` for
+     an interface without security.
+  2. **Where credentials come from.** The DMP's deployment, never the AAS:
+     a mounted secrets file (a Docker secret). Credentials are keyed by what
+     they authenticate against, so equipment on shared infrastructure needs
+     no new DMP configuration:
+     - the DMP's own identity: its OPC UA application certificate and key,
+       its TLS client certificate, the CAs it trusts (one per DMP);
+     - per token server (the `oauth2_sc` `token` URI): the OAuth2 client id
+       and secret;
+     - per host or broker (`scheme://host:port`): a user name and password,
+       or an API key or bearer token;
+     - per scheme reference (AID submodel id, interface, scheme idShort): an
+       override for a secret only one device has.
+
+     A required scheme without a matching credential blocks the mapping with
+     its path; nothing falls back (no anonymous OPC UA session). Credentials
+     in an href's user info are rejected: they are secrets in the AAS (no
+     deployed AID has any). Secrets are bound in the Camel registry and never
+     reach a log, URI, status or the exported fingerprint.
+  3. **Now (H4), done:** the
+     reader (1); the credential source (2) with its lookup and the file
+     format; `nosec` for every protocol; HTTP `basic`, `bearer`, `apikey`
+     (header, query, cookie); MQTT `basic` (CONNECT user name and password).
+     Everything else blocks explicitly, by scheme and path. (`AidSecurity`,
+     `DmpCredentials`; the file is read once at start, so a changed secret
+     needs a restart.)
+  4. **Later, when a device needs it:** HTTP `digest` and OAuth2 client
+     credentials; TLS (`https`, `mqtts`) with the DMP's CAs and client
+     certificate; OPC UA through sessions the DMP opens itself (a
+     `MiloClientConnectionManager` of its own: camel-milo always adds an
+     anonymous fallback and selects endpoints by policy only) with
+     `opcua_channel_sc`, `auto` and `opcua_authentication_sc` (Anonymous,
+     UserName, Certificate; IssuedToken via `uav_issueToken`). `psk` stays
+     unsupported (the JDK has no TLS-PSK).
+  5. **Deployment and tests use `nosec`, as AID demands, done.** `aas-model`
+     authors a `nosec_sc` in every interface's `securityDefinitions` and
+     references it from `EndpointMetadata/security` (`select_nosec`, run by
+     the id injector and the fixture generator); the DMP fixtures are
+     regenerated. The deployed AIDs still have an empty `security`: they must
+     be republished before a DMP with this change runs, or every mapping
+     blocks.
+- **Tests, done:** list-index sink and read (`Items%5B0%5D`); the repository
+  authorization on reads and writes; a password with `@&#:` against Milo, an
+  HTTP device and an SNMP agent; an HTTP write to a hung device (sent once,
+  ends at its timeout); scalar MQTT sources; a node that does not resolve
+  leaves no subscriptions behind; request/reply with 32 concurrent callers
+  (one publish each, one confirmed subscription); the AID security reader
+  (nosec, basic, bearer, apikey, combo, empty and unknown selections, OPC UA
+  blocked) and the credentials file.
 
 ### H5. Threads and scale (E4)
 
@@ -266,8 +338,9 @@ and has no behaviour change.
    problem. (Operation calls are never merged in any case: each call is an
    evaluation of its own.)
 2. **MQTT QoS without `mqv_qos`: 0**, the WoT binding default (H4).
-3. **Security: support the AID's security definitions** as far as the
-   protocols allow (H4, in steps); where secrets come from is still open.
+3. **Security: the AID's security definitions as IDTA defines them, no
+   extension; secrets never in the AAS.** The DMP holds the credentials, keyed
+   by endpoint or scheme reference; deployment and tests use `nosec_sc` (H4).
 4. **H6 before the measurements**, so they evaluate the final version.
 
 ## Planned work

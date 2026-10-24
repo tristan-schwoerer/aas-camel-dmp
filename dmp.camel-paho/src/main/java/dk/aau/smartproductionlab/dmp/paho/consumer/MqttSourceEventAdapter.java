@@ -22,14 +22,14 @@ public final class MqttSourceEventAdapter implements SourceEventAdapter {
 		return exchange -> {
 			Object body = exchange.getMessage().getBody();
 			boolean json = jsonContent(exchange) || jsonSchema(configuration.getSchema());
-			Object normalized = decode(body, json);
+			Object normalized = decode(body, json, textSchema(configuration.getSchema()));
 			exchange.getMessage().setBody(normalized);
 			exchange.setProperty(NORMALIZED_VALUE_PROPERTY, true);
 			exchange.setProperty(CONTRIBUTION_PROPERTY, normalized != null);
 		};
 	}
 
-	private static Object decode(Object body, boolean declaredJson) throws Exception {
+	private static Object decode(Object body, boolean declaredJson, boolean bareTextAllowed) throws Exception {
 		if (body instanceof Map<?, ?> || body instanceof List<?> || body == JsonPointer.JSON_NULL) {
 			return JsonCodec.copyValue(body);
 		}
@@ -47,6 +47,14 @@ public final class MqttSourceEventAdapter implements SourceEventAdapter {
 		} else {
 			return JsonCodec.copyValue(body);
 		}
+		if (bareTextAllowed) {
+			// A string is a JSON string ("READY"), or the bare text a device published (RUNNING, {"opaque":true}).
+			try {
+				return JsonCodec.parseJson(text) instanceof String value ? value : text;
+			} catch (RuntimeException notJson) {
+				return text;
+			}
+		}
 		Object decoded = JsonCodec.parseJson(text);
 		return decoded == null ? JsonPointer.JSON_NULL : decoded;
 	}
@@ -58,10 +66,17 @@ public final class MqttSourceEventAdapter implements SourceEventAdapter {
 		return "application/json".equals(mediaType) || mediaType.endsWith("+json");
 	}
 
+	/**
+	 * A payload with a declared data schema is JSON, the WoT MQTT binding's default content type, whatever the
+	 * schema's type: a number arrives as {@code 42}, not as bytes. A string schema also takes bare text.
+	 */
 	private static boolean jsonSchema(Object rawSchema) {
 		if (!(rawSchema instanceof Map<?, ?> schema)) return false;
-		Object type = schema.get("type");
-		return "object".equals(type) || "array".equals(type)
-				|| schema.containsKey("properties") || schema.containsKey("items");
+		return schema.containsKey("type") || schema.containsKey("properties") || schema.containsKey("items")
+				|| schema.containsKey("const") || schema.containsKey("enum") || schema.containsKey("oneOf");
+	}
+
+	private static boolean textSchema(Object rawSchema) {
+		return rawSchema instanceof Map<?, ?> schema && "string".equals(schema.get("type"));
 	}
 }

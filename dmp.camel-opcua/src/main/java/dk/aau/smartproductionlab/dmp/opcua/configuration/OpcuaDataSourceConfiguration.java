@@ -29,8 +29,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+
+import org.apache.camel.CamelContext;
+
+import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.security.BoundCredential;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * An implementation of OpcUa consumer configuration
@@ -39,7 +43,7 @@ import java.util.stream.Collectors;
  * @see <a href="https://camel.apache.org/components/3.20.x/milo-client-component.html">Documentation Apache Camel - OPC UA Client Parameters</a>
  *
  */
-public class OpcuaDataSourceConfiguration extends DataSourceConfiguration {
+public class OpcuaDataSourceConfiguration extends DataSourceConfiguration implements ManagedRouteResource {
 	protected static Logger logger = LoggerFactory.getLogger(OpcuaDataSourceConfiguration.class);
 
 	private String pathToService;
@@ -47,6 +51,7 @@ public class OpcuaDataSourceConfiguration extends DataSourceConfiguration {
 	private String username;
 	private String password;
 	private Map<String, String> configuration = new HashMap<>();
+	private BoundCredential bound;
 
 	public OpcuaDataSourceConfiguration() {
 	}
@@ -77,6 +82,12 @@ public class OpcuaDataSourceConfiguration extends DataSourceConfiguration {
 
 		if (!this.configuration.containsKey("allowedSecurityPolicies"))
 			this.configuration.put("allowedSecurityPolicies", "None");
+
+		// Read, Write and Call give up after 30 s, as HTTP and MQTT actions do (Milo's default is 60 s).
+
+		if (!this.configuration.containsKey("requestTimeout"))
+
+			this.configuration.put("requestTimeout", "30000");
 		if (!this.configuration.containsKey("requestedPublishingInterval"))
 			this.configuration.put("requestedPublishingInterval", "1000");
 	}
@@ -127,22 +138,40 @@ public class OpcuaDataSourceConfiguration extends DataSourceConfiguration {
 	}
 
 	public String getConnectionURI() {
-		String credentials = username == null || password == null ? "" : username + ":" + password + "@";
-		String parameters = this.configuration.entrySet()
-				.parallelStream()
-				.filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
-				.map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
-				.collect(Collectors.joining("&"));
+		return connectionUri(getServerUrl(), getServerPort(), getPathToService(), getNodeInformation(), boundCredential(), configuration);
+	}
 
-		return String.format(
-				"dmp-milo-client:opc.tcp://%s%s:%d/%s?%s=RAW(%s)%s",
-				credentials,
-				getServerUrl(),
-				getServerPort(),
-				getPathToService(),
-				nodeParameter(getNodeInformation()),
-				getNodeInformation(),
-				parameters.length() > 0 ? "&" + parameters : ""
-		);
+	private synchronized BoundCredential boundCredential() {
+		if (bound == null && username != null && password != null) bound = new BoundCredential(username, password);
+		return bound;
+	}
+
+	@Override
+	public void bind(CamelContext context) {
+		BoundCredential credential = boundCredential();
+		if (credential != null) credential.bind(context);
+	}
+
+	@Override
+	public synchronized void close() {
+		if (bound != null) bound.close();
+	}
+
+	/**
+	 * A {@code dmp-milo-client} URI. Credentials are only named ({@code username}/{@code password} references to
+	 * the registry, SPEC §11), and the connection is keyed by the credentials' {@link BoundCredential#connectionKey()}
+	 * ({@code clientId}), so endpoints of one server and user share a session; options are in name order, so equal
+	 * configurations give equal URIs.
+	 */
+	static String connectionUri(String host, int port, String path, String node, BoundCredential credential,
+			Map<String, String> configuration) {
+		StringBuilder uri = new StringBuilder("dmp-milo-client:opc.tcp://").append(host).append(':').append(port).append('/')
+				.append(path).append('?').append(nodeParameter(node)).append("=RAW(").append(node).append(')');
+		new java.util.TreeMap<>(configuration).forEach((name, value) -> {
+			if (value != null && !value.isEmpty()) uri.append('&').append(name).append('=').append(value);
+		});
+		if (credential != null) uri.append("&username=").append(credential.userNameReference()).append("&password=")
+				.append(credential.passwordReference()).append("&clientId=").append(credential.connectionKey());
+		return uri.toString();
 	}
 }

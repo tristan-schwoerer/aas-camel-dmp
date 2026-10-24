@@ -259,7 +259,7 @@
       "keys": [
        {
         "type": "GlobalReference",
-        "value": "835e7de7486b5fb79b840c56df641bad"
+        "value": "3d7b7cbebf96588ebb42e6c1c942a717"
        }
       ]
      },
@@ -447,7 +447,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "ffcc1abf801556cb9f4f83df5e0eb8db"
+          "value": "f123106fd3f15b8a8fe0b0d6289e2548"
          }
         ]
        },
@@ -468,7 +468,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "9128b5c674655e27bf4dae1db003d46f"
+          "value": "ffcc1abf801556cb9f4f83df5e0eb8db"
          }
         ]
        },
@@ -489,7 +489,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "f98bd9ec6e15538da7e2c917ba4617e1"
+          "value": "9128b5c674655e27bf4dae1db003d46f"
          }
         ]
        },
@@ -593,7 +593,37 @@
           "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
          }
         ]
-       }
+       },
+       "value": [
+        {
+         "modelType": "ReferenceElement",
+         "value": {
+          "type": "ModelReference",
+          "keys": [
+           {
+            "type": "Submodel",
+            "value": "a/submodels/AID"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "interface_http"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "EndpointMetadata"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "securityDefinitions"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "nosec_sc"
+           }
+          ]
+         }
+        }
+       ]
       },
       {
        "embeddedDataSpecifications": [
@@ -624,7 +654,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "82c4cf927d905f1e8f2246cc2e0c9ca7"
+            "value": "nosec_sc"
            }
           ]
          },
@@ -645,7 +675,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "e9e42bc786875b91be6e8bc7869d3336"
+            "value": "82c4cf927d905f1e8f2246cc2e0c9ca7"
            }
           ]
          },
@@ -666,7 +696,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "286f329cf86b5a1fb7e2f4effe05aa35"
+            "value": "e9e42bc786875b91be6e8bc7869d3336"
            }
           ]
          },
@@ -687,7 +717,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "c6c093f68dad528db27148587ab9ea53"
+            "value": "286f329cf86b5a1fb7e2f4effe05aa35"
            }
           ]
          },
@@ -708,7 +738,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "a1ac4a6786195f34896fd35ee82c76b3"
+            "value": "c6c093f68dad528db27148587ab9ea53"
            }
           ]
          },
@@ -729,7 +759,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "855ded0f25df5e068d5b2582719e6c2e"
+            "value": "a1ac4a6786195f34896fd35ee82c76b3"
            }
           ]
          },
@@ -750,7 +780,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "c7b2c496cc7951adaa502bec9ac5c04c"
+            "value": "855ded0f25df5e068d5b2582719e6c2e"
            }
           ]
          },
@@ -771,7 +801,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "ec37547cea0459118682089668e951e1"
+            "value": "c7b2c496cc7951adaa502bec9ac5c04c"
            }
           ]
          },
@@ -792,7 +822,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "05a98928c5f553358b65d1b871c39a09"
+            "value": "ec37547cea0459118682089668e951e1"
            }
           ]
          },
@@ -813,7 +843,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "e8932919d4c35336b6fe0e663ebb177f"
+            "value": "05a98928c5f553358b65d1b871c39a09"
            }
           ]
          },
@@ -834,7 +864,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "f123106fd3f15b8a8fe0b0d6289e2548"
+            "value": "e8932919d4c35336b6fe0e663ebb177f"
            }
           ]
          },
@@ -866,7 +896,95 @@
           "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
          }
         ]
-       }
+       },
+       "value": [
+        {
+         "embeddedDataSpecifications": [
+          {
+           "dataSpecification": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "nosec_sc"
+             }
+            ]
+           },
+           "dataSpecificationContent": {
+            "modelType": "DataSpecificationIec61360",
+            "preferredName": [
+             {
+              "language": "en",
+              "text": "class"
+             }
+            ],
+            "value": "nosec_sc"
+           }
+          },
+          {
+           "dataSpecification": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "scheme"
+             }
+            ]
+           },
+           "dataSpecificationContent": {
+            "modelType": "DataSpecificationIec61360",
+            "preferredName": [
+             {
+              "language": "en",
+              "text": "attribute"
+             }
+            ],
+            "value": "scheme"
+           }
+          }
+         ],
+         "idShort": "nosec_sc",
+         "description": [
+          {
+           "language": "en",
+           "text": "No security scheme definition"
+          }
+         ],
+         "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://www.w3.org/2019/wot/security#NoSecurityScheme"
+           }
+          ]
+         },
+         "value": [
+          {
+           "idShort": "scheme",
+           "description": [
+            {
+             "language": "en",
+             "text": "Defines the security mechanism that used during access. Supported modes one of nosec, basic, digest, bearer, psk, oauth2, apikey, combo, auto, uav_channelsec and uav_authentication_"
+            }
+           ],
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://www.w3.org/2019/wot/security#SecurityScheme"
+             }
+            ]
+           },
+           "value": "nosec",
+           "valueType": "xs:string"
+          }
+         ]
+        }
+       ]
       }
      ]
     },
@@ -899,7 +1017,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "b9c751548ac85982bc424dd4815ed16f"
+          "value": "f98bd9ec6e15538da7e2c917ba4617e1"
          }
         ]
        },
@@ -941,7 +1059,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "3d7b7cbebf96588ebb42e6c1c942a717"
+          "value": "1e13961c4c40551fa509123d1af40aaf"
          }
         ]
        },
@@ -1078,7 +1196,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "d4fb1510af4356e9b6d86cfc72594003"
+              "value": "b9c751548ac85982bc424dd4815ed16f"
              }
             ]
            },
@@ -1099,7 +1217,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "592ee9c03b96520f956e96fb30a2ee83"
+              "value": "d4fb1510af4356e9b6d86cfc72594003"
              }
             ]
            },
@@ -1120,7 +1238,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "741970c28e295a80b29c8957a4b80220"
+              "value": "592ee9c03b96520f956e96fb30a2ee83"
              }
             ]
            },
@@ -1141,7 +1259,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "914121ecf9085d21b5cedbbbfb090e48"
+              "value": "741970c28e295a80b29c8957a4b80220"
              }
             ]
            },
@@ -1162,7 +1280,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "e321bb3950265e41b74efe19735f37e2"
+              "value": "914121ecf9085d21b5cedbbbfb090e48"
              }
             ]
            },
@@ -1183,7 +1301,7 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "b7c90e2f67745dabadb20ca60ace1eec"
+              "value": "e321bb3950265e41b74efe19735f37e2"
              }
             ]
            },
@@ -1383,7 +1501,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "6984dd1a5a57527bb9c60a6413932b7a"
+                "value": "b7c90e2f67745dabadb20ca60ace1eec"
                }
               ]
              },
@@ -1404,7 +1522,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "2dc916cb20d7519a88fe5d726c7da072"
+                "value": "6984dd1a5a57527bb9c60a6413932b7a"
                }
               ]
              },
@@ -1446,7 +1564,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "65030a5ddc76541a96eea884c28bbfd2"
+                "value": "2dc916cb20d7519a88fe5d726c7da072"
                }
               ]
              },
@@ -1467,7 +1585,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "aef45ba8950c5dd687f5dca0aa783611"
+                "value": "65030a5ddc76541a96eea884c28bbfd2"
                }
               ]
              },
@@ -1488,7 +1606,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "9c7c93812208582dae2fc16f56ae1f35"
+                "value": "aef45ba8950c5dd687f5dca0aa783611"
                }
               ]
              },
@@ -1509,7 +1627,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "f3797d9928855055b9dc119e4668b550"
+                "value": "9c7c93812208582dae2fc16f56ae1f35"
                }
               ]
              },
@@ -1530,7 +1648,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "ba48b2adbff5539dbf051fc00bc6bd7d"
+                "value": "f3797d9928855055b9dc119e4668b550"
                }
               ]
              },
@@ -1551,7 +1669,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "b60a0c94b64552cda277ca68a9721e19"
+                "value": "ba48b2adbff5539dbf051fc00bc6bd7d"
                }
               ]
              },
@@ -1572,7 +1690,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "d15c05d530275123a1c7c42eb4d86d9d"
+                "value": "b60a0c94b64552cda277ca68a9721e19"
                }
               ]
              },
@@ -1593,7 +1711,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "eca261f18583506e8417cccb78fb1380"
+                "value": "d15c05d530275123a1c7c42eb4d86d9d"
                }
               ]
              },
@@ -1614,7 +1732,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "e7cdd9915a2051779af43e5010ea8547"
+                "value": "eca261f18583506e8417cccb78fb1380"
                }
               ]
              },
@@ -1635,7 +1753,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "e481be2bd711519cb6f5017a979021ee"
+                "value": "e7cdd9915a2051779af43e5010ea8547"
                }
               ]
              },
@@ -1656,7 +1774,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "e4d0206f05835216acd92508638d9d03"
+                "value": "e481be2bd711519cb6f5017a979021ee"
                }
               ]
              },
@@ -1677,7 +1795,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "abb8cc7c1bd851c996ca9bbe1b90d9a8"
+                "value": "e4d0206f05835216acd92508638d9d03"
                }
               ]
              },
@@ -1698,7 +1816,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "af4e799a465c5d108634df45da132014"
+                "value": "abb8cc7c1bd851c996ca9bbe1b90d9a8"
                }
               ]
              },
@@ -1719,7 +1837,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "2dfd4d4cd3795bae964d9431f88e3e92"
+                "value": "af4e799a465c5d108634df45da132014"
                }
               ]
              },
@@ -1740,7 +1858,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "88eb088a5b92588e8cc41b97161d18c6"
+                "value": "2dfd4d4cd3795bae964d9431f88e3e92"
                }
               ]
              },
@@ -1761,7 +1879,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "4c9c3b991bb35337894de6df481986bc"
+                "value": "88eb088a5b92588e8cc41b97161d18c6"
                }
               ]
              },
@@ -1782,7 +1900,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "e68478e88bd65b1aa4d69da809620651"
+                "value": "4c9c3b991bb35337894de6df481986bc"
                }
               ]
              },
@@ -1803,7 +1921,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "9f2000568bca519a9139f5926c0c2140"
+                "value": "e68478e88bd65b1aa4d69da809620651"
                }
               ]
              },
@@ -1824,7 +1942,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "7a2295d694cb5c33af7b4d038f73cc94"
+                "value": "9f2000568bca519a9139f5926c0c2140"
                }
               ]
              },
@@ -1845,7 +1963,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "a3bbc5d777a55041b53597d4553fb1a4"
+                "value": "7a2295d694cb5c33af7b4d038f73cc94"
                }
               ]
              },
@@ -1866,7 +1984,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "1ad04b1783f758a1887b928872917e3d"
+                "value": "a3bbc5d777a55041b53597d4553fb1a4"
                }
               ]
              },
@@ -1887,7 +2005,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "dc973c77b8ca50a9b5b705f26decf0ac"
+                "value": "1ad04b1783f758a1887b928872917e3d"
                }
               ]
              },
@@ -1908,7 +2026,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "556c4db0a4a35be9af09ce70826322b9"
+                "value": "dc973c77b8ca50a9b5b705f26decf0ac"
                }
               ]
              },
@@ -1929,7 +2047,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "b0e6a2104da3502fb294693c2d501639"
+                "value": "556c4db0a4a35be9af09ce70826322b9"
                }
               ]
              },
@@ -1950,7 +2068,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "a66b48d665dc58819d85cfed7ea663a3"
+                "value": "b0e6a2104da3502fb294693c2d501639"
                }
               ]
              },
@@ -1971,7 +2089,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "67933103a2cb552ebaf4991314f89ca2"
+                "value": "a66b48d665dc58819d85cfed7ea663a3"
                }
               ]
              },
@@ -1992,7 +2110,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "f0b87fc4fd825e18bc3a15661256857e"
+                "value": "67933103a2cb552ebaf4991314f89ca2"
                }
               ]
              },
@@ -2013,7 +2131,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "acefbe4a8bfe5cd780e873727f0eaaa7"
+                "value": "f0b87fc4fd825e18bc3a15661256857e"
                }
               ]
              },
@@ -2034,7 +2152,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "da6a0a98993956f5ba379e331c751011"
+                "value": "acefbe4a8bfe5cd780e873727f0eaaa7"
                }
               ]
              },
@@ -2055,7 +2173,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "d6e5420d995059c09f8b239bfbd911a0"
+                "value": "da6a0a98993956f5ba379e331c751011"
                }
               ]
              },
@@ -2076,7 +2194,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "af69967d72fb5e999cb540b3aefae1b9"
+                "value": "d6e5420d995059c09f8b239bfbd911a0"
                }
               ]
              },
@@ -2097,7 +2215,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "3a1ee2d3f2fd5ce5b90bb002e57d5194"
+                "value": "af69967d72fb5e999cb540b3aefae1b9"
                }
               ]
              },
@@ -2118,7 +2236,7 @@
               "keys": [
                {
                 "type": "GlobalReference",
-                "value": "1e13961c4c40551fa509123d1af40aaf"
+                "value": "3a1ee2d3f2fd5ce5b90bb002e57d5194"
                }
               ]
              },

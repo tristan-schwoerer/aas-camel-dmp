@@ -31,7 +31,10 @@ public final class SnmpValues {
 			long raw = counter.getValue();
 			return raw >= 0 ? raw : new BigInteger(Long.toUnsignedString(raw));
 		}
-		if (value instanceof OctetString text) return text.isPrintable() ? text.toString() : text.toHexString();
+		if (value instanceof OctetString octets) {
+			String text = utf8Text(octets.getValue());
+			return text != null ? text : octets.toHexString();
+		}
 		if (value instanceof IpAddress address) return address.getInetAddress().getHostAddress();
 		if (value instanceof OID oid) return oid.toDottedString();
 		return value.toString();
@@ -49,7 +52,8 @@ public final class SnmpValues {
 		if (template instanceof Counter64) return new Counter64(integral(json, Long.MIN_VALUE, Long.MAX_VALUE));
 		if (template instanceof IpAddress) return new IpAddress(text(json));
 		if (template instanceof OID) return new OID(text(json));
-		if (template instanceof OctetString) return new OctetString(json instanceof String text ? text : String.valueOf(json));
+		if (template instanceof OctetString)
+			return new OctetString((json instanceof String text ? text : String.valueOf(json)).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		throw new IllegalArgumentException("SNMP type " + template.getSyntaxString() + " cannot be set");
 	}
 
@@ -69,5 +73,27 @@ public final class SnmpValues {
 	private static String text(Object json) {
 		if (json instanceof String text) return text;
 		throw new IllegalArgumentException("a string is required, not " + json);
+	}
+
+	/**
+	 * Octets as text when they are valid UTF-8 without control characters (tab and line breaks allowed);
+	 * otherwise null, and the value is its hex form. snmp4j's own test admits ASCII only, so {@code café}
+	 * came out as hex.
+	 */
+	static String utf8Text(byte[] octets) {
+		String text;
+		try {
+			text = java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+					.onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+					.onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+					.decode(java.nio.ByteBuffer.wrap(octets)).toString();
+		} catch (java.nio.charset.CharacterCodingException binary) {
+			return null;
+		}
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			if (Character.isISOControl(c) && c != '\t' && c != '\n' && c != '\r') return null;
+		}
+		return text;
 	}
 }

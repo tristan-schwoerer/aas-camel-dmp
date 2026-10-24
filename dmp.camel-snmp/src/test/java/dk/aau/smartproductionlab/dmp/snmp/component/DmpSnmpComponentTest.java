@@ -3,6 +3,7 @@
 package dk.aau.smartproductionlab.dmp.snmp.component;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -46,6 +47,16 @@ class DmpSnmpComponentTest {
 	private Object read(String oid) {
 		ConsumerTemplate consumer = camel.createConsumerTemplate();
 		return consumer.receiveBody(uri(oid), 2000);
+	}
+
+	@Test void aBoundCommunityReachesTheAgentAndStaysOutOfTheUri() throws Exception {
+		var source = new dk.aau.smartproductionlab.dmp.snmp.configuration.SnmpDataSourceConfiguration("source", "127.0.0.1",
+				agent.port(), "1.3.6.1.2.1.1.1.0", "SNMPv2c", "pr1v&te#");
+		source.bind(camel);
+		assertTrue(!source.getConnectionURI().contains("pr1v"), source.getConnectionURI());
+		assertEquals("test device", camel.createConsumerTemplate().receiveBody(source.getConnectionURI(), 2000));
+		assertEquals("pr1v&te#", agent.lastCommunity());
+		source.close();
 	}
 
 	@Test void aGetReadsTheObjectAsJson() {

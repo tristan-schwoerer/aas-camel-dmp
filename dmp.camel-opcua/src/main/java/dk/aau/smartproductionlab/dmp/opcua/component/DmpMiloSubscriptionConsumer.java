@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 	private static final Logger LOGGER = LoggerFactory.getLogger(DmpMiloSubscriptionConsumer.class);
 	private static final long WATCH_PERIOD_MS = 500;
+	private static final long MAX_BACKOFF_MS = 30_000;
 	private static final double DEFAULT_PUBLISHING_INTERVAL_MS = 1000;
 	private static final UInteger QUEUE_SIZE = UInteger.valueOf(16);
 
@@ -47,6 +48,9 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 	private volatile OpcUaClient subscribedClient;
 	private volatile OpcUaSubscription subscription;
 	private volatile java.util.Optional<Map<String, Object>> deviceSchema;
+	/** After a failed setup, no new attempt before this time (System.nanoTime), doubling up to 30 s. */
+	private long retryAt;
+	private long backoffMs = WATCH_PERIOD_MS;
 
 	DmpMiloSubscriptionConsumer(DmpMiloClientEndpoint endpoint, Processor processor) {
 		super(endpoint, processor);
@@ -74,12 +78,13 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 
 	/** (Re)creates the subscription when the shared connection has a client this consumer is not subscribed with. */
 	private void ensureSubscription() {
+		OpcUaSubscription created = null;
 		try {
 			OpcUaClient client = connection == null ? null : connection.getOpcUaClient();
-			if (client == null || client == subscribedClient) return;
+			if (client == null || client == subscribedClient || System.nanoTime() - retryAt < 0) return;
 			deleteSubscription();
 			Double publishing = endpoint.getConfiguration().getRequestedPublishingInterval();
-			OpcUaSubscription created = new OpcUaSubscription(client,
+			created = new OpcUaSubscription(client,
 					publishing == null ? DEFAULT_PUBLISHING_INTERVAL_MS : publishing);
 			created.create();
 			deviceSchema = null;
@@ -91,9 +96,12 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 				Double sampling = endpoint.getSamplingInterval();
 				if (sampling != null) item.setSamplingInterval(sampling);
 				item.setDataValueListener((monitored, value) -> {
-					// The variable's own type, once per subscription: the AID schema is checked against it.
-					if (deviceSchema == null) deviceSchema = java.util.Optional.ofNullable(OpcUaStructures.deviceSchema(value, client));
-					deliver(OpcUaStructures.decoded(value, client), deviceSchema.orElse(null));
+					// The variable's own type, once per subscription and from a Good sample (a Bad one has no
+					// value to tell it): the AID schema is checked against it.
+					if (deviceSchema == null && value.getStatusCode() != null && value.getStatusCode().isGood())
+						deviceSchema = java.util.Optional.ofNullable(OpcUaStructures.deviceSchema(value, client));
+					var schema = deviceSchema;
+					deliver(OpcUaStructures.decoded(value, client), schema == null ? null : schema.orElse(null));
 				});
 			} else {
 				// An event item (OPC 10000-4 §5.12.1.4): the server queues each event the filter passes.
@@ -107,10 +115,18 @@ final class DmpMiloSubscriptionConsumer extends DefaultConsumer {
 			created.synchronizeMonitoredItems();
 			subscription = created;
 			subscribedClient = client;
+			backoffMs = WATCH_PERIOD_MS;
 		} catch (Exception failure) {
-			LOGGER.warn("OPC UA subscription to {} is not established yet: {}",
-					endpoint.getBrowsePath() == null ? endpoint.getNode() : endpoint.getBrowsePath(), failure.getMessage());
+			LOGGER.warn("OPC UA subscription to {} is not established yet (next attempt in {} ms): {}",
+					endpoint.getBrowsePath() == null ? endpoint.getNode() : endpoint.getBrowsePath(), backoffMs, failure.getMessage());
+			// The subscription this attempt created lives on the shared session until deleted.
+			if (created != null && created != subscription) {
+				try { created.delete(); }
+				catch (Exception ignored) { /* the session may already be gone */ }
+			}
 			deleteSubscription();
+			retryAt = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(backoffMs);
+			backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS);
 		}
 	}
 

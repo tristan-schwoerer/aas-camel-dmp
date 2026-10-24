@@ -25,6 +25,7 @@ public final class SnmpTestAgent implements AutoCloseable {
 	private final Set<OID> readOnly = ConcurrentHashMap.newKeySet();
 	private final Snmp snmp;
 	private final int port;
+	private volatile String lastCommunity;
 
 	public SnmpTestAgent() throws IOException {
 		DefaultUdpTransportMapping transport = new DefaultUdpTransportMapping(new UdpAddress("127.0.0.1/0"));
@@ -32,6 +33,7 @@ public final class SnmpTestAgent implements AutoCloseable {
 		snmp.addCommandResponder(new CommandResponder() {
 			@Override
 			public <A extends org.snmp4j.smi.Address> void processPdu(CommandResponderEvent<A> event) {
+				lastCommunity = new String(event.getSecurityName(), java.nio.charset.StandardCharsets.UTF_8);
 				respond(event);
 			}
 		});
@@ -40,6 +42,9 @@ public final class SnmpTestAgent implements AutoCloseable {
 	}
 
 	public int port() { return port; }
+
+	/** The community of the last request. */
+	public String lastCommunity() { return lastCommunity; }
 
 	public SnmpTestAgent put(String oid, Variable value, boolean writable) {
 		objects.put(new OID(oid), value);

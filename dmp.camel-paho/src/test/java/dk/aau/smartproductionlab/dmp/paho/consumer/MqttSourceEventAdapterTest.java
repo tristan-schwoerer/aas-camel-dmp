@@ -39,6 +39,21 @@ class MqttSourceEventAdapterTest {
 	}
 
 	@Test
+	void scalarSchemasDecodeJsonAndAStringTakesBareText() throws Exception {
+		var context = new DefaultCamelContext();
+		Object[][] cases = { { "number", "21.5", 21.5 }, { "integer", "7", 7L }, { "boolean", "true", true },
+				{ "string", "RUNNING", "RUNNING" }, { "string", "\"READY\"", "READY" } };
+		for (Object[] example : cases) {
+			var source = new MqttDataSourceConfiguration();
+			source.setSchema(Map.of("type", example[0]));
+			var exchange = new DefaultExchange(context);
+			exchange.getMessage().setBody(((String) example[1]).getBytes(StandardCharsets.UTF_8));
+			new MqttSourceEventAdapter().normalizer(source).process(exchange);
+			assertEquals(example[2], exchange.getMessage().getBody(), example[0] + " " + example[1]);
+		}
+	}
+
+	@Test
 	void preservesOpaqueJsonLookingTextWhenSchemaSaysString() throws Exception {
 		var context = new DefaultCamelContext();
 		var source = new MqttDataSourceConfiguration();

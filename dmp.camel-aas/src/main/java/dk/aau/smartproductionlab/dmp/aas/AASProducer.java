@@ -43,7 +43,7 @@ public class AASProducer extends DefaultProducer {
 		super(endpoint);
 		this.endpoint = endpoint;
 		
-		LOG.info("Creating AAS Producer for endpoint " + endpoint.getEndpointUri());
+		LOG.debug("Creating AAS Producer for endpoint {}", endpoint.getEndpointUri());
 	}
 
 	@Override

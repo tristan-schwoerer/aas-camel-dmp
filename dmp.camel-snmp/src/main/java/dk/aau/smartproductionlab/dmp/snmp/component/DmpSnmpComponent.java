@@ -18,11 +18,14 @@ import org.snmp4j.mp.SnmpConstants;
 public final class DmpSnmpComponent extends DefaultComponent {
 	public static final String SCHEME = "dmp-snmp";
 
-	/** The endpoint URI of one object; the community is passed RAW so Camel leaves it unchanged. */
-	public static String uri(String host, int port, String oid, String version, String community) {
+	/**
+	 * The endpoint URI of one object. The community is SNMP's credential: the DMP passes a registry reference
+	 * ({@code #bean:<name>}), never the value (SPEC §11); without one the community is {@code public}.
+	 */
+	public static String uri(String host, int port, String oid, String version, String communityReference) {
 		StringBuilder uri = new StringBuilder(SCHEME).append(':').append(host).append(':').append(port)
 				.append("?oid=").append(oid).append("&version=").append(version);
-		if (community != null) uri.append("&community=RAW(").append(community).append(')');
+		if (communityReference != null) uri.append("&community=").append(communityReference);
 		return uri.toString();
 	}
 
@@ -40,7 +43,7 @@ public final class DmpSnmpComponent extends DefaultComponent {
 			case "snmpv2c", "2c", "v2c" -> SnmpConstants.version2c;
 			default -> throw new IllegalArgumentException("dmp-snmp supports SNMPv1 and SNMPv2c");
 		};
-		String community = getAndRemoveParameter(parameters, "community", String.class, "public");
+		String community = getAndRemoveOrResolveReferenceParameter(parameters, "community", String.class, "public");
 		long timeout = getAndRemoveParameter(parameters, "timeout", Long.class, DmpSnmpEndpoint.DEFAULT_TIMEOUT_MS);
 		int retries = getAndRemoveParameter(parameters, "retries", Integer.class, 1);
 		return new DmpSnmpEndpoint(uri, this, host, port, oid, version, community, timeout, retries);

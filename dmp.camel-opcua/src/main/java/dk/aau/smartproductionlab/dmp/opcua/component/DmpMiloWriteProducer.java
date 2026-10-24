@@ -133,7 +133,10 @@ final class DmpMiloWriteProducer extends MiloClientProducer {
 		List<String> result = new java.util.ArrayList<>();
 		for (Object node : nodes) {
 			String text = String.valueOf(node);
-			result.add(OpcUaBrowsePaths.isBrowsePath(text) ? OpcUaBrowsePaths.resolve(client(), text).toParseableString() : text);
+			if (!OpcUaBrowsePaths.isBrowsePath(text)) result.add(text);
+			// The endpoint's own path is resolved once per session; any other once per Read.
+			else if (text.equals(endpoint.getBrowsePath())) result.add(endpoint.node(client()).toParseableString());
+			else result.add(OpcUaBrowsePaths.resolve(client(), text).toParseableString());
 		}
 		return result;
 	}
@@ -168,14 +171,14 @@ final class DmpMiloWriteProducer extends MiloClientProducer {
 		try {
 			Object converted = switch (id.intValue()) {
 				case 1 -> value instanceof Boolean flag ? flag : value;
-				case 2 -> number(value) == null ? value : (byte) Math.toIntExact(range(number(value).longValue(), Byte.MIN_VALUE, Byte.MAX_VALUE));
-				case 3 -> number(value) == null ? value : Unsigned.ubyte(range(number(value).longValue(), 0, 0xFF));
-				case 4 -> number(value) == null ? value : (short) range(number(value).longValue(), Short.MIN_VALUE, Short.MAX_VALUE);
-				case 5 -> number(value) == null ? value : Unsigned.ushort((int) range(number(value).longValue(), 0, 0xFFFF));
-				case 6 -> number(value) == null ? value : Math.toIntExact(number(value).longValue());
-				case 7 -> number(value) == null ? value : Unsigned.uint(range(number(value).longValue(), 0, 0xFFFFFFFFL));
-				case 8 -> number(value) == null ? value : number(value).longValue();
-				case 9 -> number(value) == null ? value : Unsigned.ulong(range(number(value).longValue(), 0, Long.MAX_VALUE));
+				case 2 -> number(value) == null ? value : (byte) range(exactLong(number(value)), Byte.MIN_VALUE, Byte.MAX_VALUE);
+				case 3 -> number(value) == null ? value : Unsigned.ubyte(range(exactLong(number(value)), 0, 0xFF));
+				case 4 -> number(value) == null ? value : (short) range(exactLong(number(value)), Short.MIN_VALUE, Short.MAX_VALUE);
+				case 5 -> number(value) == null ? value : Unsigned.ushort((int) range(exactLong(number(value)), 0, 0xFFFF));
+				case 6 -> number(value) == null ? value : Math.toIntExact(exactLong(number(value)));
+				case 7 -> number(value) == null ? value : Unsigned.uint(range(exactLong(number(value)), 0, 0xFFFFFFFFL));
+				case 8 -> number(value) == null ? value : exactLong(number(value));
+				case 9 -> number(value) == null ? value : Unsigned.ulong(unsigned64(number(value)));
 				case 10 -> number(value) == null ? value : number(value).floatValue();
 				case 11 -> number(value) == null ? value : number(value).doubleValue();
 				case 12 -> String.valueOf(value);
@@ -192,6 +195,31 @@ final class DmpMiloWriteProducer extends MiloClientProducer {
 		if (!(value instanceof Number number)) return null;
 		if ((number instanceof Double || number instanceof Float) && number.doubleValue() != Math.rint(number.doubleValue())) return null;
 		return number;
+	}
+
+	/**
+	 * The number as a long, or ArithmeticException when it is not one: a double beyond the range would saturate
+	 * and a BigInteger would wrap, writing a different value than Lua returned.
+	 */
+	static long exactLong(Number number) {
+		if (number instanceof java.math.BigInteger big) return big.longValueExact();
+		if (number instanceof java.math.BigDecimal decimal) return decimal.toBigIntegerExact().longValueExact();
+		if (number instanceof Double || number instanceof Float) {
+			double value = number.doubleValue();
+			if (!(value >= -0x1p63 && value < 0x1p63)) throw new ArithmeticException("out of range");
+			return (long) value;
+		}
+		return number.longValue();
+	}
+
+	/** The number as an unsigned 64-bit integer (0 to 2^64-1), or ArithmeticException. */
+	static java.math.BigInteger unsigned64(Number number) {
+		java.math.BigInteger value = number instanceof java.math.BigInteger big ? big
+				: number instanceof java.math.BigDecimal decimal ? decimal.toBigIntegerExact()
+				: number instanceof Double || number instanceof Float ? new java.math.BigDecimal(number.doubleValue()).toBigIntegerExact()
+				: java.math.BigInteger.valueOf(number.longValue());
+		if (value.signum() < 0 || value.bitLength() > 64) throw new ArithmeticException("out of range");
+		return value;
 	}
 
 	private static long range(long value, long min, long max) {

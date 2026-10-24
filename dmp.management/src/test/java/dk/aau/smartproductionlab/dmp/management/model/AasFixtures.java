@@ -43,6 +43,33 @@ public final class AasFixtures {
 		return new DefaultSubmodelElementCollection.Builder().idShort(idShort).value(Arrays.asList(children)).build();
 	}
 
+	/**
+	 * {@code endpointMetadata} with the security AID demands of an interface without any: a {@code nosec_sc} in
+	 * its {@code securityDefinitions}, referenced from {@code security} (AID 1.1 §2.25). Metadata that selects a
+	 * scheme already is returned as it is.
+	 */
+	public static SubmodelElementCollection nosec(SubmodelElement endpointMetadata, String interfaceIdShort) {
+		if (Aas.child(endpointMetadata, "security") != null) return (SubmodelElementCollection) endpointMetadata;
+		java.util.List<SubmodelElement> children = new java.util.ArrayList<>(Aas.children(endpointMetadata));
+		children.add(securityList(schemeReference(interfaceIdShort, "nosec_sc")));
+		children.add(collection("securityDefinitions", collection("nosec_sc", property("scheme", "nosec"))));
+		return collection("EndpointMetadata", children.toArray(SubmodelElement[]::new));
+	}
+
+	/** A {@code security} list referencing the given schemes. */
+	public static SubmodelElement securityList(org.eclipse.digitaltwin.aas4j.v3.model.Reference... schemes) {
+		return new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder().idShort("security")
+				.typeValueListElement(org.eclipse.digitaltwin.aas4j.v3.model.AasSubmodelElements.REFERENCE_ELEMENT)
+				.value(Arrays.stream(schemes).map(scheme -> (SubmodelElement) new org.eclipse.digitaltwin.aas4j.v3.model.impl
+						.DefaultReferenceElement.Builder().value(scheme).build()).toList()).build();
+	}
+
+	/** The reference to scheme {@code scheme} of interface {@code interfaceIdShort} in the AID {@code urn:aid}. */
+	public static org.eclipse.digitaltwin.aas4j.v3.model.Reference schemeReference(String interfaceIdShort, String scheme) {
+		return reference("Submodel", "urn:aid", "SubmodelElementCollection", interfaceIdShort, "SubmodelElementCollection",
+				"EndpointMetadata", "SubmodelElementCollection", "securityDefinitions", "SubmodelElementCollection", scheme);
+	}
+
 	public static OperationVariable variable(SubmodelElement value) {
 		return new DefaultOperationVariable.Builder().value(value).build();
 	}

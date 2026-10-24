@@ -5,11 +5,6 @@
  ******************************************************************************/
 package dk.aau.smartproductionlab.dmp.aas.event;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -24,6 +19,7 @@ import java.util.regex.Pattern;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import dk.aau.smartproductionlab.dmp.aas.AasValues;
+import dk.aau.smartproductionlab.dmp.aas.http.AasHttp;
 import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfiguration;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SourceEventAdapter;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
@@ -51,8 +47,8 @@ final class AasPropertyEventProcessor implements Processor {
 
 	private static final Gson GSON = new Gson();
 	private static final Pattern INDEXED_SEGMENT = Pattern.compile("^(.+?)(?:\\[(\\d+)\\])?$");
-	private static final HttpClient HTTP = HttpClient.newBuilder()
-			.connectTimeout(Duration.ofSeconds(5)).build();
+
+	private static final java.time.Duration ENRICHMENT_TIMEOUT = java.time.Duration.ofSeconds(5);
 
 	private final DataSourceConfiguration configuration;
 	private final Set<String> seenEvents = ConcurrentHashMap.newKeySet();
@@ -103,7 +99,7 @@ final class AasPropertyEventProcessor implements Processor {
 			value = propertyValueFromSubmodel(event.get("submodel"), watched, expectedType);
 		}
 		if (value == null) {
-			value = readCurrentValue();
+			value = readCurrentValue(exchange.getContext());
 		}
 		if (value == null) {
 			throw new IllegalStateException("AAS Property event matched but contained no value and enrichment failed");
@@ -241,19 +237,12 @@ final class AasPropertyEventProcessor implements Processor {
 		return null;
 	}
 
-	private JsonElement readCurrentValue() throws Exception {
+	private JsonElement readCurrentValue(org.apache.camel.CamelContext context) throws Exception {
 		Object rawUrl = configuration.getEventFilter().get("readUrl");
 		if (rawUrl == null || String.valueOf(rawUrl).isBlank()) {
 			return null;
 		}
-		HttpRequest request = HttpRequest.newBuilder(URI.create(String.valueOf(rawUrl)))
-				.timeout(Duration.ofSeconds(5)).header("Accept", "application/json").GET().build();
-		HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
-		if (response.statusCode() < 200 || response.statusCode() >= 300) {
-			throw new IllegalStateException("AAS Property enrichment failed with HTTP "
-					+ response.statusCode());
-		}
-		JsonElement body = JsonParser.parseString(response.body());
+		JsonElement body = JsonParser.parseString(AasHttp.of(context).get(String.valueOf(rawUrl), ENRICHMENT_TIMEOUT));
 		return body.isJsonObject() && body.getAsJsonObject().has("value") ? body : null;
 	}
 

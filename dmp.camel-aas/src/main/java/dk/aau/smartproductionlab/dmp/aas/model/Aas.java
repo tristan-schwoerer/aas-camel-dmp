@@ -180,8 +180,9 @@ public final class Aas {
 
 	/**
 	 * An element's structure without its values, at every depth: Property, File and Blob values, Range bounds
-	 * and MultiLanguageProperty texts are dropped (an MLP keeps its languages, which are structure); everything
-	 * else, references and qualifiers included, stays. Two elements that differ only in values have equal
+	 * and MultiLanguageProperty texts are dropped (an MLP keeps its languages, which are structure), and a list
+	 * keeps one item of each distinct structure, since its length is a value; everything else, references and
+	 * qualifiers included, stays. Two elements that differ only in values have equal
 	 * structures.
 	 */
 	public static SubmodelElement withoutValues(SubmodelElement element) {
@@ -203,7 +204,20 @@ public final class Aas {
 				for (com.google.gson.JsonElement text : texts)
 					if (text.isJsonObject()) text.getAsJsonObject().addProperty("text", "");
 		}
-		case "SubmodelElementCollection", "SubmodelElementList" -> each(element.get("value"), Aas::stripValues);
+		case "SubmodelElementCollection" -> each(element.get("value"), Aas::stripValues);
+		case "SubmodelElementList" -> {
+			// How many items a list holds is its value: a sink that appends must not change the structure.
+			if (element.get("value") instanceof com.google.gson.JsonArray items) {
+				java.util.Set<String> shapes = new java.util.LinkedHashSet<>();
+				for (com.google.gson.JsonElement item : items) {
+					stripValues(item);
+					shapes.add(item.toString());
+				}
+				com.google.gson.JsonArray distinct = new com.google.gson.JsonArray();
+				shapes.forEach(shape -> distinct.add(com.google.gson.JsonParser.parseString(shape)));
+				element.add("value", distinct);
+			}
+		}
 		case "Entity" -> each(element.get("statements"), Aas::stripValues);
 		case "AnnotatedRelationshipElement" -> each(element.get("annotations"), Aas::stripValues);
 		case "Operation" -> {

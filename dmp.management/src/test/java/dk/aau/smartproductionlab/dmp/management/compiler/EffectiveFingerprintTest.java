@@ -41,6 +41,23 @@ class EffectiveFingerprintTest {
 		assertFalse(original.sameEffectiveConfiguration(widened), "the Operation's variables shape the call");
 	}
 
+	@Test
+	void aListsLengthIsAValueItsItemsStructureIsNot() {
+		var two=fingerprint(list(property("a", "xs:int", "1"), property("b", "xs:int", "2")), null);
+		var three=fingerprint(list(property("a", "xs:int", "1"), property("b", "xs:int", "2"), property("c", "xs:int", "3")), null);
+		var retyped=fingerprint(list(property("a", "xs:string", "1")), null);
+		assertTrue(two.sameEffectiveConfiguration(three), "a sink appending to the list does not reinstall its mapping");
+		assertFalse(two.sameEffectiveConfiguration(retyped), "the items' valueType is structure");
+	}
+
+	private static SubmodelElement list(org.eclipse.digitaltwin.aas4j.v3.model.Property... items) {
+		// Items of a list have no idShort (AASd-120).
+		for (var item : items) item.setIdShort(null);
+		return new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder().idShort("Items")
+				.typeValueListElement(org.eclipse.digitaltwin.aas4j.v3.model.AasSubmodelElements.PROPERTY)
+				.value(List.of(items)).build();
+	}
+
 	/** A plan whose one Source targets {@code element}, a variable of {@code operation} when it is given. */
 	private static EffectiveFingerprint fingerprint(SubmodelElement element, Operation operation) {
 		var resolved = new AasReferenceResolver.ResolvedElement(submodel("urn:data", "Data"), element, operation,

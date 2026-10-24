@@ -144,10 +144,13 @@ public final class ConnectorConfigurationFactory {
 		public boolean valid() { return desired.valid() && bundle!=null && issues.isEmpty(); }
 	}
 	/** {@code influx} is the InfluxDB TimeSeries segments must name, or {@code null} when none is configured. */
-	public record RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx) {
-		public RuntimeSettings(URI aasRepositoryBaseUri) { this(aasRepositoryBaseUri, null); }
+	/** The DMP's deployment as compilation input: the repository, the InfluxDB, and the credentials AID schemes need. */
+	public record RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx, DmpCredentials credentials) {
+		public RuntimeSettings(URI aasRepositoryBaseUri) { this(aasRepositoryBaseUri, null, null); }
+		public RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx) { this(aasRepositoryBaseUri, influx, null); }
 		public RuntimeSettings {
 			Objects.requireNonNull(aasRepositoryBaseUri,"aasRepositoryBaseUri");
+			if(credentials==null)credentials=DmpCredentials.none();
 			if(aasRepositoryBaseUri.getUserInfo()!=null || aasRepositoryBaseUri.getQuery()!=null
 					|| aasRepositoryBaseUri.getFragment()!=null || aasRepositoryBaseUri.getHost()==null
 					|| !("http".equalsIgnoreCase(aasRepositoryBaseUri.getScheme()) || "https".equalsIgnoreCase(aasRepositoryBaseUri.getScheme()))) {
@@ -388,7 +391,7 @@ public final class ConnectorConfigurationFactory {
 		Map<String,Object> targetOptions=new LinkedHashMap<>();
 		DataSinkConfiguration commandSink=write
 				?propertyWriteSink(mapping.sinks().get(0),mapping,plan,routeId,runtime,targetOptions,issues)
-				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,targetOptions,issues,root+"/Sinks");
+				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,targetOptions,runtime,issues,root+"/Sinks");
 		if(commandSink==null || issues.size()!=issueStart) return;
 		List<DataSourceConfiguration> fanInReads=new ArrayList<>();
 		List<Map<String,Object>> fanInBindings=new ArrayList<>();
@@ -567,7 +570,7 @@ public final class ConnectorConfigurationFactory {
 	}
 
 	private DataSinkConfiguration bridgeCommandSink(MappingPlan mapping,String action,AidTarget target,Plan plan,
-			String routeId,String uniqueId,Map<String,Object> targetOptions,List<Issue> issues,String path) {
+			String routeId,String uniqueId,Map<String,Object> targetOptions,RuntimeSettings runtime,List<Issue> issues,String path) {
 		List<WireModel.ProtocolFamily> families=target.resolved().owner().protocolFamilies();
 		if(families.size()!=1) { issue(issues,mapping,path,"Operation command requires one unambiguous AID binding, found "+families);return null; }
 		DataSchema input=target.resolved().affordance().input().present()?target.resolved().affordance().input().value():null;
@@ -579,10 +582,13 @@ public final class ConnectorConfigurationFactory {
 			if(method==null)return null;
 			URI uri=formUri(target,form,mapping,path,issues);
 			if(uri==null || !httpUri(uri,mapping,path,issues))return null;
-			if(uri.getUserInfo()!=null) { issue(issues,mapping,path+"/forms/href","HTTP operation targets have no credentials field");return null; }
+			AidSecurity.Applied security=security(target,form,uri,runtime,mapping,path,issues);
+			if(security==null)return null;
 			HttpDataSinkConfiguration sink=new HttpDataSinkConfiguration(uniqueId,uri.getScheme(),uri.getHost(),uri.getPath(),effectivePort(uri));
 			sink.setQuery(uri.getQuery());sink.setSinkId(action);sink.setSchema(schemaOptional(input));
-			sink.setHeaders(httpHeaders(form,false,false,mapping,path,issues));
+			if(security.basic())sink.setBasicCredentials(security.username(),security.password());
+			sink.setSecretQuery(security.query());
+			sink.setHeaders(httpHeaders(form,false,security,mapping,path,issues));
 			targetOptions.put("httpMethod",method);targetOptions.put("timeoutSeconds",30);
 			return sink;
 		}
@@ -602,12 +608,13 @@ public final class ConnectorConfigurationFactory {
 		}
 		if(family==WireModel.ProtocolFamily.MQTT) {
 			Form form=mqttForm(target,mapping,path,"sink",true,issues);if(form==null)return null;
-			MqttConnection base=mqttConnection(target,mapping,path,issues);if(base==null)return null;
+			MqttConnection base=mqttConnection(target,form,runtime,mapping,path,issues);if(base==null)return null;
 			String topic=mqttTopic(base,form,mapping,path,issues);if(topic==null)return null;
 			String reply=form.responseTopic().present()?form.responseTopic().value():null;
 			// An action without an output only invokes: the command is published and the call
-			// returns once the broker accepted it (QoS 1/2). An action with an output answers
-			// through MQTT 5 request/reply on its mqv_responseTopic.
+			// returns once the broker accepted it, so it needs QoS 1 or 2 authored (the default is the
+			// WoT MQTT binding's 0, which the broker never acknowledges). An action with an output
+			// answers through MQTT 5 request/reply on its mqv_responseTopic.
 			boolean invokeOnly=reply==null || reply.isBlank();
 			if(invokeOnly && target.resolved().affordance().output().present()) {
 				issue(issues,mapping,path+"/forms/mqv_responseTopic","an MQTT action with an output needs its mqv_responseTopic (MQTT 5 request/reply)");return null;
@@ -616,13 +623,13 @@ public final class ConnectorConfigurationFactory {
 			Integer qos=mqttQos(form,mapping,path,issues);
 			Boolean retained=mqttRetain(form,mapping,path,issues);
 			if(!invokeOnly && replyTopic==null || hasIssue(issues,mapping))return null;
-			if(invokeOnly && qos!=null && qos==0) {
-				issue(issues,mapping,path+"/forms/mqv_qos","an invoke-only MQTT action needs QoS 1 or 2 so the broker acknowledges the command");return null;
+			if(invokeOnly && (qos==null || qos==0)) {
+				issue(issues,mapping,path+"/forms/mqv_qos","an invoke-only MQTT action needs mqv_qos 1 or 2 so the broker acknowledges the command");return null;
 			}
 			long timeoutSeconds=30;
 			MqttV5OperationDataSinkConfiguration sink=new MqttV5OperationDataSinkConfiguration(uniqueId,
 					"tcp://"+base.host()+":"+base.port(),topic,stableMqttClientId(plan,routeId,mapping,action,"operation"),
-					qos==null?2:qos,Boolean.TRUE.equals(retained),replyTopic,timeoutSeconds,base.username(),base.password());
+					qos==null?MQTT_DEFAULT_QOS:qos,Boolean.TRUE.equals(retained),replyTopic,timeoutSeconds,base.username(),base.password());
 			sink.setSinkId(action);sink.setSchema(schemaOptional(input));
 			targetOptions.put("requestReply",!invokeOnly);
 			if(!invokeOnly)targetOptions.put("responseTopic",replyTopic);
@@ -929,8 +936,8 @@ public final class ConnectorConfigurationFactory {
 				for(SubmodelElement child:Aas.children(form.element())) {
 					String name=child.getIdShort()==null?"":child.getIdShort();
 					boolean authored=Aas.value(child)!=null || !Aas.children(child).isEmpty();
-					if("security".equals(name) && !Aas.children(child).isEmpty())issue(issues,mapping,path,"authored form security selection is not represented by connector credentials");
-					else if("subprotocol".equals(name) && authored) {
+					if("security".equals(name))continue; // read with the interface's selection below (AidSecurity)
+					if("subprotocol".equals(name) && authored) {
 						// WoT HTTP binding: a subprotocol observes a property or subscribes an event.
 						String subprotocol=httpSubprotocol(form);
 						if(family!=WireModel.ProtocolFamily.HTTP && family!=WireModel.ProtocolFamily.IOLINK)
@@ -949,6 +956,10 @@ public final class ConnectorConfigurationFactory {
 						issue(issues,mapping,path+"/forms/"+name,"unknown consumed form option");
 				}
 				for(String term:form.bindingTerms().keySet())if(!terms.contains(term))issue(issues,mapping,path+"/forms/"+term,"authored protocol option is not represented by this connector");
+				// The schemes the form must satisfy exist and the DMP applies them to this protocol (PLAN H4).
+				List<AidSecurity.Problem> security=new ArrayList<>();
+				AidSecurity.required(target.resolved().owner(),form,target.resolved().submodelId(),family,security);
+				for(AidSecurity.Problem problem:security)issue(issues,mapping,path+problem.path(),problem.message());
 				for(String operation:form.operations())
 					if(!AidForms.KNOWN.contains(operation))issue(issues,mapping,path+"/forms/op","unknown WoT operation type "+operation);
 				Set<String> operations=AidForms.operations(affordance,form);
@@ -1010,11 +1021,6 @@ public final class ConnectorConfigurationFactory {
 					if("event".equals(kind) && family!=WireModel.ProtocolFamily.OPCUA)
 						issue(issues,mapping,path,"events of this protocol are not consumed by the DMP");
 				}
-			}
-			if(target.resolved().owner().endpointMetadata().value()!=null) {
-				for(SubmodelElement child:Aas.children(target.resolved().owner().endpointMetadata().value()))
-					if("security".equals(child.getIdShort()) && !Aas.children(child).isEmpty())
-						issue(issues,mapping,path,"authored endpoint security selection is not represented by connector credentials");
 			}
 		}
 	}
@@ -1134,7 +1140,7 @@ public final class ConnectorConfigurationFactory {
 		}
 		List<WireModel.ProtocolFamily> families=target.resolved().owner().protocolFamilies();
 		if (families.equals(List.of(WireModel.ProtocolFamily.MQTT))) {
-			return mqttSource(endpoint, mapping, position, target, plan, routeId, issues);
+			return mqttSource(endpoint, mapping, position, target, plan, routeId, runtime, issues);
 		}
 		if (families.equals(List.of(WireModel.ProtocolFamily.OPCUA))) {
 			return opcuaSource(endpoint,mapping,position,target,false,issues);
@@ -1159,33 +1165,29 @@ public final class ConnectorConfigurationFactory {
 		URI uri = formUri(target,form, mapping, path, issues);
 		if (uri == null) return null;
 		if (!httpUri(uri, mapping, path, issues)) return null;
-		String username = uri.getUserInfo() == null ? null : uri.getUserInfo().split(":", 2)[0];
-		String[] credentials = uri.getUserInfo() == null ? new String[0] : uri.getUserInfo().split(":", 2);
-		if (credentials.length == 1) {
-			issue(issues, mapping, path + "/forms/href", "HTTP basic authentication requires both authored username and password");
-			return null;
-		}
-		String password = credentials.length == 2 ? credentials[1] : null;
-		URI credentialFreeUri;
-		try { credentialFreeUri = new URI(uri.getScheme(), null, uri.getHost(), uri.getPort(), uri.getPath(), uri.getQuery(), uri.getFragment()); }
-		catch (java.net.URISyntaxException impossible) { throw new IllegalArgumentException("invalid projected endpoint URI", impossible); }
+		AidSecurity.Applied security = security(target, form, uri, runtime, mapping, path, issues);
+		if (security == null) return null;
+		String username = security.username();
+		String password = security.password();
 		String subprotocol = httpSubprotocol(form);
 		if (subprotocol != null) {
 			// Observed (property) or subscribed (event) through the WoT HTTP binding's subprotocol.
 			HttpObserveDataSourceConfiguration observed = new HttpObserveDataSourceConfiguration(entityId(mapping, "source", position),
-					credentialFreeUri.toString(), effectivePort(uri), subprotocol,
+					uri.toString(), effectivePort(uri), subprotocol,
 					form.contentType().present() && form.contentType().value() != null ? form.contentType().value() : "application/json",
 					username, password);
 			observed.setSourceId(endpoint.id());
-			observed.setHeaders(httpHeaders(form, true, username != null, mapping, path, issues));
+			observed.setSecretQuery(security.query());
+			observed.setHeaders(httpHeaders(form, true, security, mapping, path, issues));
 			observed.setSchema(schemaForAidTarget(target,mapping,path,issues));
 			setValuePath(observed,target);
 			return observed;
 		}
 		HttpPollingDataSourceConfiguration result = new HttpPollingDataSourceConfiguration(
-				entityId(mapping, "source", position), credentialFreeUri.toString(), effectivePort(uri), username, password);
+				entityId(mapping, "source", position), uri.toString(), effectivePort(uri), username, password);
 		result.setSourceId(endpoint.id());
-		result.setHeaders(httpHeaders(form, false, username != null, mapping, path, issues));
+		result.setSecretQuery(security.query());
+		result.setHeaders(httpHeaders(form, false, security, mapping, path, issues));
 		result.setSchema(schemaForAidTarget(target,mapping,path,issues));
 		result.setDelivery("sync");
 		setValuePath(result,target);
@@ -1241,7 +1243,7 @@ public final class ConnectorConfigurationFactory {
 		}
 		List<WireModel.ProtocolFamily> families=target.resolved().owner().protocolFamilies();
 		if (families.equals(List.of(WireModel.ProtocolFamily.MQTT))) {
-			return mqttSink(endpoint, mapping, position, target, plan, routeId, issues);
+			return mqttSink(endpoint, mapping, position, target, plan, routeId, runtime, issues);
 		}
 		if (families.equals(List.of(WireModel.ProtocolFamily.OPCUA))) {
 			return opcuaSink(endpoint,mapping,position,target,issues);
@@ -1267,15 +1269,15 @@ public final class ConnectorConfigurationFactory {
 		URI uri = formUri(target,form, mapping, path, issues);
 		if (uri == null) return null;
 		if (!httpUri(uri, mapping, path, issues)) return null;
-		if (uri.getUserInfo() != null) {
-			issue(issues, mapping, path + "/forms/href", "HTTP sink configuration has no auth fields; refusing to discard authored credentials");
-			return null;
-		}
+		AidSecurity.Applied security = security(target, form, uri, runtime, mapping, path, issues);
+		if (security == null) return null;
 		HttpDataSinkConfiguration result = new HttpDataSinkConfiguration(entityId(mapping, "sink", position),
 				uri.getScheme(), uri.getHost(), uri.getPath(), effectivePort(uri));
 		result.setQuery(uri.getQuery());
 		result.setMethod(method);
-		result.setHeaders(httpHeaders(form, false, false, mapping, path, issues));
+		if (security.basic()) result.setBasicCredentials(security.username(), security.password());
+		result.setSecretQuery(security.query());
+		result.setHeaders(httpHeaders(form, false, security, mapping, path, issues));
 		result.setSinkId(endpoint.id());
 		result.setSchema(schemaForAidTarget(target,mapping,path,issues));
 		setValuePath(result,target);
@@ -1348,8 +1350,7 @@ public final class ConnectorConfigurationFactory {
 			// Without a positive PollingInterval (none, or 0) a Property follows the repository's change events.
 			String idShortPath=AasReferenceResolver.idShortPath(Aas.keys(endpoint.reference()));
 			AasEventDataSourceConfiguration source=new AasEventDataSourceConfiguration(entityId(mapping,"source",position),
-					target.resolved().submodel().getId(),idShortPath,submodelEndpoint+"/submodel-elements/"
-					+java.net.URLEncoder.encode(idShortPath,StandardCharsets.UTF_8).replace("+","%20"));
+					target.resolved().submodel().getId(),idShortPath,dk.aau.smartproductionlab.dmp.aas.http.AasHttp.elementUrl(submodelEndpoint,idShortPath));
 			source.setSourceId(endpoint.id());
 			source.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
 			return hasIssue(issues,mapping)?null:source;
@@ -1369,6 +1370,12 @@ public final class ConnectorConfigurationFactory {
 			DirectTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		if(runtime==null) { issue(issues,mapping,path,"AAS sink compilation requires explicit repository runtime settings");return null; }
+		String elementType=Aas.modelType(target.resolved().element());
+		// SPEC §5.3: a Property or a collection is written; a list's $value write is broken in BaSyx (it keeps
+		// the length and reorders the items), so a list is written item by item (Items[0]).
+		if(!"Property".equals(elementType) && !"SubmodelElementCollection".equals(elementType)) {
+			issue(issues,mapping,path,"an AAS sink must be a Property or a SubmodelElementCollection, not a "+elementType);return null;
+		}
 		String elementPath=aasElementPath(endpoint,mapping,path,issues);
 		if(elementPath==null)return null;
 		String submodelEndpoint=submodelEndpoint(target.resolved().submodel().getId(),runtime,mapping,path,issues);
@@ -1378,6 +1385,7 @@ public final class ConnectorConfigurationFactory {
 		sink.setSinkId(endpoint.id());
 		sink.setSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));
 		sink.setValuePath(endpoint.id());
+		sink.setElementType(elementType);
 		return hasIssue(issues,mapping)?null:sink;
 	}
 
@@ -1618,6 +1626,43 @@ public final class ConnectorConfigurationFactory {
 	 * Headers the connector manages are rejected, so is {@code Accept} on an observed form (the subprotocol needs
 	 * its own) and {@code Authorization} next to credentials in the href. Empty when absent; null after an issue.
 	 */
+	/**
+	 * What the form's security selection makes the connector send to {@code target}: the schemes from the AID,
+	 * the credentials from the DMP's deployment (AidSecurity, PLAN H4). Null after an issue. Credentials in the
+	 * URI's user information are refused: they would be secrets in the AAS.
+	 */
+	private static AidSecurity.Applied security(AidTarget target,Form form,URI uri,RuntimeSettings runtime,
+			MappingPlan mapping,String path,List<Issue> issues) {
+		if(uri.getRawUserInfo()!=null) {
+			issue(issues,mapping,path+"/forms/href","credentials do not belong in the AID: the DMP holds them (DMP_CREDENTIALS_FILE), "
+					+ "the AID names the scheme in securityDefinitions");
+			return null;
+		}
+		WireModel.ProtocolFamily family=target.resolved().owner().protocolFamilies().get(0);
+		List<AidSecurity.Problem> problems=new ArrayList<>();
+		List<AidSecurity.Scheme> required=AidSecurity.required(target.resolved().owner(),form,target.resolved().submodelId(),family,problems);
+		AidSecurity.Applied applied=required==null?null:AidSecurity.apply(required,uri,
+				runtime==null?DmpCredentials.none():runtime.credentials(),problems);
+		for(AidSecurity.Problem problem:problems)issue(issues,mapping,path+problem.path(),problem.message());
+		return problems.isEmpty()?applied:null;
+	}
+
+	/** The form's static headers with the secret ones of its security scheme; null after an issue. */
+	private static Map<String,String> httpHeaders(Form form,boolean observed,AidSecurity.Applied security,MappingPlan mapping,
+			String path,List<Issue> issues) {
+		boolean authorization=security.basic() || security.headers().keySet().stream().anyMatch("authorization"::equalsIgnoreCase);
+		Map<String,String> headers=httpHeaders(form,observed,authorization,mapping,path,issues);
+		if(headers==null)return null;
+		for(var secret:security.headers().entrySet()) {
+			if(headers.keySet().stream().anyMatch(secret.getKey()::equalsIgnoreCase)) {
+				issue(issues,mapping,path+"/forms/htv_headers","HTTP header "+secret.getKey()+" is also set by the security scheme");return null;
+			}
+			headers.put(secret.getKey(),secret.getValue());
+		}
+		return headers;
+	}
+
+
 	private static Map<String,String> httpHeaders(Form form, boolean observed, boolean credentials, MappingPlan mapping,
 			String path, List<Issue> issues) {
 		SubmodelElement list=Aas.child(form.element(),"htv_headers");
@@ -1691,7 +1736,9 @@ public final class ConnectorConfigurationFactory {
 
 	private record MqttConnection(String host,int port,String base,String username,String password) { }
 
-	private static MqttConnection mqttConnection(AidTarget target,MappingPlan mapping,String path,List<Issue> issues) {
+	/** The broker of the interface's base, with the credentials the form's security scheme asks for. */
+	private static MqttConnection mqttConnection(AidTarget target,Form form,RuntimeSettings runtime,MappingPlan mapping,
+			String path,List<Issue> issues) {
 		WireModel.Presence<SubmodelElement> metadata=target.resolved().owner().endpointMetadata();
 		String base=metadata.present() && metadata.value()!=null ? elementString(metadata.value(),"base") : null;
 		if(base==null || base.isBlank()) { issue(issues,mapping,path+"/EndpointMetadata/base","MQTT broker base URI is required"); return null; }
@@ -1704,15 +1751,9 @@ public final class ConnectorConfigurationFactory {
 			issue(issues,mapping,path+"/EndpointMetadata/base","MQTT requires an mqtt://host:port base without query or fragment");
 			return null;
 		}
-		String username=null,password=null;
-		if(uri.getUserInfo()!=null) {
-			int separator=uri.getUserInfo().indexOf(':');
-			if(separator<1 || separator==uri.getUserInfo().length()-1) {
-				issue(issues,mapping,path+"/EndpointMetadata/base","MQTT userinfo must contain a username and password"); return null;
-			}
-			username=uri.getUserInfo().substring(0,separator); password=uri.getUserInfo().substring(separator+1);
-		}
-		return new MqttConnection(uri.getHost(),uri.getPort(),base,username,password);
+		AidSecurity.Applied security=security(target,form,uri,runtime,mapping,path+"/EndpointMetadata/base",issues);
+		if(security==null)return null;
+		return new MqttConnection(uri.getHost(),uri.getPort(),base,security.username(),security.password());
 	}
 
 	private static String mqttTopic(MqttConnection base,Form form,MappingPlan mapping,String path,List<Issue> issues) {
@@ -1763,6 +1804,9 @@ public final class ConnectorConfigurationFactory {
 		return form.mqttTerms().get(name);
 	}
 
+	/** Without {@code mqv_qos}, the WoT MQTT binding's default QoS 0 (decided 2026-10-24); camel-paho's is 2. */
+	static final int MQTT_DEFAULT_QOS=0;
+
 	private static Integer mqttQos(Form form,MappingPlan mapping,String path,List<Issue> issues) {
 		String value=mqttTerm(form,"mqv_qos");
 		if(value==null)return null;
@@ -1787,12 +1831,12 @@ public final class ConnectorConfigurationFactory {
 	}
 
 	private static DataSourceConfiguration mqttSource(EndpointPlan endpoint,MappingPlan mapping,int position,
-			AidTarget target,Plan plan,String routeId,List<Issue> issues) {
+			AidTarget target,Plan plan,String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sources",position);
 		Form form=mqttForm(target,mapping,path,"source",issues);
 		if(form==null)return null;
 		if(hasMqttReplyTerms(form)) { issue(issues,mapping,path+"/forms","MQTT request/reply sources require an Operation route"); return null; }
-		MqttConnection connection=mqttConnection(target,mapping,path,issues);
+		MqttConnection connection=mqttConnection(target,form,runtime,mapping,path,issues);
 		String topic=connection==null?null:mqttTopic(connection,form,mapping,path,issues);
 		Integer qos=mqttQos(form,mapping,path,issues);
 		if(connection==null || topic==null || hasIssue(issues,mapping))return null;
@@ -1801,7 +1845,7 @@ public final class ConnectorConfigurationFactory {
 				topic,connection.username()==null?null:new BasicCredential(connection.username(),connection.password()));
 		source.setSourceId(endpoint.id()); source.setSchema(schemaForAidTarget(target,mapping,path,issues));
 		setValuePath(source,target);
-		if(qos!=null)source.setQos(qos);
+		source.setQos(qos==null?MQTT_DEFAULT_QOS:qos);
 		if(endpoint.pollingInterval().present()) {
 			OptionalLong interval=endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues);
 			if(interval.isPresent()) { source.setDelivery("sync"); source.setPollingIntervalMs(interval.getAsLong()); }
@@ -1810,12 +1854,12 @@ public final class ConnectorConfigurationFactory {
 	}
 
 	private static DataSinkConfiguration mqttSink(EndpointPlan endpoint,MappingPlan mapping,int position,
-			AidTarget target,Plan plan,String routeId,List<Issue> issues) {
+			AidTarget target,Plan plan,String routeId,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
 		Form form=mqttForm(target,mapping,path,"sink",issues); if(form==null)return null;
 		if("action".equalsIgnoreCase(target.resolved().affordance().kind())) { issue(issues,mapping,path,"MQTT InvokeAction needs ProtocolBridge command compilation"); return null; }
 		if(hasMqttReplyTerms(form)) { issue(issues,mapping,path+"/forms","MQTT request/reply sink needs an Operation route"); return null; }
-		MqttConnection connection=mqttConnection(target,mapping,path,issues);
+		MqttConnection connection=mqttConnection(target,form,runtime,mapping,path,issues);
 		String topic=connection==null?null:mqttTopic(connection,form,mapping,path,issues);
 		Integer qos=mqttQos(form,mapping,path,issues); Boolean retain=mqttRetain(form,mapping,path,issues);
 		if(connection==null || topic==null || hasIssue(issues,mapping))return null;
@@ -1824,7 +1868,7 @@ public final class ConnectorConfigurationFactory {
 				connection.username()==null?"":connection.username(),connection.password()==null?"":connection.password());
 		sink.setSinkId(endpoint.id()); sink.setSchema(schemaForAidTarget(target,mapping,path,issues));
 		setValuePath(sink,target);
-		if(qos!=null)sink.setQos(qos); if(retain!=null)sink.setRetained(retain);
+		sink.setQos(qos==null?MQTT_DEFAULT_QOS:qos); if(retain!=null)sink.setRetained(retain);
 		return sink;
 	}
 
@@ -2122,13 +2166,12 @@ public final class ConnectorConfigurationFactory {
 			if(uri.getRawFragment()!=null || "opc.tcp".equals(requiredScheme) && uri.getRawQuery()!=null) {
 				issue(issues,mapping,path+"/EndpointMetadata/base","endpoint query/fragment options are not represented by this connector");return null;
 			}
-			String username=null,password=null;
-			if(uri.getUserInfo()!=null) {
-				int sep=uri.getUserInfo().indexOf(':');
-				if(sep<1 || sep==uri.getUserInfo().length()-1) { issue(issues,mapping,path+"/EndpointMetadata/base","endpoint credentials require username and password");return null; }
-				username=uri.getUserInfo().substring(0,sep);password=uri.getUserInfo().substring(sep+1);
+			if(uri.getRawUserInfo()!=null) {
+				// OPC UA users come with opcua_authentication_sc, from the DMP's credentials (PLAN H4, not applied yet).
+				issue(issues,mapping,path+"/EndpointMetadata/base","credentials do not belong in the AID: the DMP holds them, "
+						+ "the AID names the scheme in securityDefinitions");return null;
 			}
-			return new ProtocolBase(uri.getHost(),uri.getPort(),uri.getPath()==null?"":uri.getPath().replaceAll("^/+|/+$",""),username,password,uri);
+			return new ProtocolBase(uri.getHost(),uri.getPort(),uri.getPath()==null?"":uri.getPath().replaceAll("^/+|/+$",""),null,null,uri);
 		} catch(IllegalArgumentException malformed) {
 			issue(issues,mapping,path+"/EndpointMetadata/base","endpoint base URI is malformed");return null;
 		}
@@ -2155,7 +2198,7 @@ public final class ConnectorConfigurationFactory {
 		String browse=formTerm(form,"uav_browsePath");
 		if(browse!=null && !browse.isBlank()) {
 			String trimmed=browse.trim();
-			if(!trimmed.startsWith("/") || trimmed.length()<2 || trimmed.contains("//") || trimmed.contains(")")) {
+			if(!trimmed.startsWith("/") || trimmed.length()<2 || trimmed.contains("//")) {
 				issue(issues,mapping,path+"/forms/uav_browsePath","uav_browsePath is an absolute path from the Root node, e.g. /Root/Objects/2:Machine");return null;
 			}
 			return trimmed;

@@ -34,38 +34,45 @@ import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSourceConfigu
 public class HttpPollingDataSourceConfiguration extends DataSourceConfiguration
 		implements dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource {
 	public HttpPollingDataSourceConfiguration() {}
-	private	String authUsername;
+	private String authUsername;
 	private String authPassword;
-	/** The form's static htv_headers; bound in the registry while the bundle lives. */
-	private StaticHttpHeaders headers;
+	/** Retries off, timeouts, the form's static htv_headers and Basic credentials; bound while the bundle lives. */
+	private HttpClientOptions options = new HttpClientOptions(null, null, null);
+	private java.util.Map<String, String> secretQuery = java.util.Map.of();
+
+	private java.util.Map<String, String> headers;
+
+	/** The secret query parameters of the AID's security scheme (an API key in the query); bound, never in the URI. */
+	public void setSecretQuery(java.util.Map<String, String> secretQuery) {
+		this.secretQuery = secretQuery == null ? java.util.Map.of() : java.util.Map.copyOf(secretQuery);
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, this.secretQuery);
+	}
 
 	public void setHeaders(java.util.Map<String, String> headers) {
-		this.headers = headers == null || headers.isEmpty() ? null : new StaticHttpHeaders(headers);
+		this.headers = headers;
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, secretQuery);
 	}
 
 	@Override
 	public void bind(org.apache.camel.CamelContext context) {
-		if (headers != null) headers.bind(context);
+		options.bind(context);
 	}
 
 	@Override
 	public void close() {
-		if (headers != null) headers.close();
+		options.close();
 	}
-	
+
 	public HttpPollingDataSourceConfiguration(String uniqueId, String serverUrl, int serverPort, String authUsername, String authPassword) {
 		super(uniqueId, serverUrl, serverPort);
 		this.authUsername = authUsername;
 		this.authPassword = authPassword;
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, secretQuery);
 	}
 
 	@Override
 	public String getConnectionURI() {
 		String uri = getServerUrl();
-		if(!(authUsername == null || authPassword == null)) {
-			uri = uri + (uri.contains("?")? "&" : "?") + "authUsername=" + authUsername + "&authPassword=" + authPassword+"&authMethod=Basic&authenticationPreemptive=true";
-		}
-		if (headers != null) uri = uri + (uri.contains("?") ? "&" : "?") + headers.clientConfigurerOption();
-		return uri;
+		return uri + (uri.contains("?") ? "&" : "?") + options.endpointOptions();
 	}
 }

@@ -14,18 +14,16 @@ final class DmpHttpObserveEndpoint extends DefaultEndpoint implements org.apache
 	private final DmpHttpObserveComponent.Subprotocol subprotocol;
 	private final URI url;
 	private final String contentType;
-	private final String username;
-	private final String password;
 	private final java.util.Map<String, String> headers;
+	private java.time.Duration idleTimeout = DmpHttpObserveConsumer.SSE_IDLE_TIMEOUT;
+	private java.util.Map<String, String> secretQuery = java.util.Map.of();
 
 	DmpHttpObserveEndpoint(String uri, DmpHttpObserveComponent component, DmpHttpObserveComponent.Subprotocol subprotocol,
-			URI url, String contentType, String username, String password, java.util.Map<String, String> headers) {
+			URI url, String contentType, java.util.Map<String, String> headers) {
 		super(uri, component);
 		this.subprotocol = subprotocol;
 		this.url = url;
 		this.contentType = contentType;
-		this.username = username;
-		this.password = password;
 		this.headers = java.util.Map.copyOf(headers);
 	}
 
@@ -45,7 +43,10 @@ final class DmpHttpObserveEndpoint extends DefaultEndpoint implements org.apache
 	DmpHttpObserveComponent.Subprotocol subprotocol() { return subprotocol; }
 	URI url() { return url; }
 	String contentType() { return contentType; }
-	String username() { return username; }
-	String password() { return password; }
 	java.util.Map<String, String> headers() { return headers; }
+	java.time.Duration idleTimeout() { return idleTimeout; }
+	/** The URL a request goes to: {@link #url()} with the secret query parameters (never logged). */
+	URI requestUrl() { return dk.aau.smartproductionlab.dmp.http.configuration.HttpClientOptions.withQuery(url, secretQuery); }
+	void secretQuery(java.util.Map<String, String> query) { this.secretQuery = java.util.Map.copyOf(query); }
+	void idleTimeout(java.time.Duration idleTimeout) { this.idleTimeout = idleTimeout; }
 }

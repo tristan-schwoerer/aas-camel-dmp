@@ -39,7 +39,21 @@ class MqttV5TransportDeadlineTest {
 
 	@Test
 	void missingSubsequentReadinessSubackDoesNotReplayThePreviousCommand() throws Exception {
-		assertSubscriptionDeadline(3, true);
+		// A warm call confirms nothing again; after a reply reconnect the confirmation is due once more.
+		try (var fixture = new Fixture(1)) {
+			fixture.producer.process(fixture.request("warm"));
+			fixture.broker.withholdSubscription = 4;
+			fixture.broker.subscriber.close();
+			assertTrue(fixture.broker.thirdSubscription.await(4, TimeUnit.SECONDS), "upstream resubscribes after the reconnect");
+			var request = fixture.executor.submit(() -> assertThrows(ConnectorInvocationException.class,
+					() -> fixture.producer.process(fixture.request("withheld"))));
+			assertTrue(fixture.broker.withheld.await(3, TimeUnit.SECONDS));
+			assertEquals("MQTT_REQUEST_TIMEOUT", request.get(4, TimeUnit.SECONDS).getConnectorCode());
+			fixture.producer.stop();
+			assertEquals(1, fixture.broker.publications.get(), "the previous command is not replayed");
+			assertEquals(4, fixture.broker.subscriptions.get());
+			fixture.assertRetired();
+		}
 	}
 
 	private void assertSubscriptionDeadline(int withheldSubscription, boolean warm) throws Exception {
@@ -107,6 +121,46 @@ class MqttV5TransportDeadlineTest {
 			assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 2_800);
 			assertEquals(2, fixture.broker.subscriptions.get());
 			assertEquals(1, fixture.broker.publications.get());
+		}
+	}
+
+	@Test
+	void thirtyTwoConcurrentCallersEachGetTheirOwnReply() throws Exception {
+		try (var fixture = new Fixture(1)) {
+			var callers = Executors.newFixedThreadPool(32);
+			try {
+				var calls = new java.util.ArrayList<java.util.concurrent.Future<Object>>();
+				var start = new CountDownLatch(1);
+				for (int caller = 0; caller < 32; caller++) {
+					String label = "caller-" + caller;
+					calls.add(callers.submit(() -> {
+						start.await();
+						var request = fixture.request(label);
+						fixture.producer.process(request);
+						return request.getMessage().getBody();
+					}));
+				}
+				start.countDown();
+				for (var call : calls) assertEquals("{\"State\":\"SUCCESS\"}", call.get(10, TimeUnit.SECONDS));
+			} finally {
+				callers.shutdownNow();
+			}
+			assertEquals(32, fixture.broker.publications.get(), "each call is published once");
+			assertEquals(2, fixture.broker.subscriptions.get(), "concurrent calls share one confirmed subscription");
+			assertEquals(0, fixture.endpoint.replies.pendingCount(), "every reply was matched and released");
+		}
+	}
+
+	@Test
+	void theReplySubscriptionIsConfirmedOncePerConnectionNotPerCall() throws Exception {
+		try (var fixture = new Fixture(1)) {
+			for (int call = 0; call < 3; call++) {
+				var request = fixture.request("call-" + call);
+				fixture.producer.process(request);
+				assertEquals("{\"State\":\"SUCCESS\"}", request.getMessage().getBody());
+			}
+			assertEquals(3, fixture.broker.publications.get());
+			assertEquals(2, fixture.broker.subscriptions.get(), "upstream's SUBSCRIBE and one confirmation, not one per call");
 		}
 	}
 

@@ -255,8 +255,29 @@ Terms the DMP cannot honour reject the AID: `anyOf`, `allOf`, `not`,
 accepted; the regular reply is validated against the affordance's schema.
 
 An `op` value outside the WoT operation types, an unrepresented form term
-(e.g. subprotocol `websub`, a form `security` selection) or a
-binding term of another protocol blocks the mapping.
+(e.g. subprotocol `websub`) or a binding term of another protocol blocks the
+mapping.
+
+**Security** (AID 1.1 §2.24–2.27). The AID says what an interface requires;
+the DMP holds the credentials. `EndpointMetadata/security` (or a form's
+`security`, which replaces it for that form) references schemes in the
+interface's `securityDefinitions` (`Submodel / interface / EndpointMetadata /
+securityDefinitions / scheme`), all of which must be satisfied; `combo_sc`
+adds all of its `allOf`, or the first of its `oneOf` the DMP applies. An
+empty selection blocks the mapping: AID requires at least one entry, a
+`nosec_sc` for an interface without security. Applied: `nosec` for every
+protocol; `basic` for HTTP (an `Authorization` header) and MQTT (CONNECT user
+name and password); `bearer` and `apikey` for HTTP, in a header, the query or
+a cookie (`name`, `in`; `in` defaults to `header`, for `apikey` to `query`).
+Every other scheme (digest, oauth2, psk, auto, the OPC UA schemes) blocks the
+mapping by name. Secrets never come from the AAS: credentials in an href's or
+base's user information block the mapping, and the DMP reads its credentials
+from `DMP_CREDENTIALS_FILE` (JSON; once at start), keyed by endpoint
+(`scheme://host:port`) or, for a secret one device has, by scheme reference
+(`<AID id>#<interface>/<scheme idShort>`). A scheme without a matching
+credential blocks the mapping. Secret headers and query parameters are bound
+in the Camel registry and never written into endpoint URIs or logs. The SNMP
+community stays in the href (§5.2 SNMP), where the AID SNMP binding puts it.
 
 **HTTP.** The method is `htv_methodName` (mandatory in AID), else the WoT
 default: GET to read, PUT to write, POST to invoke. A read is a GET poll; a
@@ -265,10 +286,11 @@ write is PUT, POST or PATCH. Bodies are JSON. A form's static `htv_headers`
 polls, observations, writes and invocations. Names must be HTTP tokens and
 unique, values one line; headers the connector sets (`Content-Type`,
 `Content-Length`, `Host`, `Connection`, `Transfer-Encoding`, …) are rejected, so
-is `Accept` on an observed form and `Authorization` next to credentials in the
-href. Header values may be secrets: they are bound in the Camel registry and
-never appear in endpoint URIs or the exported fingerprint. HTTP requests are
-not retried automatically.
+is `Accept` on an observed form, `Authorization` when a security scheme fills
+it, and any header a security scheme sets. Header values may be secrets: they
+are bound in the Camel registry and never appear in endpoint URIs or the
+exported fingerprint. HTTP requests are not retried automatically, and give up
+after 30 s (connect and response).
 
 A form with a `subprotocol` (AID 2.24.1, WoT HTTP binding) observes: it must
 serve `observeproperty` (a property, e.g. `observable` true) or
@@ -280,7 +302,11 @@ serve `observeproperty` (a property, e.g. `observable` true) or
   at once (at most every 100 ms; a request held for 5 minutes is reissued).
 - `sse`: a GET with `Accept: text/event-stream`; the `data` of each event is
   one value. A closed stream is reopened after the server's `retry` (3 s by
-  default) with `Last-Event-ID`.
+  default) with `Last-Event-ID`; so is a stream silent for 5 minutes (no
+  event, no comment), whose peer may be gone.
+
+Observation uses HTTP/1.1; a long poll that cannot connect backs off like a
+failed request.
 
 Values are decoded as the form's `contentType` (JSON). A failed request or
 broken stream is retried with backoff (1 s doubling to 30 s); values in the
@@ -294,9 +320,12 @@ binding): `subscribe` to read and observe, `publish` to write and invoke; a
 form whose packet contradicts the mapping role blocks it. An MQTT property is
 read by subscription, so a source needs it observable or retained
 (`mqv_retain`); a PollingInterval other than 0 on it is rejected. `mqv_qos` and
-`mqv_retain` apply to the subscription and the publication. An action with
+`mqv_retain` apply to the subscription and the publication; without
+`mqv_qos` the QoS is 0, the binding's default. An action with
 `mqv_responseTopic` is an MQTT 5 request/reply (§7.1); an action without it
-and without an `output` only invokes. Payloads are JSON.
+and without an `output` only invokes. Payloads are JSON whatever the schema's
+type (`42`, `true`, `"READY"`); a `string` source also takes the bare text a
+device publishes.
 
 Modbus follows AID 1.2 and the WoT Modbus binding; the compiler translates a
 form into a PLC4X tag:
@@ -348,7 +377,11 @@ OPC UA follows OPC 10101 (the OPC UA binding for WoT):
   references. AID makes `href` mandatory, so such a form carries an href
   without an id (e.g. `/`). `dmp-milo-client:` resolves the path with
   TranslateBrowsePathsToNodeIds once per client session (option
-  `browsePath`).
+  `browsePath`), for subscriptions, Reads, Writes and Calls.
+- Security is `nosec` (mode and policy None, anonymous) until the DMP opens
+  its own sessions (PLAN H4); the connector already binds a session user in
+  the Camel registry, and endpoints of one server and user share a session.
+  Every request times out after 30 s.
 - An observed variable is a monitored item in a subscription of its own; the
   source's `PollingInterval` sets its sampling and publishing interval (the
   IDTA AIMC text calls the interval ignored for asynchronous sources; for OPC
@@ -395,7 +428,8 @@ SNMP follows the AID 1.2 SNMP binding (Annex E.1), v1 and v2c:
 - The resolved `href` is `snmp://{address}:{port}/{oid}` (port 161 by
   default; the base `snmp://{address}:{port}/` and the OID as a relative href
   resolve to the same). The community is the URI's user information
-  (`snmp://community@host`), else `public`.
+  (`snmp://community@host`), else `public`; it is bound in the Camel registry
+  like any credential.
 - `snmpv_pduType` is `snmpv:GetRequestPDU` to read (the default of
   readproperty) and `snmpv:SetRequestPDU` to write (writeproperty); a PDU type
   that contradicts the mapping role blocks it. `snmpv_version` is
@@ -405,7 +439,8 @@ SNMP follows the AID 1.2 SNMP binding (Annex E.1), v1 and v2c:
   GET. An error status, a missing object or no answer within 1.5 s (one retry)
   fails the read or write.
 - Values: INTEGER, Counter32/64, Gauge32 and TimeTicks are numbers, an OCTET
-  STRING its text when printable and hex otherwise, an IpAddress and an OBJECT
+  STRING its text when it is UTF-8 without control characters and hex
+  otherwise (text is written as UTF-8), an IpAddress and an OBJECT
   IDENTIFIER their dotted text. Actions, events and traps are not supported.
 
 Event affordances of every binding carry the WoT EventAffordance terms
@@ -421,13 +456,24 @@ no such payloads.
 | Property Source with a polling interval (§5.1) | Read (`GET` of the element) |
 | Property Source without one | Observe through the value feed (§4.3) |
 | Collection/list Source | Read; requires a polling interval |
-| Property/collection Sink | Write (`PATCH …/$value`) |
+| Property/collection Sink | Write (`PATCH …/$value`, ValueOnly) |
+| List Sink | Rejected; its items are Sinks (`Items[0]`) |
 | Operation as Sink | Rejected (no chained actions) |
 | TimeSeries LinkedSegment as Sink | One InfluxDB point per evaluation (§5.5) |
 | TimeSeries LinkedSegment as Source | Read of the latest row; requires an explicit interval (§5.5) |
 
 An element below a submodel is addressed by its idShortPath: collection
-members joined by `.`, list items by index (`Location.x`, `Items[0]`).
+members joined by `.`, list items by index (`Location.x`, `Items[0]`), sent
+percent-encoded as one path segment (`Items%5B0%5D`). Every data-plane request
+(read, write, value-feed enrichment) carries the repository authorization that
+discovery uses.
+
+A write is the element's ValueOnly form (AAS Part 2) with each Property value
+as its lexical text in a JSON string, at every depth, because BaSyx 2.0
+answers a JSON number or boolean with a 500. A collection is written whole
+(BaSyx rejects a partial one). A list is not written: BaSyx's list `$value`
+write keeps the old length and reorders the items (checked 2026-10-24). A
+structured value written to a Property becomes its JSON text.
 
 Lua receives every AAS element in one form, whether polled, read for
 fan-in, delivered by the value feed or passed as an Operation variable: a
@@ -654,7 +700,7 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
      payload. A device publishes progress or other messages without that
      correlation data. Timeout 30 s. An action without `mqv_responseTopic`
      only invokes: the command is published one way and the call returns once
-     the broker accepted it (QoS 1 or 2; QoS 0 blocks the mapping). Such an
+     the broker accepted it (`mqv_qos` 1 or 2; 0 or none blocks the mapping). Such an
      action has no `output`; one that declares an output needs the response
      topic.
    - **PLC4X (Modbus)**: no actions; an Operation bound to a property writes
@@ -819,8 +865,8 @@ end
 | SNMP (v1, v2c) | Read (GET, polled), Write (SET) | Traps, SNMPv3, tables |
 | BACnet | — (rejected: the PLC4X 0.13.1 `bacnet-ip` driver neither reads nor writes; it only listens for COV notifications) | Read, Write, Observe |
 
-Data-plane MQTT clients are one per endpoint; their credentials are bound in
-the Camel registry per bundle and referenced by name in URIs.
+Data-plane MQTT clients are one per endpoint. Credentials of every connector
+are bound in the Camel registry per bundle and referenced by name in URIs.
 
 Where an upstream Camel component lacks a behaviour the DMP needs, the DMP
 ships a component that extends it under its own scheme (registered through
@@ -882,6 +928,11 @@ id can read it; the status itself stays without names and messages.
 - Lua blobs are untrusted: sandbox, CPU budget, size limit.
 - Secrets (repository authorization, Kafka SASL, MQTT credentials) come from
   environment variables and are never logged or exposed in status.
+- Device credentials come from the DMP's deployment (`DMP_CREDENTIALS_FILE`),
+  never from the AAS; the AID only names the security scheme (§5.2). They
+  never go into an endpoint URI: they are bound in the Camel registry while
+  their bundle lives, and the URI names them. Data-plane AAS requests carry the
+  repository authorization.
 - Repository access is read-only (GET); the DMP never writes models.
 
 ## 12. Decisions

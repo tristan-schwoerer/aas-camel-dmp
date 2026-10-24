@@ -885,7 +885,6 @@ public class DmpComponent {
 		startRoutes();
 	}
 
-	/** Adds a runtime-owned control route after core health and REST endpoints have started. */
 	/** The started context, for runtime services that work beside the bundles. */
 	public synchronized CamelContext runtimeContext() {
 		if (camelContext == null || !camelContext.getStatus().isStarted())
@@ -893,6 +892,7 @@ public class DmpComponent {
 		return camelContext;
 	}
 
+	/** Adds a runtime-owned control route after core health and REST endpoints have started. */
 	public synchronized void addRuntimeRoutes(RouteBuilder routes) throws Exception {
 		if (camelContext == null || !camelContext.getStatus().isStarted())
 			throw new IllegalStateException("runtime routes require a started DMP Camel context");

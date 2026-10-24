@@ -259,7 +259,7 @@
       "keys": [
        {
         "type": "GlobalReference",
-        "value": "0df0617c675b542591f985804e025103"
+        "value": "cb18d7a42e4952888299b70b6194b58b"
        }
       ]
      },
@@ -447,7 +447,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "516e0e88a1585105ba98ed893d80f6e7"
+          "value": "2de97e7f9c535ab4b0dd16b5f65f69f3"
          }
         ]
        },
@@ -468,7 +468,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "3534a6d2427c5d2283dfbbf79c589a1c"
+          "value": "516e0e88a1585105ba98ed893d80f6e7"
          }
         ]
        },
@@ -489,7 +489,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "a50b177c71b25da78a7a339f291ac03a"
+          "value": "3534a6d2427c5d2283dfbbf79c589a1c"
          }
         ]
        },
@@ -593,7 +593,37 @@
           "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
          }
         ]
-       }
+       },
+       "value": [
+        {
+         "modelType": "ReferenceElement",
+         "value": {
+          "type": "ModelReference",
+          "keys": [
+           {
+            "type": "Submodel",
+            "value": "a/submodels/AID"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "interface_mqtt"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "EndpointMetadata"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "securityDefinitions"
+           },
+           {
+            "type": "SubmodelElementCollection",
+            "value": "nosec_sc"
+           }
+          ]
+         }
+        }
+       ]
       },
       {
        "embeddedDataSpecifications": [
@@ -624,7 +654,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "d0f77efd9aff5934952e7fca98f7f5a4"
+            "value": "nosec_sc"
            }
           ]
          },
@@ -645,7 +675,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "b700fd84d67f530797c548576bdc606c"
+            "value": "d0f77efd9aff5934952e7fca98f7f5a4"
            }
           ]
          },
@@ -666,7 +696,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "ef06ecfee69c551bb380e72541e6ad5d"
+            "value": "b700fd84d67f530797c548576bdc606c"
            }
           ]
          },
@@ -687,7 +717,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "77e711ee10c05d09b1b0ab9c42e2c5c6"
+            "value": "ef06ecfee69c551bb380e72541e6ad5d"
            }
           ]
          },
@@ -708,7 +738,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "8f4c60fa910d50399c0dbd8011940d4d"
+            "value": "77e711ee10c05d09b1b0ab9c42e2c5c6"
            }
           ]
          },
@@ -729,7 +759,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "2189021cd12756d1a4fa31c84371ef9f"
+            "value": "8f4c60fa910d50399c0dbd8011940d4d"
            }
           ]
          },
@@ -750,7 +780,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "2e5e4dff3d495782adc254e720cb37ed"
+            "value": "2189021cd12756d1a4fa31c84371ef9f"
            }
           ]
          },
@@ -771,7 +801,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "c31226aff98d5994aa3639734cb0f798"
+            "value": "2e5e4dff3d495782adc254e720cb37ed"
            }
           ]
          },
@@ -792,7 +822,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "7564baaffd23547a82198f71e625c595"
+            "value": "c31226aff98d5994aa3639734cb0f798"
            }
           ]
          },
@@ -813,7 +843,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "a6ab33e615765e82ab36e4d02b1db1bb"
+            "value": "7564baaffd23547a82198f71e625c595"
            }
           ]
          },
@@ -834,7 +864,7 @@
           "keys": [
            {
             "type": "GlobalReference",
-            "value": "2de97e7f9c535ab4b0dd16b5f65f69f3"
+            "value": "a6ab33e615765e82ab36e4d02b1db1bb"
            }
           ]
          },
@@ -866,7 +896,95 @@
           "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
          }
         ]
-       }
+       },
+       "value": [
+        {
+         "embeddedDataSpecifications": [
+          {
+           "dataSpecification": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "nosec_sc"
+             }
+            ]
+           },
+           "dataSpecificationContent": {
+            "modelType": "DataSpecificationIec61360",
+            "preferredName": [
+             {
+              "language": "en",
+              "text": "class"
+             }
+            ],
+            "value": "nosec_sc"
+           }
+          },
+          {
+           "dataSpecification": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "scheme"
+             }
+            ]
+           },
+           "dataSpecificationContent": {
+            "modelType": "DataSpecificationIec61360",
+            "preferredName": [
+             {
+              "language": "en",
+              "text": "attribute"
+             }
+            ],
+            "value": "scheme"
+           }
+          }
+         ],
+         "idShort": "nosec_sc",
+         "description": [
+          {
+           "language": "en",
+           "text": "No security scheme definition"
+          }
+         ],
+         "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://www.w3.org/2019/wot/security#NoSecurityScheme"
+           }
+          ]
+         },
+         "value": [
+          {
+           "idShort": "scheme",
+           "description": [
+            {
+             "language": "en",
+             "text": "Defines the security mechanism that used during access. Supported modes one of nosec, basic, digest, bearer, psk, oauth2, apikey, combo, auto, uav_channelsec and uav_authentication_"
+            }
+           ],
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://www.w3.org/2019/wot/security#SecurityScheme"
+             }
+            ]
+           },
+           "value": "nosec",
+           "valueType": "xs:string"
+          }
+         ]
+        }
+       ]
       }
      ]
     },
@@ -941,7 +1059,7 @@
         "keys": [
          {
           "type": "GlobalReference",
-          "value": "cb18d7a42e4952888299b70b6194b58b"
+          "value": "a50b177c71b25da78a7a339f291ac03a"
          }
         ]
        },

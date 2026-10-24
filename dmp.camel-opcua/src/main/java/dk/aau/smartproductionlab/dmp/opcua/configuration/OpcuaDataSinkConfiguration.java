@@ -25,8 +25,12 @@
 package dk.aau.smartproductionlab.dmp.opcua.configuration;
 
 import java.util.HashMap;
+
+import org.apache.camel.CamelContext;
+
+import dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource;
+import dk.aau.smartproductionlab.dmp.core.security.BoundCredential;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
 import org.slf4j.Logger;
@@ -39,7 +43,7 @@ import org.slf4j.LoggerFactory;
  * @author zielstor
  *
  */
-public class OpcuaDataSinkConfiguration extends DataSinkConfiguration {
+public class OpcuaDataSinkConfiguration extends DataSinkConfiguration implements ManagedRouteResource {
     protected static Logger logger = LoggerFactory.getLogger(OpcuaDataSinkConfiguration.class);
 
 	private String serverUrl;
@@ -49,6 +53,7 @@ public class OpcuaDataSinkConfiguration extends DataSinkConfiguration {
     private String username;
     private String password;
     private Map<String, String> configuration = new HashMap<>();
+    private BoundCredential bound;
 
     public OpcuaDataSinkConfiguration() {
     }
@@ -75,6 +80,12 @@ public class OpcuaDataSinkConfiguration extends DataSinkConfiguration {
 
         if (!this.configuration.containsKey("allowedSecurityPolicies"))
             this.configuration.put("allowedSecurityPolicies", "None");
+
+        // Read, Write and Call give up after 30 s, as HTTP and MQTT actions do (Milo's default is 60 s).
+
+        if (!this.configuration.containsKey("requestTimeout"))
+
+        	this.configuration.put("requestTimeout", "30000");
     }
 
 	public String getServerUrl() {
@@ -134,21 +145,23 @@ public class OpcuaDataSinkConfiguration extends DataSinkConfiguration {
     }
 
     public String getConnectionURI() {
-        String credentials = username == null || password == null ? "" : username + ":" + password + "@";
-        String parameters = this.configuration.entrySet()
-                .parallelStream()
-                .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
-                .map(entry -> String.format("%s=%s", entry.getKey(), entry.getValue()))
-                .collect(Collectors.joining("&"));
+        return OpcuaDataSourceConfiguration.connectionUri(getServerUrl(), getServerPort(), getPathToService(),
+                getNodeInformation(), boundCredential(), configuration);
+    }
 
-        return String.format(
-                "dmp-milo-client:opc.tcp://%s%s:%d/%s?%s=RAW(%s)%s",
-                credentials,
-				getServerUrl(),
-				getServerPort(),
-                getPathToService(),
-                OpcuaDataSourceConfiguration.nodeParameter(getNodeInformation()),
-                getNodeInformation(),
-                parameters.length() > 0 ? "&" + parameters : "");
+    private synchronized BoundCredential boundCredential() {
+        if (bound == null && username != null && password != null) bound = new BoundCredential(username, password);
+        return bound;
+    }
+
+    @Override
+    public void bind(CamelContext context) {
+        BoundCredential credential = boundCredential();
+        if (credential != null) credential.bind(context);
+    }
+
+    @Override
+    public synchronized void close() {
+        if (bound != null) bound.close();
     }
 }

@@ -97,6 +97,8 @@ public class MixedSourceFanInTest {
 
 			try (DefaultCamelContext context = new DefaultCamelContext()) {
 				context.addComponent("aas", new AASComponent());
+				// A bundle binds its sources' registry resources (the HTTP client options) before its routes start.
+				http.bind(context);
 				AASEndpoint aasEndpoint = context.getEndpoint(aas.getConnectionURI(), AASEndpoint.class);
 				assertEquals(base + "/submodels/demo", aasEndpoint.getSubmodelEndpoint());
 				assertEquals("Temperature", aasEndpoint.getPropertyPath());

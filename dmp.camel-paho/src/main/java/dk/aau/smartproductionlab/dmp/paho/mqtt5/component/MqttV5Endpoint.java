@@ -97,6 +97,9 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 	private volatile org.eclipse.paho.mqttv5.client.MqttClient replyClient;
 	private volatile org.eclipse.paho.mqttv5.client.MqttClient publishClient;
 	private org.apache.camel.component.paho.mqtt5.PahoMqtt5Endpoint publishEndpoint;
+	/** The reply client and connection whose subscription the broker acknowledged. */
+	private org.eclipse.paho.mqttv5.client.MqttClient confirmedClient;
+	private long confirmedConnection = -1;
 
 	/** Local observations only; does not acquire the endpoint monitor or Paho locks. */
 	@Override public java.util.List<dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource.AccountingEntry> accounting() {
@@ -377,6 +380,8 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 		private final ObservedSocketFactory sockets = new ObservedSocketFactory();
 		private volatile boolean socketObservable;
 		private volatile boolean connected;
+		/** Counts established connections, so a reconnect is told apart from the connection before it. */
+		private volatile long connections;
 
 		TransportClient(String broker, String id) throws org.eclipse.paho.mqttv5.common.MqttException {
 			super(broker, id, new org.eclipse.paho.mqttv5.client.persist.MemoryPersistence());
@@ -392,6 +397,7 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 		@Override public void connect(org.eclipse.paho.mqttv5.client.MqttConnectionOptions options)
 				throws org.eclipse.paho.mqttv5.common.MqttException {
 			super.connect(options);
+			connections++;
 			if (!retired) connected = true;
 		}
 
@@ -427,6 +433,7 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 					// connects must retain upstream's resubscription callback contract.
 					if (!retired) {
 						connected = true;
+						if (reconnect) connections++;
 						callback.connectComplete(reconnectEnabled || reconnect, server);
 					}
 				}
@@ -503,13 +510,18 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 			if (replyClient == null || !replyClient.isConnected()) {
 				throw new IllegalStateException("MQTT reply subscription is not connected");
 			}
-			// Upstream discards its SUBACK token. Confirm broker acceptance before
-			// each invocation, including reconnects, without retrying any command.
+			// Upstream discards its SUBACK token. Confirm broker acceptance once per
+			// connection (again after a reconnect), not once per call: a call that
+			// waited for a SUBACK held the transport lock for a broker round trip.
+			long connection = replyClient instanceof TransportClient owned ? owned.connections : -1;
+			if (replyClient == confirmedClient && connection == confirmedConnection && connection >= 0) return;
 			replyClient.setTimeToWait(remainingMillis(deadline));
 			int[] reasons = replyClient.subscribe(replyTopic, qos).getReasonCodes();
 			if (reasons == null || reasons.length != 1 || reasons[0] < 0 || reasons[0] > 2) {
 				throw new IllegalStateException("MQTT broker rejected the reply subscription");
 			}
+			confirmedClient = replyClient;
+			confirmedConnection = connection;
 		}
 	}
 
@@ -539,6 +551,8 @@ public class MqttV5Endpoint extends org.apache.camel.support.DefaultEndpoint
 		}
 		replySubscriptionId = null;
 		replyClientId = null;
+		confirmedClient = null;
+		confirmedConnection = -1;
 	}
 
 	/** The current reply subscription's identity, or null (for lifecycle checks). */

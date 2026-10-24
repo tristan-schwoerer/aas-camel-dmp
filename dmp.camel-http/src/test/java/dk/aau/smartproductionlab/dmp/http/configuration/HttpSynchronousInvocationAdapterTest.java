@@ -1,6 +1,7 @@
 package dk.aau.smartproductionlab.dmp.http.configuration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -142,6 +143,46 @@ public class HttpSynchronousInvocationAdapterTest {
 		} catch (org.apache.camel.CamelExecutionException failure) {
 			if (failure.getCause() instanceof RuntimeException cause) throw cause;
 			throw failure;
+		}
+	}
+
+	@Test
+	void anActionsTimeoutReplacesTheFormsDefaultOnce() {
+		HttpDataSinkConfiguration sink = new HttpDataSinkConfiguration("action", "http", "device", "/move", 80);
+		String uri = HttpSynchronousInvocationAdapter.invocationUri(sink.getConnectionURI(), 5000);
+		assertEquals(1, uri.split("responseTimeout=", -1).length - 1, uri);
+		assertTrue(uri.contains("connectTimeout=5000&responseTimeout=5000"), uri);
+		assertTrue(uri.contains("httpClientConfigurer="), uri);
+		assertTrue(HttpSynchronousInvocationAdapter.invocationUri("http://device/move", 5000).contains("NoRetryHttpClientConfigurer"));
+	}
+
+	/** A device that accepts the connection and never answers: the write is sent once and gives up at its timeout. */
+	@Test
+	void aWriteToAHungDeviceIsSentOnceAndGivesUp() throws Exception {
+		var requests = new java.util.concurrent.atomic.AtomicInteger();
+		var hung = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+		hung.setExecutor(java.util.concurrent.Executors.newCachedThreadPool());
+		var release = new java.util.concurrent.CountDownLatch(1);
+		hung.createContext("/value", exchange -> {
+			requests.incrementAndGet();
+			try { release.await(10, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException stopped) { Thread.currentThread().interrupt(); }
+			exchange.close();
+		});
+		hung.start();
+		try (var camel = new org.apache.camel.impl.DefaultCamelContext()) {
+			camel.start();
+			HttpDataSinkConfiguration sink = new HttpDataSinkConfiguration("sink", "http", "127.0.0.1", "/value", hung.getAddress().getPort());
+			sink.setMethod("PUT");
+			sink.bind(camel);
+			String uri = HttpSynchronousInvocationAdapter.invocationUri(sink.getConnectionURI(), 500);
+			long started = System.nanoTime();
+			assertThrows(Exception.class, () -> camel.createProducerTemplate().sendBody(uri, "{\"v\":1}"));
+			assertTrue(System.nanoTime() - started < 5_000_000_000L, "the write ends at its response timeout");
+			assertEquals(1, requests.get(), "no automatic retry of a write");
+			sink.close();
+		} finally {
+			release.countDown();
+			hung.stop(0);
 		}
 	}
 }

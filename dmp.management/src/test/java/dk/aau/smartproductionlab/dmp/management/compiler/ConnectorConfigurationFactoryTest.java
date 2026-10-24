@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -290,8 +291,9 @@ class ConnectorConfigurationFactoryTest {
 		assertTrue(sse.issues().isEmpty(),sse.issues().toString());
 		var observed=assertInstanceOf(HttpObserveDataSourceConfiguration.class,sse.configuration().getDatasources().values().iterator().next());
 		assertEquals("async",observed.getDelivery());
-		assertEquals("dmp-http-observe:sse?url=RAW(http://api.example:8080/temperature)&contentType=RAW(application/json)",
-				observed.getConnectionURI());
+		// Headers (and Basic credentials) are a registry binding the URI names.
+		assertTrue(observed.getConnectionURI().startsWith("dmp-http-observe:sse?url=RAW(http://api.example:8080/temperature)"
+				+ "&contentType=RAW(application/json)&headers=#bean:dmp-http-"),observed.getConnectionURI());
 
 		var event=factory.create(new Plan(List.of(mappingWithEndpoints(endpointPlan("read",httpObserved("event","longpoll",false)),sink))),"route");
 		assertTrue(event.issues().isEmpty(),event.issues().toString());
@@ -322,7 +324,7 @@ class ConnectorConfigurationFactoryTest {
 		SubmodelElement endpointMetadata=AasFixtures.collection("EndpointMetadata",property("base","http://api.example:8080/"));
 		var iface=new WireModel.Interface("interface-semantic","interface_http",List.of("http"),List.of(WireModel.ProtocolFamily.HTTP),
 				emptyElement(),List.of(form),List.of(),"event".equals(kind)?List.of():List.of(affordance),List.of(),
-				"event".equals(kind)?List.of(affordance):List.of(),Presence.of(endpointMetadata),
+				"event".equals(kind)?List.of(affordance):List.of(),Presence.of(AasFixtures.nosec(endpointMetadata,"interface_http")),
 				Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent());
 		return new AidTarget(new AasReferenceResolver.AidTarget(iface,affordance,Presence.absent(),List.of()));
 	}
@@ -338,7 +340,10 @@ class ConnectorConfigurationFactoryTest {
 		assertEquals("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.2.1.1.3.0&version=SNMPv2c",source.getConnectionURI());
 		assertEquals("sync",source.getDelivery());
 		var sink=assertInstanceOf(SnmpDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
-		assertEquals("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.4.1.9999.1.0&version=SNMPv1&community=RAW(private)",sink.getConnectionURI());
+		// The community is a credential: the URI names its registry binding, never the value.
+		assertTrue(sink.getConnectionURI().startsWith("dmp-snmp:10.0.0.5:161?oid=1.3.6.1.4.1.9999.1.0&version=SNMPv1&community=#bean:dmp-credential-"),
+				sink.getConnectionURI());
+		assertFalse(sink.getConnectionURI().contains("private"),sink.getConnectionURI());
 
 		for(var rejected:List.of(
 				Map.entry(protocolTarget(WireModel.ProtocolFamily.SNMP,"snmp://10.0.0.5/","sysDescr",Map.of(),null),"snmp://{address}:{port}/{oid}"),
@@ -358,7 +363,7 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(new Plan(List.of(mappingWithEndpoints(poll,write))),"route");
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
 		var source=assertInstanceOf(HttpPollingDataSourceConfiguration.class,result.configuration().getDatasources().values().iterator().next());
-		assertTrue(source.getConnectionURI().contains("httpClientConfigurer=#bean:dmp-http-headers-"),source.getConnectionURI());
+		assertTrue(source.getConnectionURI().contains("httpClientConfigurer=#bean:dmp-http-"),source.getConnectionURI());
 		assertFalse(source.getConnectionURI().contains("s3cret"));
 		var sink=assertInstanceOf(HttpDataSinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
 		assertFalse(sink.getConnectionURI().contains("token-1"));
@@ -390,7 +395,7 @@ class ConnectorConfigurationFactoryTest {
 				Presence.absent(),Presence.absent(),Presence.absent(),AasFixtures.collection("value",property("observable","true")));
 		SubmodelElement endpointMetadata=AasFixtures.collection("EndpointMetadata",property("base","http://api.example:8080/"));
 		var iface=new WireModel.Interface("interface-semantic","interface_http",List.of("http"),List.of(WireModel.ProtocolFamily.HTTP),
-				emptyElement(),List.of(form),List.of(),List.of(affordance),List.of(),List.of(),Presence.of(endpointMetadata),
+				emptyElement(),List.of(form),List.of(),List.of(affordance),List.of(),List.of(),Presence.of(AasFixtures.nosec(endpointMetadata,"interface_http")),
 				Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent());
 		return new AidTarget(new AasReferenceResolver.AidTarget(iface,affordance,Presence.absent(),List.of()));
 	}
@@ -403,7 +408,7 @@ class ConnectorConfigurationFactoryTest {
 				AasFixtures.collection("State",property("observable","true"),property("readOnly","true")));
 		var iface=new WireModel.Interface("interface-semantic","interface_mqtt",List.of("http://www.w3.org/2011/mqtt"),
 				List.of(WireModel.ProtocolFamily.MQTT),emptyElement(),readOnly.forms(),List.of(),List.of(readOnly),List.of(),List.of(),
-				Presence.of(endpointMetadata),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent());
+				Presence.of(AasFixtures.nosec(endpointMetadata,"interface_mqtt")),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent());
 		var target=new AidTarget(new AasReferenceResolver.AidTarget(iface,readOnly,Presence.absent(),List.of()));
 		var source=new EndpointPlan("in",reference(),mqttTarget(endpointMetadata,mqttForm("in","0",null),"In"));
 		var result=factory.create(new Plan(List.of(mappingPlan("write-read-only",0,source,new EndpointPlan("State",reference(),target)))),"route");
@@ -645,6 +650,30 @@ class ConnectorConfigurationFactoryTest {
 	}
 
 	@Test
+	void aCollectionSinkIsWrittenAsACollectionAndAListSinkIsBlocked() {
+		var collection=AasFixtures.collection("Location",property("x","0.0"));
+		var submodel=AasFixtures.submodel("urn:owner/submodels/Variables","Variables");
+		var runtime=new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"));
+		var reference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementCollection","Location");
+		var whole=new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,collection));
+		var result=factory.create(new Plan(List.of(mappingPlan("aas-collection",0,new EndpointPlan("In",reference,whole,Presence.of("2")),
+				new EndpointPlan("Location",reference,whole)))),"route",runtime);
+		assertTrue(result.issues().isEmpty(),result.issues().toString());
+		var sink=assertInstanceOf(AASDatasinkConfiguration.class,result.configuration().getDatasinks().values().iterator().next());
+		assertTrue(sink.getConnectionURI().contains("&elementType=SubmodelElementCollection"),sink.getConnectionURI());
+
+		var list=new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder().idShort("Items")
+				.typeValueListElement(org.eclipse.digitaltwin.aas4j.v3.model.AasSubmodelElements.PROPERTY)
+				.value(List.of(property("ignored","1"))).build();
+		var listReference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementList","Items");
+		var listTarget=new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,list));
+		var blocked=factory.create(new Plan(List.of(mappingPlan("aas-list",0,new EndpointPlan("In",reference,whole,Presence.of("2")),
+				new EndpointPlan("Items",listReference,listTarget)))),"route",runtime);
+		assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("not a SubmodelElementList")),
+				blocked.issues().toString());
+	}
+
+	@Test
 	void bridgeRestPathIsTheDelegationQualifierPathAndAMissingQualifierBlocksTheMapping() {
 		var result=factory.create(explicitResponsePlan("aid-command"),"bridge",new ConnectorConfigurationFactory.RuntimeSettings(
 				URI.create("http://aas.example:8081")));
@@ -672,24 +701,109 @@ class ConnectorConfigurationFactoryTest {
 				AasFixtures.submodel("urn:owner/submodels/Variables","Variables"),list));
 		var reference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementList","Readings");
 		var source=new EndpointPlan("Readings",reference,target,Presence.of("1"));
-		var plan=new Plan(List.of(mappingPlan("list",0,source,new EndpointPlan("Out",reference,target))));
+		var out=new DirectTarget(new AasReferenceResolver.ResolvedElement(
+				AasFixtures.submodel("urn:owner/submodels/Variables","Variables"),property("Out","")));
+		var plan=new Plan(List.of(mappingPlan("list",0,source,new EndpointPlan("Out",
+				AasFixtures.reference("Submodel","urn:owner/submodels/Variables","Property","Out"),out))));
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
 		assertEquals(Map.of("type","array","items",Map.of("type","number")),
 				result.configuration().getDatasources().values().iterator().next().getSchema());
 	}
 
-	@Test void fingerprintsAreDeterministicSecretSafeAndCredentialSensitiveInternally() {
-		var first=credentialsPlan("one-password");var rotated=credentialsPlan("another-password");
-		var a=factory.createBundles(first,null).bundles().get(0).fingerprint();
-		var repeated=factory.createBundles(first,null).bundles().get(0).fingerprint();
-		var b=factory.createBundles(rotated,null).bundles().get(0).fingerprint();
-		assertEquals(a.exported(),repeated.exported());assertTrue(a.sameEffectiveConfiguration(repeated));
-		assertEquals(a.exported(),b.exported(),"exported fingerprints must not provide a credential-derived oracle");
-		assertFalse(a.sameEffectiveConfiguration(b),"credential rotation still changes internal identity");
-		assertEquals(a.exported(),a.toString());
-		String json=new com.google.gson.Gson().toJson(a);
-		assertFalse(json.contains("internal"));assertFalse(json.contains("password"));
+	@Test void mqttBasicTakesTheBrokersCredentialsAsBoundReferences() {
+		SubmodelElement metadata=AasFixtures.collection("EndpointMetadata",property("base","mqtt://broker.example:1883/site/"),
+				AasFixtures.securityList(AasFixtures.schemeReference("interface_mqtt","basic_sc")),
+				AasFixtures.collection("securityDefinitions",scheme("basic_sc","basic")));
+		var source=new EndpointPlan("State",reference(),mqttTarget(metadata,mqttForm("state","0",null),"State"));
+		var sink=new EndpointPlan("Command",reference(),mqttTarget(metadata,mqttForm("command","1",null),"Command"));
+		var mapping=new MappingPlan("Broker",0,List.of(source),List.of(sink),Presence.absent(),
+				Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),List.of());
+		var credentials=DmpCredentials.parse("""
+				{"endpoints":{"mqtt://broker.example:1883":{"username":"dmp","password":"s3cret"}}}""");
+		var result=factory.create(new Plan(List.of(mapping)),"route",
+				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"),null,credentials));
+		assertTrue(result.issues().isEmpty(),result.issues().toString());
+		String uri=result.configuration().getDatasources().values().iterator().next().getConnectionURI();
+		assertTrue(uri.contains("#bean:dmp-credential-") && !uri.contains("s3cret"),uri);
+	}
+
+	@Test void credentialsInTheAidAreRefused() {
+		var result=factory.createBundles(credentialsPlan("one-password"),null);
+		assertTrue(result.bundles().isEmpty());
+		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("credentials do not belong in the AID")),
+				result.issues().toString());
+		assertFalse(result.issues().toString().contains("one-password"));
+	}
+
+	/** An HTTP interface on device:8080 selecting {@code selected} among {@code schemes}. */
+	private static AidTarget securedHttp(List<String> selected,SubmodelElement... schemes) {
+		SubmodelElement metadata=AasFixtures.collection("EndpointMetadata",property("base","http://device:8080"),
+				AasFixtures.securityList(selected.stream().map(name -> AasFixtures.schemeReference("interface_device",name))
+						.toArray(org.eclipse.digitaltwin.aas4j.v3.model.Reference[]::new)),
+				AasFixtures.collection("securityDefinitions",schemes));
+		return protocolTarget(WireModel.ProtocolFamily.HTTP,"/state",Map.of(),"GET",metadata);
+	}
+
+	private static SubmodelElement scheme(String idShort,String kind,SubmodelElement... terms) {
+		List<SubmodelElement> children=new ArrayList<>(List.of(property("scheme",kind)));
+		children.addAll(List.of(terms));
+		return AasFixtures.collection(idShort,children.toArray(SubmodelElement[]::new));
+	}
+
+	private ConnectorConfigurationFactory.Result secured(AidTarget source,DmpCredentials credentials) {
+		var sink=endpointPlan("write",protocolTarget(WireModel.ProtocolFamily.HTTP,"http://api.example:8080","/state",Map.of(),"POST"));
+		return factory.create(new Plan(List.of(mappingPlan("secured",0,polledEndpointPlan("read",source),sink))),"route",
+				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"),null,credentials));
+	}
+
+	@Test void aidSecuritySchemesAreAnsweredFromTheDmpsCredentialsNeverTheAas() {
+		var basic=securedHttp(List.of("basic_sc"),scheme("basic_sc","basic"));
+		var missing=secured(basic,DmpCredentials.none());
+		assertTrue(missing.issues().stream().anyMatch(issue -> issue.message().contains("no credentials for basic_sc of http://device:8080")),
+				missing.issues().toString());
+
+		var credentials=DmpCredentials.parse("""
+				{"endpoints":{"http://device:8080":{"username":"dmp","password":"p@ss","bearerToken":"t0ken","apiKey":"k3y"}}}""");
+		var withBasic=secured(basic,credentials);
+		assertTrue(withBasic.issues().isEmpty(),withBasic.issues().toString());
+		var source=withBasic.configuration().getDatasources().values().iterator().next();
+		assertFalse(source.getConnectionURI().contains("p@ss") || source.getConnectionURI().contains("dmp:"),source.getConnectionURI());
+
+		var apikey=secured(securedHttp(List.of("apikey_sc"),scheme("apikey_sc","apikey",property("name","key"))),credentials);
+		assertTrue(apikey.issues().isEmpty(),apikey.issues().toString());
+		String uri=apikey.configuration().getDatasources().values().iterator().next().getConnectionURI();
+		assertFalse(uri.contains("k3y"),"an API key in the query is bound, not written into the URI: "+uri);
+
+		var bearer=secured(securedHttp(List.of("bearer_sc"),scheme("bearer_sc","bearer")),credentials);
+		assertTrue(bearer.issues().isEmpty(),bearer.issues().toString());
+
+		// combo_sc oneOf takes the first alternative the DMP applies: digest is not, basic is.
+		var combo=secured(securedHttp(List.of("combo_sc"),scheme("digest_sc","digest"),scheme("basic_sc","basic"),
+				scheme("combo_sc","combo",new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder()
+						.idShort("oneOf").value(List.of(
+								new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultReferenceElement.Builder()
+										.value(AasFixtures.schemeReference("interface_device","digest_sc")).build(),
+								new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultReferenceElement.Builder()
+										.value(AasFixtures.schemeReference("interface_device","basic_sc")).build())).build())),credentials);
+		assertTrue(combo.issues().isEmpty(),combo.issues().toString());
+
+		for(var blocked:List.of(
+				Map.entry(securedHttp(List.of("digest_sc"),scheme("digest_sc","digest")),"digest (digest_sc) is not applied"),
+				Map.entry(securedHttp(List.of(),scheme("nosec_sc","nosec")),"at least one security scheme"),
+				Map.entry(securedHttp(List.of("missing_sc"),scheme("nosec_sc","nosec")),"securityDefinitions does not define"))) {
+			var result=secured(blocked.getKey(),credentials);
+			assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains(blocked.getValue())),result.issues().toString());
+		}
+		// OPC UA applies nosec only until the DMP opens its own sessions (PLAN H4).
+		SubmodelElement uaMetadata=AasFixtures.collection("EndpointMetadata",property("base","opc.tcp://ua:4840"),
+				AasFixtures.securityList(AasFixtures.schemeReference("interface_device","auth_sc")),
+				AasFixtures.collection("securityDefinitions",scheme("auth_sc","uav_authentication_")));
+		var uaSource=polledEndpointPlan("read",protocolTarget(WireModel.ProtocolFamily.OPCUA,"/?id=ns=1;s=x",Map.of(),null,uaMetadata));
+		var uaSink=endpointPlan("write",protocolTarget(WireModel.ProtocolFamily.HTTP,"http://api.example:8080","/state",Map.of(),"POST"));
+		var opcua=factory.create(new Plan(List.of(mappingPlan("ua",0,uaSource,uaSink))),"route",
+				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"),null,credentials));
+		assertTrue(opcua.issues().stream().anyMatch(issue -> issue.message().contains("not applied to OPCUA")),opcua.issues().toString());
 	}
 
 	@Test void authoredMappingIdentitySurvivesListReorderingAndEffectiveOptionsChangeFingerprint() {
@@ -1159,12 +1273,19 @@ class ConnectorConfigurationFactoryTest {
 				List.of(form), schema, schema, schema, emptyElement());
 		var iface = new WireModel.Interface("interface-semantic", "interface-device", List.of(), List.of(family),
 				emptyElement(), List.of(form), List.of(), List.of(affordance), List.of(), List.of(),
-				Presence.absent(), Presence.absent(), schema, schema, Presence.absent(), Presence.absent());
+				Presence.of(AasFixtures.nosec(AasFixtures.collection("EndpointMetadata"),"interface-device")), Presence.absent(), schema, schema, Presence.absent(), Presence.absent());
 		return new AidTarget(new AasReferenceResolver.AidTarget(iface, affordance, schema, List.of()));
 	}
 
 	private static AidTarget protocolTarget(WireModel.ProtocolFamily family,String base,String href,
 			Map<String,String> bindingTerms, String httpMethod) {
+		return protocolTarget(family,href,bindingTerms,httpMethod,
+				AasFixtures.nosec(AasFixtures.collection("EndpointMetadata",property("base",base)),"interface_device"));
+	}
+
+	/** A one-form property of interface {@code interface_device} with the given endpoint metadata. */
+	private static AidTarget protocolTarget(WireModel.ProtocolFamily family,String href,
+			Map<String,String> bindingTerms, String httpMethod, SubmodelElement endpointMetadata) {
 		Map<String,String> terms=new java.util.LinkedHashMap<>(bindingTerms);
 		Map<String,String> mqtt=new java.util.LinkedHashMap<>();
 		terms.forEach((name,value) -> { if(name.startsWith("mqv_"))mqtt.put(name,value); });
@@ -1172,7 +1293,6 @@ class ConnectorConfigurationFactoryTest {
 				httpMethod==null?Presence.absent():Presence.of(httpMethod),mqtt,Presence.absent(),terms,emptyElement());
 		var affordance=new WireModel.Affordance("property",Presence.of("value"),Presence.absent(),
 				List.of(form),Presence.absent(),Presence.absent(),Presence.absent(),emptyElement());
-		SubmodelElement endpointMetadata=AasFixtures.collection("EndpointMetadata",property("base",base));
 		var iface=new WireModel.Interface("interface-semantic","interface_device",List.of("binding"),List.of(family),
 				emptyElement(),List.of(form),List.of(),List.of(affordance),List.of(),List.of(),Presence.of(endpointMetadata),
 				Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent());
@@ -1206,7 +1326,7 @@ class ConnectorConfigurationFactoryTest {
 				Presence.absent(), Presence.absent(), Presence.absent(), AasFixtures.collection(id, property("observable", "true")));
 		var iface = new WireModel.Interface("interface-semantic", "interface_mqtt", List.of("http://www.w3.org/2011/mqtt"),
 				List.of(WireModel.ProtocolFamily.MQTT), emptyElement(), List.of(form), List.of(), List.of(affordance),
-					List.of(), List.of(), Presence.of(endpoint), Presence.absent(), Presence.absent(), Presence.absent(),
+					List.of(), List.of(), Presence.of(AasFixtures.nosec(endpoint,"interface_mqtt")), Presence.absent(), Presence.absent(), Presence.absent(),
 					Presence.absent(), Presence.absent());
 		return new AidTarget(new AasReferenceResolver.AidTarget(iface, affordance, Presence.absent(), List.of()));
 	}

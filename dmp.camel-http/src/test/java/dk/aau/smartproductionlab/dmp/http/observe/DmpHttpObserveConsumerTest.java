@@ -104,6 +104,28 @@ class DmpHttpObserveConsumerTest {
 		assertEquals("3", next().getMessage().getBody(String.class), "the 204 answer delivered nothing");
 	}
 
+	/** A peer that vanished keeps the connection open without a word: the stream is reopened after the idle timeout. */
+	@Test void aSilentStreamIsReopened() throws Exception {
+		AtomicInteger connections = new AtomicInteger();
+		java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+		server.createContext("/silent", exchange -> {
+			exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+			exchange.sendResponseHeaders(200, 0);
+			OutputStream body = exchange.getResponseBody();
+			body.write(("retry: 10\ndata: " + connections.incrementAndGet() + "\n\n").getBytes(StandardCharsets.UTF_8));
+			body.flush();
+			try { release.await(10, TimeUnit.SECONDS); } catch (InterruptedException stopped) { Thread.currentThread().interrupt(); }
+			try { body.close(); } catch (java.io.IOException gone) { /* the client closed it */ }
+		});
+		observe("sse", "/silent", "&idleTimeout=300");
+		try {
+			assertEquals("1", next().getMessage().getBody(String.class));
+			assertEquals("2", next().getMessage().getBody(String.class), "the silent stream was closed and reopened");
+		} finally {
+			release.countDown();
+		}
+	}
+
 	@Test void aFailedRequestIsRetried() throws Exception {
 		AtomicInteger polls = new AtomicInteger();
 		server.createContext("/flaky", exchange -> {
@@ -122,11 +144,15 @@ class DmpHttpObserveConsumerTest {
 	}
 
 	private void observe(String subprotocol, String path) throws Exception {
+		observe(subprotocol, path, "");
+	}
+
+	private void observe(String subprotocol, String path, String options) throws Exception {
 		String url = "http://127.0.0.1:" + server.getAddress().getPort() + path;
 		camel = new DefaultCamelContext();
 		camel.addRoutes(new RouteBuilder() {
 			@Override public void configure() {
-				from(DmpHttpObserveComponent.uri(subprotocol, url, null, null, null)).process(received::add);
+				from(DmpHttpObserveComponent.uri(subprotocol, url, null) + options).process(received::add);
 			}
 		});
 		camel.start();

@@ -22,12 +22,10 @@ public final class DmpHttpObserveComponent extends DefaultComponent {
 	public enum Subprotocol { LONGPOLL, SSE }
 
 	/** The endpoint URI; values are passed RAW so Camel leaves them unchanged. */
-	public static String uri(String subprotocol, String url, String contentType, String username, String password) {
+	public static String uri(String subprotocol, String url, String contentType) {
 		StringBuilder uri = new StringBuilder(SCHEME).append(':').append(subprotocol.toLowerCase(Locale.ROOT))
 				.append("?url=RAW(").append(url).append(')');
 		if (contentType != null) uri.append("&contentType=RAW(").append(contentType).append(')');
-		if (username != null && password != null)
-			uri.append("&authUsername=RAW(").append(username).append(")&authPassword=RAW(").append(password).append(')');
 		return uri.toString();
 	}
 
@@ -42,12 +40,19 @@ public final class DmpHttpObserveComponent extends DefaultComponent {
 		if (!"http".equalsIgnoreCase(target.getScheme()) && !"https".equalsIgnoreCase(target.getScheme()))
 			throw new IllegalArgumentException("dmp-http-observe requires an http(s) url");
 		String contentType = getAndRemoveParameter(parameters, "contentType", String.class, "application/json");
-		String username = getAndRemoveParameter(parameters, "authUsername", String.class);
-		String password = getAndRemoveParameter(parameters, "authPassword", String.class);
-		// The form's static htv_headers, bound in the registry and only named in the URI.
+		// The form's static htv_headers and Authorization, bound in the registry and only named in the URI.
 		Map<?, ?> headers = getAndRemoveOrResolveReferenceParameter(parameters, "headers", Map.class);
 		Map<String, String> fields = new java.util.LinkedHashMap<>();
 		if (headers != null) headers.forEach((name, value) -> fields.put(String.valueOf(name), String.valueOf(value)));
-		return new DmpHttpObserveEndpoint(uri, this, subprotocol, target, contentType, username, password, fields);
+		// The security scheme's secret query parameters (an API key), bound the same way; only requests carry them.
+		Map<?, ?> query = getAndRemoveOrResolveReferenceParameter(parameters, "query", Map.class);
+		Map<String, String> secretQuery = new java.util.LinkedHashMap<>();
+		if (query != null) query.forEach((name, value) -> secretQuery.put(String.valueOf(name), String.valueOf(value)));
+		DmpHttpObserveEndpoint endpoint = new DmpHttpObserveEndpoint(uri, this, subprotocol, target, contentType, fields);
+		endpoint.secretQuery(secretQuery);
+		// How long an event stream may stay silent before it is reopened (milliseconds).
+		Long idleTimeout = getAndRemoveParameter(parameters, "idleTimeout", Long.class);
+		if (idleTimeout != null) endpoint.idleTimeout(java.time.Duration.ofMillis(idleTimeout));
+		return endpoint;
 	}
 }

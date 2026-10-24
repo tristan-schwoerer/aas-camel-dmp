@@ -34,6 +34,24 @@ public final class BoundCredential implements ManagedRouteResource {
 	public String userNameReference() { return "#bean:" + name + ".user"; }
 	public String passwordReference() { return "#bean:" + name + ".password"; }
 
+	/**
+	 * A stable, non-secret identity of these credentials within this process: equal for equal credentials,
+	 * so a connection cache keyed by it shares one session per server and user, and salted per process, so a
+	 * URI that carries it reveals nothing about the password.
+	 */
+	public String connectionKey() {
+		try {
+			var digest = java.security.MessageDigest.getInstance("SHA-256");
+			digest.update(SALT);
+			digest.update((userName + '\0' + password).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			return "dmp-" + java.util.HexFormat.of().formatHex(digest.digest(), 0, 12);
+		} catch (java.security.NoSuchAlgorithmException impossible) {
+			throw new IllegalStateException(impossible);
+		}
+	}
+
+	private static final byte[] SALT = new java.security.SecureRandom().generateSeed(16);
+
 	/** The bound user name, for components that cannot take a reference. */
 	public String userName() { return userName; }
 	public String password() { return password; }

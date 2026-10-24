@@ -8,21 +8,31 @@ import dk.aau.smartproductionlab.dmp.http.observe.DmpHttpObserveComponent;
 /** An HTTP property observed, or an HTTP event subscribed, through a WoT {@code subprotocol} (longpoll, sse). */
 public class HttpObserveDataSourceConfiguration extends DataSourceConfiguration
 		implements dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource {
-	/** The form's static htv_headers; bound in the registry while the bundle lives. */
-	private StaticHttpHeaders headers;
+	/** The form's static htv_headers and Basic credentials; bound in the registry while the bundle lives. */
+	private HttpClientOptions options = new HttpClientOptions(null, null, null);
+	private java.util.Map<String, String> secretQuery = java.util.Map.of();
+
+	private java.util.Map<String, String> headers;
+
+	/** The secret query parameters of the AID's security scheme (an API key in the query); bound, never in the URI. */
+	public void setSecretQuery(java.util.Map<String, String> secretQuery) {
+		this.secretQuery = secretQuery == null ? java.util.Map.of() : java.util.Map.copyOf(secretQuery);
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, this.secretQuery);
+	}
 
 	public void setHeaders(java.util.Map<String, String> headers) {
-		this.headers = headers == null || headers.isEmpty() ? null : new StaticHttpHeaders(headers);
+		this.headers = headers;
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, secretQuery);
 	}
 
 	@Override
 	public void bind(org.apache.camel.CamelContext context) {
-		if (headers != null) headers.bind(context);
+		options.bind(context);
 	}
 
 	@Override
 	public void close() {
-		if (headers != null) headers.close();
+		options.close();
 	}
 
 	private String subprotocol;
@@ -39,6 +49,7 @@ public class HttpObserveDataSourceConfiguration extends DataSourceConfiguration
 		this.contentType = contentType;
 		this.authUsername = authUsername;
 		this.authPassword = authPassword;
+		this.options = new HttpClientOptions(headers, authUsername, authPassword, secretQuery);
 		setDelivery("async");
 	}
 
@@ -46,7 +57,7 @@ public class HttpObserveDataSourceConfiguration extends DataSourceConfiguration
 
 	@Override
 	public String getConnectionURI() {
-		String uri = DmpHttpObserveComponent.uri(subprotocol, getServerUrl(), contentType, authUsername, authPassword);
-		return headers == null ? uri : uri + "&headers=" + headers.headersReference();
+		return DmpHttpObserveComponent.uri(subprotocol, getServerUrl(), contentType) + "&headers=" + options.headersReference()
+				+ "&query=" + options.queryReference();
 	}
 }

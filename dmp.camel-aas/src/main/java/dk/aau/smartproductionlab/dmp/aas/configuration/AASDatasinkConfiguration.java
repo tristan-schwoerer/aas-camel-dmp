@@ -24,7 +24,6 @@
  ******************************************************************************/
 package dk.aau.smartproductionlab.dmp.aas.configuration;
 
-import dk.aau.smartproductionlab.dmp.aas.AASEndpoint;
 import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfiguration;
 
 /**
@@ -36,6 +35,7 @@ import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfigura
 public class AASDatasinkConfiguration extends DataSinkConfiguration {
 	private String submodelEndpoint;
 	private String idShortPath;
+	private String elementType = "Property";
 
 	public AASDatasinkConfiguration(String submodelEndpoint, String idShortPath, String uniqueId) {
 		super(uniqueId);
@@ -59,6 +59,15 @@ public class AASDatasinkConfiguration extends DataSinkConfiguration {
 		this.idShortPath = path;
 	}
 
+	/** The element's model type, Property or SubmodelElementCollection: how the value is encoded. */
+	public String getElementType() {
+		return elementType;
+	}
+
+	public void setElementType(String elementType) {
+		this.elementType = elementType;
+	}
+
 	// the optional JSON field selector (valuePath) is inherited from
 	// DataSinkConfiguration; this sink applies it internally (handlesValuePathInternally)
 
@@ -72,6 +81,7 @@ public class AASDatasinkConfiguration extends DataSinkConfiguration {
 		String endpointDefinition = "aas:";
 		endpointDefinition += this.submodelEndpoint;
 		endpointDefinition += "?propertyPath=" + this.idShortPath;
+		if (!"Property".equals(elementType)) endpointDefinition += "&elementType=" + elementType;
 		if (getValuePath() != null && !getValuePath().isBlank()) {
 			endpointDefinition += "&valuePath=" + getValuePath();
 		}

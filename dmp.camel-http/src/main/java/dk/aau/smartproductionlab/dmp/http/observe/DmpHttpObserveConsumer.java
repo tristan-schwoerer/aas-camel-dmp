@@ -7,16 +7,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.http.HttpClient;
+import java.net.http.HttpConnectTimeoutException;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
@@ -37,6 +39,8 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 	static final long MAX_BACKOFF_MS = 30_000;
 	/** The SSE reconnection time until the server sets one with {@code retry:}. */
 	static final long DEFAULT_SSE_RETRY_MS = 3_000;
+	/** An event stream silent this long (no event, no comment) is taken as dead and reopened. */
+	static final Duration SSE_IDLE_TIMEOUT = Duration.ofMinutes(5);
 
 	private final DmpHttpObserveEndpoint endpoint;
 	private final SseParser parser = new SseParser();
@@ -45,18 +49,29 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 	private volatile boolean running;
 	private volatile CompletableFuture<?> inFlight;
 	private volatile InputStream stream;
+	private volatile long lastRead;
+	private ScheduledExecutorService watchdog;
+	private final Duration idleTimeout;
 
 	DmpHttpObserveConsumer(DmpHttpObserveEndpoint endpoint, Processor processor) {
 		super(endpoint, processor);
 		this.endpoint = endpoint;
+		this.idleTimeout = endpoint.idleTimeout();
 	}
 
 	@Override protected void doStart() throws Exception {
 		super.doStart();
-		client = HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
+		client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(CONNECT_TIMEOUT).build();
 		running = true;
 		executor = getEndpoint().getCamelContext().getExecutorServiceManager().newSingleThreadExecutor(this, "dmp-http-observe");
 		executor.execute(this::run);
+		if (endpoint.subprotocol() == DmpHttpObserveComponent.Subprotocol.SSE) {
+			// A stream whose peer vanished without a FIN never ends a read; closing it does.
+			long period = Math.max(10, Math.min(10_000, idleTimeout.toMillis() / 4));
+			watchdog = getEndpoint().getCamelContext().getExecutorServiceManager()
+					.newSingleThreadScheduledExecutor(this, "dmp-http-observe-idle");
+			watchdog.scheduleWithFixedDelay(this::closeIfIdle, period, period, TimeUnit.MILLISECONDS);
+		}
 	}
 
 	@Override protected void doStop() throws Exception {
@@ -69,6 +84,8 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		}
 		if (executor != null) getEndpoint().getCamelContext().getExecutorServiceManager().shutdownNow(executor);
 		executor = null;
+		if (watchdog != null) getEndpoint().getCamelContext().getExecutorServiceManager().shutdownNow(watchdog);
+		watchdog = null;
 		if (client != null) client.shutdownNow();
 		client = null;
 		super.doStop();
@@ -100,6 +117,8 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		HttpResponse<String> response;
 		try {
 			response = await(client.sendAsync(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)));
+		} catch (HttpConnectTimeoutException unreachable) {
+			throw unreachable; // the server is not there: back off
 		} catch (HttpTimeoutException quiet) {
 			return; // nothing changed while the server held the request
 		}
@@ -116,6 +135,7 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		HttpResponse<InputStream> response = await(client.sendAsync(builder.GET().build(), HttpResponse.BodyHandlers.ofInputStream()));
 		try (InputStream body = response.body()) {
 			stream = body;
+			lastRead = System.nanoTime();
 			if (response.statusCode() < 200 || response.statusCode() >= 300) throw new IOException("HTTP " + response.statusCode());
 			String type = response.headers().firstValue("Content-Type").orElse("");
 			if (!type.toLowerCase(Locale.ROOT).startsWith("text/event-stream"))
@@ -125,6 +145,7 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 			String line;
 			boolean first = true;
 			while (running && (line = reader.readLine()) != null) {
+				lastRead = System.nanoTime();
 				if (first && line.startsWith("﻿")) line = line.substring(1);
 				first = false;
 				String data = parser.line(line);
@@ -139,12 +160,15 @@ final class DmpHttpObserveConsumer extends DefaultConsumer {
 		if (running) Thread.sleep(parser.retryMs);
 	}
 
+	private void closeIfIdle() {
+		InputStream open = stream;
+		if (open == null || System.nanoTime() - lastRead < idleTimeout.toNanos()) return;
+		try { open.close(); } catch (IOException ignored) { /* the reader fails and reconnects */ }
+	}
+
 	private HttpRequest.Builder request() {
-		HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint.url());
+		HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint.requestUrl());
 		endpoint.headers().forEach(builder::setHeader);
-		if (endpoint.username() != null && endpoint.password() != null)
-			builder.header("Authorization", "Basic " + Base64.getEncoder().encodeToString(
-					(endpoint.username() + ":" + endpoint.password()).getBytes(StandardCharsets.UTF_8)));
 		return builder;
 	}
 

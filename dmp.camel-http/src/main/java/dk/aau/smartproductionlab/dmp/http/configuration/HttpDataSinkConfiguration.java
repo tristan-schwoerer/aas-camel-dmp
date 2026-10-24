@@ -37,21 +37,39 @@ import dk.aau.smartproductionlab.dmp.core.configuration.entity.DataSinkConfigura
  */
 public class HttpDataSinkConfiguration extends DataSinkConfiguration
 		implements dk.aau.smartproductionlab.dmp.core.configuration.entity.ManagedRouteResource {
-	/** The form's static htv_headers; bound in the registry while the bundle lives. */
-	private StaticHttpHeaders headers;
+	/** Retries off, timeouts, the form's static htv_headers and Basic credentials; bound while the bundle lives. */
+	private HttpClientOptions options = new HttpClientOptions(null, null, null);
+	private java.util.Map<String, String> secretQuery = java.util.Map.of();
+	private java.util.Map<String, String> headers;
+	private String username;
+	private String password;
+
+	/** The secret query parameters of the AID's security scheme (an API key in the query); bound, never in the URI. */
+	public void setSecretQuery(java.util.Map<String, String> secretQuery) {
+		this.secretQuery = secretQuery == null ? java.util.Map.of() : java.util.Map.copyOf(secretQuery);
+		this.options = new HttpClientOptions(headers, username, password, this.secretQuery);
+	}
 
 	public void setHeaders(java.util.Map<String, String> headers) {
-		this.headers = headers == null || headers.isEmpty() ? null : new StaticHttpHeaders(headers);
+		this.headers = headers;
+		this.options = new HttpClientOptions(headers, username, password, secretQuery);
+	}
+
+	/** HTTP Basic credentials, sent as a bound {@code Authorization} header. */
+	public void setBasicCredentials(String username, String password) {
+		this.username = username;
+		this.password = password;
+		this.options = new HttpClientOptions(headers, username, password, secretQuery);
 	}
 
 	@Override
 	public void bind(org.apache.camel.CamelContext context) {
-		if (headers != null) headers.bind(context);
+		options.bind(context);
 	}
 
 	@Override
 	public void close() {
-		if (headers != null) headers.close();
+		options.close();
 	}
 
 	
@@ -130,12 +148,8 @@ public class HttpDataSinkConfiguration extends DataSinkConfiguration
 		uriBuilder.setPort(getPort());
 		uriBuilder.setPath(getPath());
 		// httpMethod is a Camel endpoint option: Camel consumes it and does not send it to the device.
-		String options = method == null || method.isBlank() ? null : "httpMethod=" + method;
-		if (headers != null) options = options == null ? headers.clientConfigurerOption() : options + "&" + headers.clientConfigurerOption();
-		String fullQuery = query == null || query.isBlank() ? options : options == null ? query : query + "&" + options;
-		if (fullQuery != null) {
-			uriBuilder.setCustomQuery(fullQuery);
-		}
+		String endpointOptions = (method == null || method.isBlank() ? "" : "httpMethod=" + method + "&") + options.endpointOptions();
+		uriBuilder.setCustomQuery(query == null || query.isBlank() ? endpointOptions : query + "&" + endpointOptions);
 		
 		return buildConnectionUri(uriBuilder);
 	}

@@ -12,6 +12,8 @@ import org.apache.camel.Exchange;
 import org.apache.camel.component.milo.client.MiloClientConnection;
 import org.apache.camel.support.DefaultProducer;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvocationException;
+import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
+import org.eclipse.milo.opcua.stack.core.UaException;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
 import org.eclipse.milo.opcua.stack.core.types.structured.CallMethodResult;
@@ -49,6 +51,19 @@ public final class DmpMiloMethodProducer extends DefaultProducer {
 		super.doStop();
 	}
 
+	private OpcUaClient resolvedFor;
+	private NodeId[] resolved;
+
+	/** The Object and Method NodeIds, resolved once per session: a browse path is a TranslateBrowsePaths call. */
+	private synchronized NodeId[] target(OpcUaClient client) throws UaException {
+		if (resolvedFor != client) {
+			resolved = new NodeId[] { OpcUaBrowsePaths.resolve(client, endpoint.getNode()),
+					OpcUaBrowsePaths.resolve(client, endpoint.getMethod()) };
+			resolvedFor = client;
+		}
+		return resolved;
+	}
+
 	@Override
 	public void process(Exchange exchange) {
 		Variant[] pending = arguments(exchange.getMessage().getBody());
@@ -58,8 +73,9 @@ public final class DmpMiloMethodProducer extends DefaultProducer {
 			var client = connection == null ? null : connection.getOpcUaClient();
 			if (client == null) throw new IllegalStateException("OPC UA client is not connected");
 			Variant[] arguments = encoded(pending, client);
-			var object = OpcUaBrowsePaths.resolve(client, endpoint.getNode());
-			var method = OpcUaBrowsePaths.resolve(client, endpoint.getMethod());
+			NodeId[] target = target(client);
+			var object = target[0];
+			var method = target[1];
 			CallResponse response = client.callAsync(List.of(new CallMethodRequest(object, method, arguments)))
 					.get(timeoutMs, TimeUnit.MILLISECONDS);
 			if (response == null || response.getResults() == null || response.getResults().length != 1)

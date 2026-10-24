@@ -79,14 +79,29 @@ class OpcUaSubscriptionSourcesTest {
 	private HttpServer aas;
 	private final List<String> writes = new CopyOnWriteArrayList<>();
 	private int devicePort;
+	private static final String USER = "dmp";
+	/** URI delimiters that broke the user info form (SPEC §11). */
+	private static final String PASSWORD = "p@ss&w#rd:1";
+	private final List<String> authenticated = new CopyOnWriteArrayList<>();
 
 	@BeforeEach
 	void start() throws Exception {
 		devicePort = freePort();
 		var endpoint = EndpointConfig.newBuilder().setBindAddress("127.0.0.1").setBindPort(devicePort)
 				.setHostname("127.0.0.1").setPath("").setSecurityPolicy(SecurityPolicy.None)
-				.setSecurityMode(MessageSecurityMode.None).addTokenPolicy(OpcUaServerConfig.USER_TOKEN_POLICY_ANONYMOUS).build();
+				.setSecurityMode(MessageSecurityMode.None).addTokenPolicy(OpcUaServerConfig.USER_TOKEN_POLICY_ANONYMOUS)
+				// A plain-text password policy: the test server has no certificate to encrypt one with.
+				.addTokenPolicy(new org.eclipse.milo.opcua.stack.core.types.structured.UserTokenPolicy("username",
+						org.eclipse.milo.opcua.stack.core.types.enumerated.UserTokenType.UserName, null, null,
+						SecurityPolicy.None.getUri())).build();
+		var users = new org.eclipse.milo.opcua.sdk.server.identity.UsernameIdentityValidator(challenge -> {
+			boolean valid = USER.equals(challenge.getUsername()) && PASSWORD.equals(challenge.getPassword());
+			if (valid) authenticated.add(challenge.getUsername());
+			return valid;
+		});
 		server = new OpcUaServer(OpcUaServerConfig.builder().setEndpoints(Set.of(endpoint))
+				.setIdentityValidator(new org.eclipse.milo.opcua.sdk.server.identity.CompositeValidator(
+						org.eclipse.milo.opcua.sdk.server.identity.AnonymousIdentityValidator.INSTANCE, users))
 				.setApplicationName(LocalizedText.english("subscription device"))
 				.setApplicationUri("urn:dmp:subscription:server").setProductUri("urn:dmp:subscription")
 				.setCertificateManager(new DefaultCertificateManager(new MemoryCertificateQuarantine())).build(),
@@ -171,6 +186,42 @@ class OpcUaSubscriptionSourcesTest {
 		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(42).equals(device.setpoint()));
 		device.level(50);
 		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(51).equals(device.setpoint()));
+	}
+
+	@Test
+	void aSubscriptionThatCannotBeSetUpIsDeletedNotLeaked() throws Exception {
+		// The path names no node: each attempt creates a subscription, then fails resolving the node.
+		RoutesConfiguration bundle = compile(false, "function aimc_main(sources) return { Out = sources.Pressure } end");
+		for (var source : bundle.getDatasources().values())
+			if (source instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration opcua) {
+				opcua.setNodeInformation("/Root/Objects/1:Missing(1)");
+			}
+		runtime.installBundle("missing", bundle);
+		Thread.sleep(3_000);
+		assertTrue(server.getSubscriptions().size() <= 1, "subscriptions left on the server: " + server.getSubscriptions().size());
+	}
+
+	/**
+	 * The connector's user path, which opcua_authentication_sc (UserName) will feed from the DMP's credentials
+	 * (PLAN H4): the user is bound, not written into the URI, and reaches the server with its password intact.
+	 */
+	@Test
+	void aSessionAuthenticatesAsTheBoundUserWithItsPasswordIntact() throws Exception {
+		RoutesConfiguration bundle = compileWrite("function aimc_main(sources) return { Out = sources.Pressure + 1 } end");
+		for (var source : bundle.getDatasources().values())
+			if (source instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSourceConfiguration opcua) {
+				opcua.setUsername(USER);
+				opcua.setPassword(PASSWORD);
+				assertTrue(!opcua.getConnectionURI().contains("p@ss"), opcua.getConnectionURI());
+			}
+		for (var sink : bundle.getDatasinks().values())
+			if (sink instanceof dk.aau.smartproductionlab.dmp.opcua.configuration.OpcuaDataSinkConfiguration opcua) {
+				opcua.setUsername(USER);
+				opcua.setPassword(PASSWORD);
+			}
+		runtime.installBundle("user", bundle);
+		await().atMost(Duration.ofSeconds(8)).until(() -> Integer.valueOf(42).equals(device.setpoint()));
+		assertTrue(authenticated.contains(USER), "the session is the user's, not anonymous: " + authenticated);
 	}
 
 	/** One variable (Level), a writable one (Setpoint) and the Server object's transition events. */

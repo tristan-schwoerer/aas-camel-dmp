@@ -67,4 +67,14 @@ class OpcUaSynchronousSourceReadAdapterTest {
 		assertThrows(IllegalStateException.class, () -> OpcUaSynchronousSourceReadAdapter.normalizeReadResult(
 				List.of(new DataValue(new Variant("BAD"), StatusCode.BAD))));
 	}
+
+	@Test
+	void aNodeIdWithParenthesesIsReadWhole() {
+		assertEquals("ns=2;s=Pump(1).Speed", OpcUaSynchronousSourceReadAdapter.nodeIdFromEndpoint(
+				"dmp-milo-client:opc.tcp://host:4840/?node=RAW(ns=2;s=Pump(1).Speed)&allowedSecurityPolicies=None"));
+		assertEquals("ns=2;s=Pump(1)", OpcUaSynchronousSourceReadAdapter.nodeIdFromEndpoint(
+				"dmp-milo-client:opc.tcp://host:4840/?node=RAW(ns=2;s=Pump(1))"));
+		assertEquals("/Root/Objects/2:Pump(1)", OpcUaSynchronousSourceReadAdapter.nodeIdFromEndpoint(
+				"dmp-milo-client:opc.tcp://host:4840/?browsePath=RAW(/Root/Objects/2:Pump(1))&requestTimeout=30000"));
+	}
 }

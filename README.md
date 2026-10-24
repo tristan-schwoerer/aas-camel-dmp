@@ -99,6 +99,7 @@ The container listens on port 8080 for operation calls, `/health` and
 | --- | --- |
 | `DMP_MANAGED_AAS_REPOSITORY_URI` | **Required.** Credential-free HTTP(S) repository root |
 | `DMP_MANAGED_AAS_AUTHORIZATION` | Optional `Authorization` header for repository reads (secret) |
+| `DMP_CREDENTIALS_FILE` | Optional JSON file (a mounted secret) with the credentials the AIDs' security schemes need, by endpoint or scheme reference (SPEC §5.2); without it only `nosec` interfaces compile |
 | `DMP_MANAGED_EVENT_TRANSPORT` | `kafka` (default) or `mqtt`: where repository events come from |
 | `DMP_MANAGED_KAFKA_BROKERS` | **Required for Kafka.** Kafka bootstrap servers for control events |
 | `DMP_MANAGED_CONTROL_TOPIC` | **Required for Kafka.** 1–8 comma-separated literal topic names, e.g. `submodel-events` |

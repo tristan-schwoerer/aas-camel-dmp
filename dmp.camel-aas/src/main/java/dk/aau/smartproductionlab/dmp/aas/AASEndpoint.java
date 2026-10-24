@@ -25,6 +25,9 @@
 package dk.aau.smartproductionlab.dmp.aas;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -38,26 +41,28 @@ import org.apache.camel.spi.UriEndpoint;
 import org.apache.camel.spi.UriParam;
 import org.apache.camel.spi.UriPath;
 import org.apache.camel.support.DefaultEndpoint;
-import dk.aau.smartproductionlab.dmp.aas.http.HTTPRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import dk.aau.smartproductionlab.dmp.aas.http.AasHttp;
+import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
+import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
+
 /**
- * AAS component which can connect to Asset Administration Shells via a given
- * registry
+ * {@code aas:<submodel endpoint>?propertyPath=<idShortPath>}: reads and {@code $value} writes of one element of
+ * the AAS repository (SPEC §5.3), through the context's {@link AasHttp}.
  */
 @UriEndpoint(firstVersion = "1.0.0-SNAPSHOT", scheme = "aas", title = "AAS", syntax = "aas:name", category = {
 		Category.API })
 public class AASEndpoint extends DefaultEndpoint {
 	private static final Logger logger = LoggerFactory.getLogger(AASEndpoint.class);
 
-	/** The only supported AAS API: AAS Part 2 HTTP/REST API v3. */
-	private static final String API_V3_SUFFIX = "/$value";
-
+	/** The submodel endpoint URL. */
 	@UriPath
 	@Metadata(required = true)
 	private String name;
 
+	/** The element's idShortPath below the submodel; empty for the submodel. */
 	@UriParam(defaultValue = "")
 	private String propertyPath;
 
@@ -68,12 +73,11 @@ public class AASEndpoint extends DefaultEndpoint {
 	@UriParam(defaultValue = "")
 	private String valuePath;
 
-	/** Resolved AAS key type, used to select generic element reads. */
+	/** Resolved AAS key type: how a read is decoded and a write encoded. */
 	@UriParam(defaultValue = "Property")
 	private String elementType = "Property";
 
-	private static final com.fasterxml.jackson.databind.ObjectMapper MAPPER =
-			new com.fasterxml.jackson.databind.ObjectMapper();
+	private volatile String submodelEndpoint;
 
 	public AASEndpoint() {
 	}
@@ -92,11 +96,6 @@ public class AASEndpoint extends DefaultEndpoint {
 		return null;
 	}
 
-	/**
-	 * Sets the name
-	 * 
-	 * @param name
-	 */
 	public void setName(String name) {
 		this.name = name;
 	}
@@ -105,9 +104,7 @@ public class AASEndpoint extends DefaultEndpoint {
 		return name;
 	}
 
-	/**
-	 * The path to the property relative to the target AAS
-	 */
+	/** The element's idShortPath below the submodel ({@code Location.x}, {@code Items[0]}); empty for the submodel. */
 	public String getPropertyPath() {
 		return propertyPath;
 	}
@@ -124,31 +121,55 @@ public class AASEndpoint extends DefaultEndpoint {
 		this.elementType = elementType;
 	}
 
+	public String getValuePath() {
+		return valuePath;
+	}
+
+	public void setValuePath(String valuePath) {
+		this.valuePath = valuePath;
+	}
+
+	/** Writes the decoded value (or its {@code valuePath} member) as the element's ValueOnly form. */
 	public void setPropertyValue(Object content) throws IOException {
 		Object value = extractValuePath(content);
-		if (value == dk.aau.smartproductionlab.dmp.core.util.JsonPointer.JSON_NULL) value = null;
-		logger.debug("AAS write {} <- {} ({})", propertyPath, value,
-				value == null ? "null" : value.getClass().getSimpleName());
-		// Encode decoded values once at the DotAAS-V3 wire boundary.
-		HTTPRequest.patchRequest(getFullProxyUrl() + API_V3_SUFFIX, MAPPER.writeValueAsString(wireValue(value)));
-
-		logger.info("Transferred message={}", value);
+		if (value == JsonPointer.JSON_NULL) value = null;
+		if (logger.isDebugEnabled()) logger.debug("AAS write {} <- {}", propertyPath, value);
+		AasHttp.of(getCamelContext()).patchValue(getFullProxyUrl(), JsonCodec.toJson(wireValue(value, elementType)));
 	}
 
 	/**
-	 * A Property's {@code $value} is its lexical form as a JSON string: BaSyx
-	 * rejects a JSON number or boolean ("not as defined in the Dot AAS Part 2").
-	 * Numbers are written without exponent, so the text is valid for xs:decimal
-	 * and xs:double alike, and an integral number fits the integer types.
+	 * The ValueOnly form (AAS Part 2) as BaSyx accepts it: every Property's value as its lexical text, a JSON
+	 * string, also inside a collection; BaSyx answers a JSON number or boolean with a 500. Numbers are written
+	 * without exponent, so the text is valid for xs:decimal and xs:double alike, and an integral number fits the
+	 * integer types. A structured value for a Property is its JSON text.
 	 */
-	private Object wireValue(Object value) {
-		if (!"Property".equalsIgnoreCase(elementType)) return value;
+	static Object wireValue(Object value, String elementType) {
+		if ("SubmodelElementCollection".equalsIgnoreCase(elementType)) return leavesAsText(value);
+		if (value instanceof Map<?, ?> || value instanceof List<?>) return JsonCodec.toJson(value);
+		return lexical(value);
+	}
+
+	private static Object leavesAsText(Object value) {
+		if (value instanceof Map<?, ?> members) {
+			Map<String, Object> text = new LinkedHashMap<>();
+			members.forEach((key, member) -> text.put(String.valueOf(key), leavesAsText(member)));
+			return text;
+		}
+		if (value instanceof List<?> items) {
+			List<Object> text = new ArrayList<>(items.size());
+			for (Object item : items) text.add(leavesAsText(item));
+			return text;
+		}
+		return value == JsonPointer.JSON_NULL ? null : lexical(value);
+	}
+
+	private static Object lexical(Object value) {
 		if (value instanceof Boolean) return value.toString();
 		if (value instanceof Number number) {
 			double asDouble = number.doubleValue();
 			if (Double.isNaN(asDouble)) return "NaN";
 			if (Double.isInfinite(asDouble)) return asDouble > 0 ? "INF" : "-INF";
-			return new java.math.BigDecimal(number.toString()).stripTrailingZeros().toPlainString();
+			return new BigDecimal(number.toString()).stripTrailingZeros().toPlainString();
 		}
 		return value;
 	}
@@ -160,66 +181,36 @@ public class AASEndpoint extends DefaultEndpoint {
 	 * and a nested pointer ({@code "$.SetPoint"}) work; absent → write the body
 	 * as-is (coarse sink).
 	 */
-	private Object extractValuePath(Object content) throws IOException {
+	private Object extractValuePath(Object content) {
 		if (valuePath == null || valuePath.isBlank() || content == null) {
 			return content;
 		}
 		if (!(content instanceof Map<?, ?>) && !(content instanceof List<?>)) {
 			throw new IllegalArgumentException("AAS valuePath requires a decoded object or array payload");
 		}
-		Object node = content;
-		java.util.Optional<Object> field = dk.aau.smartproductionlab.dmp.core.util.JsonPointer.extract(node, valuePath);
-		if (field.isEmpty()) {
-			throw new IllegalArgumentException("AAS valuePath does not resolve in the decoded payload: " + valuePath);
-		}
-		Object value = field.get();
-		if (value == dk.aau.smartproductionlab.dmp.core.util.JsonPointer.JSON_NULL) {
-			// present-but-null leaf: write an explicit JSON null
-			return null;
-		}
-		// collections are returned as the JAVA OBJECT so the DotAasV3 writer
-		// can JSON-string-encode them properly (their toString()/naive wrap
-		// is invalid JSON the server truncates — e.g. the occupation queue)
-		return value;
-	}
-
-	public String getValuePath() {
-		return valuePath;
-	}
-
-	public void setValuePath(String valuePath) {
-		this.valuePath = valuePath;
-	}
-
-	private String createDotAasApiProxyUrl() {
-		String proxyUrl = String.format("%s/submodel-elements/%s", getSubmodelEndpoint(), propertyPath);
-
-		logger.info("Proxy URL: " + proxyUrl);
-
-		return proxyUrl;
+		return JsonPointer.extract(content, valuePath).orElseThrow(() ->
+				new IllegalArgumentException("AAS valuePath does not resolve in the decoded payload: " + valuePath));
 	}
 
 	public String getSubmodelEndpoint() {
-		String submodelEndpoint = this.getEndpointBaseUri().substring(4);
-
+		String endpoint = submodelEndpoint;
+		if (endpoint != null) return endpoint;
+		endpoint = this.getEndpointBaseUri().substring(4);
 		// The endpoint URI is "aas:" + an ABSOLUTE http(s) URL. Camel normalises
 		// the scheme-relative remainder, so the captured value can come back with
 		// leading slashes ("/http://host" or "//http://host"). Left in place the
 		// HTTP client rejects it with "ProtocolException: Target host is not
-		// specified", so every read of a DotAAS-V3 source fails and the mapping
-		// never receives a value. Only a genuine scheme marks the real start, so
-		// strip the padding without touching a path-relative endpoint.
-		while (submodelEndpoint.startsWith("/") && submodelEndpoint.contains("://")) {
-			submodelEndpoint = submodelEndpoint.substring(1);
+		// specified". Only a genuine scheme marks the real start, so strip the
+		// padding without touching a path-relative endpoint.
+		while (endpoint.startsWith("/") && endpoint.contains("://")) {
+			endpoint = endpoint.substring(1);
 		}
-
-		logger.info("SubmodelEndpoint " + submodelEndpoint);
-
-		return submodelEndpoint;
+		return submodelEndpoint = endpoint;
 	}
 
+	/** The element's URL, its idShortPath percent-encoded (or the submodel's, without one). */
 	public String getFullProxyUrl() {
-		return createDotAasApiProxyUrl();
+		return AasHttp.elementUrl(getSubmodelEndpoint(), propertyPath);
 	}
 
 	@Override

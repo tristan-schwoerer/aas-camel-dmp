@@ -53,7 +53,9 @@ class AASOrdinarySinkContractTest {
 			try (var producer = context.createProducerTemplate()) {
 				for (Object value : List.of("\"authored quotes\"", Map.of("AuthoredId", 7L, "sibling", 9L))) {
 					producer.sendBody("direct:ordinary", Map.of("AuthoredId", value));
-					assertEquals(JsonCodec.toJson(value), writes.get(writes.size() - 1));
+					// A Property's value is text: a structured value is written as its JSON text.
+					Object text = value instanceof Map<?, ?> ? JsonCodec.toJson(value) : value;
+					assertEquals(JsonCodec.toJson(text), writes.get(writes.size() - 1));
 				}
 				producer.sendBody("direct:ordinary", Collections.singletonMap("AuthoredId", null));
 				assertEquals(3, writes.size());

@@ -42,11 +42,25 @@ public class DmpExecutable {
 	public static void main(String[] args) throws IllegalArgumentException, SecurityException {
 		if (args.length != 0) throw new IllegalArgumentException("the DMP takes no arguments; configure it through DMP_MANAGED_* environment variables");
 		ManagedDmpRuntime runtime = new ManagedDmpRuntime(ManagedRuntimeSettings.fromEnvironment(System.getenv()),
-				InfluxSettings.fromEnvironment(System.getenv()).orElse(null));
+				InfluxSettings.fromEnvironment(System.getenv()).orElse(null), credentials(System.getenv()));
 		runtime.start();
 		managedRuntime = runtime;
 		component = runtime.component();
 		registerManagedShutdownHook();
+	}
+
+	/**
+	 * The credentials answering the AIDs' security schemes: the JSON file {@code DMP_CREDENTIALS_FILE} (a mounted
+	 * secret), read once at start; none without it, so only nosec interfaces compile (PLAN H4).
+	 */
+	static dk.aau.smartproductionlab.dmp.management.compiler.DmpCredentials credentials(java.util.Map<String, String> environment) {
+		String file = environment.get("DMP_CREDENTIALS_FILE");
+		if (file == null || file.isBlank()) return dk.aau.smartproductionlab.dmp.management.compiler.DmpCredentials.none();
+		try {
+			return dk.aau.smartproductionlab.dmp.management.compiler.DmpCredentials.read(java.nio.file.Path.of(file.trim()));
+		} catch (java.io.IOException unreadable) {
+			throw new IllegalArgumentException("DMP_CREDENTIALS_FILE cannot be read: " + unreadable.getClass().getSimpleName());
+		}
 	}
 
 	public static DmpComponent getDmpComponent() {
