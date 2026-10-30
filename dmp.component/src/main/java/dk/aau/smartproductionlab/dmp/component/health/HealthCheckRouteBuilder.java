@@ -30,6 +30,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.rest.RestBindingMode;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import dk.aau.smartproductionlab.dmp.component.ManagedRuntimeStatus;
+import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 
 /**
  * Builds the health check route via the consolidated camel-rest surface
@@ -41,6 +42,10 @@ import dk.aau.smartproductionlab.dmp.component.ManagedRuntimeStatus;
  * @author danish, aas-camel-dmp
  */
 public class HealthCheckRouteBuilder extends RouteBuilder {
+	/** The longest InvocationTimeout and a minute for the response mapping and the reply. */
+	static final long CONTINUATION_TIMEOUT_MS =
+			(ConnectorConfigurationFactory.MAX_INVOCATION_TIMEOUT_SECONDS + 60) * 1000;
+
 
 	@Override
 	public void configure() throws Exception {
@@ -49,7 +54,10 @@ public class HealthCheckRouteBuilder extends RouteBuilder {
 				.host("0.0.0.0")
 				.port(HealthCheckUtils.getHealthCheckPort())
 				.inlineRoutes(false)
-				.bindingMode(RestBindingMode.off);
+				.bindingMode(RestBindingMode.off)
+				// Jetty answers a request still open after 30 s itself; an Operation's call waits up to its
+				// InvocationTimeout, then the DMP answers.
+				.componentProperty("continuationTimeout", Long.toString(CONTINUATION_TIMEOUT_MS));
 
 		rest("/health")
 				.get()

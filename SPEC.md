@@ -205,7 +205,8 @@ AssetInterfacesMappingConfiguration
     │   DMP extensions, the response half (§6, §7):
     ├── ResponseSources[] : Source (Reference), SourceId
     ├── ResponseTransformation   (Blob, Lua)
-    └── ResponseSinks[]   : Sink (Reference), SinkId
+    ├── ResponseSinks[]   : Sink (Reference), SinkId
+    └── InvocationTimeout (optional, xs:duration; an Operation's action, §7.1)
 ```
 
 The IDTA template defines `DefaultPollingInterval`, `Transformation`,
@@ -400,7 +401,8 @@ OPC UA follows OPC 10101 (the OPC UA binding for WoT):
 - Security is `nosec` (mode and policy None, anonymous) until the DMP opens
   its own sessions (PLAN H4); the connector already binds a session user in
   the Camel registry, and endpoints of one server and user share a session.
-  Every request times out after 30 s.
+  Every request times out after 30 s; a Method Call that an Operation invokes
+  waits its InvocationTimeout instead (§7.1).
 - An observed variable is a monitored item in a subscription of its own; the
   source's `PollingInterval` sets its sampling and publishing interval (the
   IDTA AIMC text calls the interval ignored for asynchronous sources; for OPC
@@ -673,17 +675,27 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
 ## 7. Bridge mappings (Operation delegation)
 
 1. BaSyx delegates an Operation to the URL in its `invocationDelegation`
-   qualifier. The DMP serves `POST` on that URL's path (by convention
-   `/operations/{aasIdShort}/{skill}`). An Operation without exactly one
-   absolute delegation URL blocks its mapping.
-2. The mapping's sources are the Operation and, optionally, further AAS
-   elements (fan-in, §7.1). Its sinks bind the Operation 1:1 to one affordance
+   qualifier. The DMP serves `POST` on that URL's path, which must be the
+   Operation's own invoke path in the AAS API:
+   `/submodels/{base64url(submodel id)}/submodel-elements/{idShortPath}/invoke`
+   (padding optional, the idShortPath percent-encoded but its dots). A submodel
+   id is globally unique and an idShortPath unique in its submodel, so no two
+   Operations share a path; aas-model writes it (`invocation_authoring`). An
+   Operation without exactly one absolute delegation URL, with any other path,
+   or inside a SubmodelElementList (whose index Camel's REST layer cannot
+   serve) blocks its mapping. The body is BaSyx's: the input and InOut
+   variables as an `OperationVariable[]` (BaSyx Java and Go alike; Go turns
+   `$value` and `invoke-async` calls into the same synchronous delegation);
+   any other body is the caller's 400. The reply is the output and InOut
+   variables as an `OperationVariable[]`, typed by their declarations.
+2. The mapping's sources are the Operation and, optionally, further sources
+   (fan-in, §7.1). Its sinks bind the Operation 1:1 to one affordance
    of the device's AID: the action of the same skill, or one whole property
    (§7.1). The two sides are addressed alike:
 
    | | Request | Response |
    |---|---|---|
-   | AAS side | Sources: Operation input/InOut variables (or the Operation), fan-in elements | ResponseSinks: Operation output/InOut variables (or the Operation), further AAS elements |
+   | AAS side | Sources: Operation input/InOut variables (or the Operation), fan-in sources | ResponseSinks: Operation output/InOut variables (or the Operation), further AAS elements |
    | Device side | Sinks: the action's `input` DataSchema, or members of it | ResponseSources: the action's `output` DataSchema, or members of it |
 
    A Sink on the action itself or on its `output`, or a ResponseSource
@@ -728,7 +740,8 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
      the first reply on the reply topic that carries the request's
      correlation data is the terminal reply, whatever its payload. A device
      publishes progress or other messages without that correlation data.
-     Timeout 30 s for subscription, publication and reply together. A command
+     The InvocationTimeout (§7.1) bounds subscription, publication and reply
+     together. A command
      is published at most once: neither its timeout nor a reconnect sends it
      again (connections start clean). An action without `mqv_responseTopic`
      only invokes: the command is published one way and the call returns once
@@ -764,7 +777,13 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
    queued jobs (abort on overflow), so they are written in the order the calls
    finished and never overtake each other. These writes are best effort and
    never change the caller's reply.
-7. Failures return structured errors: `DMP_DEVICE_TIMEOUT` (504),
+7. Failures answer with an HTTP error status and the AAS API's `Result`:
+   `{"messages": [{"messageType": "Error", "code", "text", "correlationId",
+   "timestamp"}]}`, the correlationId being the invocation id the DMP logs.
+   The text is a fixed message per code; a 400 names the omitted inputs. BaSyx
+   reports a failed delegation by status alone (Java: 424 naming the status,
+   Go: 502), so its callers see the code only in the DMP's log. Codes:
+   `DMP_DEVICE_TIMEOUT` (504),
    `DMP_DEVICE_ERROR`/`DMP_DEVICE_TRANSPORT_ERROR` (502),
    `DMP_COMMAND_VALIDATION_FAILED`, `DMP_RESPONSE_VALIDATION_FAILED`,
    `DMP_RESPONSE_MAPPING_FAILED`, `DMP_OPERATION_VALIDATION_FAILED`,
@@ -800,11 +819,12 @@ On the AAS side the mapping fans in and out:
 
 - **Fan-in.** The Operation is the mapping's only trigger and takes no
   `Evaluation`. Further Sources address AAS elements and are
-  `ReadAtEvaluation` (their default; another Mode blocks the mapping): read
-  once per invocation, before the request Lua, and passed to it under their
-  SourceIds next to the Operation's variables. A failed read answers
-  `DMP_DEVICE_TRANSPORT_ERROR`. A read hands Lua the element's value
-  (§5.3).
+  `ReadAtEvaluation` (their default; any other Mode, `Cached` included,
+  blocks the mapping): read once per invocation, before the request Lua, and
+  passed to it under their SourceIds next to the Operation's variables. A
+  failed read answers `DMP_DEVICE_TRANSPORT_ERROR`. A read hands Lua the
+  element's value (§5.3). A device's value reaches an Operation through an
+  ordinary mapping that writes it to an AAS element.
 - **Fan-out.** ResponseSinks receive the response Lua's values for their
   SinkIds (§7 item 6).
 
@@ -816,10 +836,15 @@ higher-level control orchestrates them through ordinary mappings.
 - **Concurrency.** Each invocation is correlated by its protocol (an OPC UA
   Call, MQTT 5 correlation data, an HTTP exchange), so invocations of the
   same action run concurrently; there is no busy guard.
-- **Timeouts.** A call waits for its terminal reply up to the connector's
-  timeout (30 s for MQTT, OPC UA and HTTP). BaSyx delegation is
-  synchronous and has no timeout of its own, so the invoking client's HTTP
-  timeout must exceed the connector's.
+- **Timeouts.** A call waits for its terminal reply up to the mapping's
+  `InvocationTimeout` (an xs:duration of whole seconds, above zero and at most
+  `PT15M`; `PT30S` when not authored), for MQTT, OPC UA and HTTP alike. It
+  belongs to a mapping an Operation triggers and that invokes an action; on
+  any other mapping, or on an Operation bound to a property (written within
+  its connector's own timeout), it blocks the mapping. BaSyx delegation is
+  synchronous: BaSyx Java has no timeout of its own, BaSyx Go waits the
+  caller's `clientTimeoutDuration` (default 30 s, at most 15 min), so a caller
+  must allow at least the InvocationTimeout.
 - **Late replies.** When the timeout expires the call fails, but the device
   may still carry out the action; a later reply is dropped. Idempotency and
   compensation are the higher-level control's concern.
@@ -848,7 +873,7 @@ end
   | `meta.sources.<SourceId>.trigger` | `true` on the Sources whose new value caused the evaluation (an Operation's own Sources for a call); absent otherwise | absent |
   | `meta.sinks.<SinkId>.kind` | each Sink: the connector it writes through, its endpoint scheme (`aas`, `dmp-influxdb2`, `dmp-paho-mqtt5`, …) | each ResponseSink: its connector, or `operation` for one answering the caller |
   | `meta.invocation.id`, `.started` | the evaluation or call: a UUID, and when it started (ISO-8601 UTC) | the same |
-  | `meta.invocation.caller`, `.skill`, `.aas`, `.submodel`, `.path`, `.restPath` | an Operation call only: who called (`basyx` or `rest`) and the Operation | the same |
+  | `meta.invocation.skill`, `.submodel`, `.path`, `.restPath` | an Operation call only: the Operation's skill, submodel id, idShortPath and invoke path | the same |
   | `meta.invocation.durationMs` | — | from the start to the end of the sinks or the device's reply |
   | `meta.invocation.outcome` | — | `Succeeded`, or `Failed` when the request Lua, a sink, a read or the device failed (§6, §7 step 8) |
   | `meta.invocation.error` | — | with `Failed`: `code` (the connector's, e.g. `DEVICE_REJECTED`, `DMP_SOURCE_READ_FAILED`, else `DMP_MAPPING_FAILED`), `message` (a failed read's own cause included), and the connector's `category` (`REMOTE`, `TIMEOUT`, `TRANSPORT`, `CONFIGURATION`) where it has one |

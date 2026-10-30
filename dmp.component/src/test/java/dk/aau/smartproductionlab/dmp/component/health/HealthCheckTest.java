@@ -82,6 +82,15 @@ class HealthCheckTest extends CamelTestSupport {
 	}
 
 	@Test
+	void requestsStayOpenForTheLongestInvocationTimeout() throws Exception {
+		health();
+		long timeout = context.getComponent("jetty", org.apache.camel.component.jetty12.JettyHttpComponent12.class)
+				.getContinuationTimeout();
+		assertEquals(HealthCheckRouteBuilder.CONTINUATION_TIMEOUT_MS, timeout, "not Jetty's 30 s");
+		assertTrue(timeout > 15 * 60 * 1000L, "beyond PT15M");
+	}
+
+	@Test
 	void okOnceTheInitialScanCompletedAndTheControlRouteStarted() throws Exception {
 		ManagedRuntimeStatus.beginManaged();
 		ManagedRuntimeStatus.controlRouteStarted();

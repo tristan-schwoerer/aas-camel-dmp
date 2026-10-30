@@ -15,8 +15,6 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -329,7 +327,7 @@ class ManagedLuaReconciliationTest {
 
 	private static void assertReply(HttpResponse<String> response, String expected) {
 		assertEquals(200, response.statusCode(), response.body());
-		assertEquals(expected, JsonParser.parseString(response.body()).getAsJsonObject().get("deviceReply").getAsString());
+		assertEquals(expected, JsonParser.parseString(OperationCalls.outputs(response.body())).getAsJsonObject().get("deviceReply").getAsString());
 	}
 
 	private static void awaitQuiesced(DmpComponent.ManagedBundle bundle) throws InterruptedException {
@@ -414,7 +412,7 @@ class ManagedLuaReconciliationTest {
 			script("ResponseTransformation", responseScript(version));
 		}
 
-		/** A second asset with its own AIMC and CCI; BaSyx delegates its Operation to /operations/contractB/Restart. */
+		/** A second asset with its own AIMC and CCI, whose Operation has a path of its own. */
 		void sibling(String version) throws Exception {
 			String cci = "a/submodels/ControlComponentInstance", siblingCci = "b/submodels/ControlComponentInstance";
 			put(PublishedModels.publish(cci().replace(cci, siblingCci), "contractBAS", "contractB"));
@@ -454,9 +452,11 @@ class ManagedLuaReconciliationTest {
 		}
 
 		HttpRequest request(String owner) {
-			return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/operations/" + owner + "/Restart"))
+			// Each asset's CCI submodel: contract's a/…, the sibling contractB's b/….
+			String cci = ("contractB".equals(owner) ? "b" : "a") + "/submodels/ControlComponentInstance";
+			return HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + OperationCalls.path(cci, "Restart")))
 					.timeout(Duration.ofSeconds(10)).header("Content-Type", "application/json")
-					.POST(HttpRequest.BodyPublishers.ofString("{\"x\":7}")).build();
+					.POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of("{\"x\":7}"))).build();
 		}
 		HttpResponse<String> call() throws Exception { return call("contract"); }
 		HttpResponse<String> call(String owner) throws Exception { return caller.send(request(owner), HttpResponse.BodyHandlers.ofString()); }

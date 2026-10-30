@@ -11,11 +11,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -126,11 +124,11 @@ class ManagedProtocolOutcomeParityTest {
             var nativeOwner = runtime.installBundle("exclusive-opcua-native-output", nativePlan);
             try {
                 var nativeReply = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/operations/contract/Calibrate")).timeout(Duration.ofSeconds(10))
-                        .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate"))).timeout(Duration.ofSeconds(10))
+                        .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString("[]"))
                         .build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(200, nativeReply.statusCode(), nativeReply.body());
-                assertEquals(json("{}"), json(nativeReply.body()),
+                assertEquals(json("{}"), json(OperationCalls.outputs(nativeReply.body())),
                         "an Operation without outputs answers nothing; the Method's outputs are not passed through");
                 assertEquals(json("{}"), device.calls.poll(2, TimeUnit.SECONDS));
                 assertEquals(1, device.sends.get());
@@ -142,19 +140,19 @@ class ManagedProtocolOutcomeParityTest {
             try {
                 assertEquals(1, device.sends.get(), "compile/install must not call or replay the Method");
                 var direct = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/operations/contract/Calibrate")).timeout(Duration.ofSeconds(10))
+                        + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate"))).timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{}" )).build(), HttpResponse.BodyHandlers.ofString());
+                        .POST(HttpRequest.BodyPublishers.ofString("[]")).build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(200, direct.statusCode(), direct.body());
                 assertEquals(2, device.sends.get(), "one real OPC UA Call for direct REST invocation");
                 assertEquals(json("{}"), device.calls.poll(2, TimeUnit.SECONDS));
-                JsonElement directReply = json(direct.body());
+                JsonElement directReply = json(OperationCalls.outputs(direct.body()));
                 assertEquals(json("{\"Calibrate\":true,\"State\":\"001\",\"Label\":\"007\",\"Count\":7}"), directReply);
                 assertEquals(List.of("Calibrate", "State", "Label", "Count"),
                         directReply.getAsJsonObject().keySet().stream().toList(), "caller declaration order, not UA argument order");
 
                 var basyx = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/operations/contract/Calibrate")).timeout(Duration.ofSeconds(10))
+                        + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate"))).timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/json")
                         .POST(HttpRequest.BodyPublishers.ofString("[]"))
                         .build(), HttpResponse.BodyHandlers.ofString());
@@ -169,18 +167,18 @@ class ManagedProtocolOutcomeParityTest {
 
                 device.failNext.set("status");
                 var badStatus = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/operations/contract/Calibrate")).timeout(Duration.ofSeconds(10))
+                        + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate"))).timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{}" )).build(), HttpResponse.BodyHandlers.ofString());
+                        .POST(HttpRequest.BodyPublishers.ofString("[]")).build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(502, badStatus.statusCode(), badStatus.body());
                 assertEquals(4, device.sends.get(), "bad native status is not replayed");
                 assertNotNull(device.calls.poll(2, TimeUnit.SECONDS));
 
                 device.failNext.set("type");
                 var incompatible = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                        + "/operations/contract/Calibrate")).timeout(Duration.ofSeconds(10))
+                        + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate"))).timeout(Duration.ofSeconds(10))
                         .header("Content-Type", "application/json")
-                        .POST(HttpRequest.BodyPublishers.ofString("{}" )).build(), HttpResponse.BodyHandlers.ofString());
+                        .POST(HttpRequest.BodyPublishers.ofString("[]")).build(), HttpResponse.BodyHandlers.ofString());
                 assertEquals(502, incompatible.statusCode(), incompatible.body());
                 assertEquals(5, device.sends.get(), "incompatible native output is not retried");
                 assertNotNull(device.calls.poll(2, TimeUnit.SECONDS));
@@ -240,7 +238,7 @@ class ManagedProtocolOutcomeParityTest {
                             + "\"valueType\":\"xs:string\",\"value\":\"" + uuid + "\"}}]";
                     var response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build().send(
                             HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                                    + "/operations/contract/Restart")).timeout(Duration.ofSeconds(8))
+                                    + OperationCalls.path("a/submodels/ControlComponentInstance", "Restart"))).timeout(Duration.ofSeconds(8))
                                     .header("Content-Type", "application/json")
                                     .POST(HttpRequest.BodyPublishers.ofString(requestBody)).build(),
                             HttpResponse.BodyHandlers.ofString());
@@ -350,8 +348,9 @@ class ManagedProtocolOutcomeParityTest {
             int baselineRoutes = runtime.routes();
             int baselineEndpoints = runtime.endpoints();
             HttpClient caller = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
+            // Each the variables BaSyx delegates; the request Lua passes them to the device unchanged.
             List<String> payloads = List.of("{\"Restart\":{\"x\":1},\"text\":\"001\",\"flag\":true,\"nil\":null}",
-                    "{\"Restart\":[false,2,\"002\",null],\"0\":\"object-key\"}", "{}", "{\"last\":4}");
+                    "{\"Restart\":[2,3],\"text\":\"002\"}", "{}", "{\"last\":4}");
             for (RoutePlan configuration : List.of(javaPlan)) {
                 int before = sends.get();
                 var owner = runtime.installBundle("exclusive-http-parity", configuration);
@@ -364,15 +363,15 @@ class ManagedProtocolOutcomeParityTest {
                         deviceStatus.set(scenario == 2 ? 503 : 200);
                         deviceReply.set(scenario == 3 ? "not-json" : payload);
                         var reply = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-                                + "/operations/contract/Restart")).timeout(Duration.ofSeconds(6))
+                                + OperationCalls.path("a/submodels/ControlComponentInstance", "Restart"))).timeout(Duration.ofSeconds(6))
                                 .header("Content-Type", "application/json")
-                                .POST(HttpRequest.BodyPublishers.ofString(payload)).build(), HttpResponse.BodyHandlers.ofString());
+                                .POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of(payload))).build(), HttpResponse.BodyHandlers.ofString());
                         assertEquals(before + scenario + 1, sends.get(), "exactly one send even on remote/response failure");
                         Request command = commands.poll(2, TimeUnit.SECONDS);
                         assertNotNull(command, "real device command");
                         assertEquals(new Request("POST", "/plc/api/actions/Restart", "mode=quick", json(payload)), command);
                         assertEquals(scenario < 2 ? 200 : 502, reply.statusCode(), reply.body());
-                        JsonElement body = json(reply.body());
+                        JsonElement body = json(OperationCalls.outputs(reply.body()));
                         assertNotNull(body, "a caller reply, including JSON null, must remain parseable");
                         if (scenario < 2) assertEquals(json("{}"), body,
                                 "without a response mapping the Operation answers with no outputs");
@@ -513,14 +512,12 @@ class ManagedProtocolOutcomeParityTest {
         /** Device-side peer: AAS write sinks address it; models are served by {@link #repository}. */
         final HttpServer server;
         final URI base;
-        final String fixture;
         final FakeAasRepository repository = new FakeAasRepository();
         final Map<String, String> models = repository.models();
         Repository(String fixture, String deviceUri) throws Exception {
             this(fixture, deviceUri, Map.of());
         }
         Repository(String fixture, String deviceUri, Map<String, String> modelOverrides) throws Exception {
-            this.fixture = fixture;
             // What aas-model publishes: resolved templates and the Operation's delegation URL.
             var context = json(resource(fixture + "/expected.json")).getAsJsonObject().getAsJsonObject("compilerContext");
             String aasId = context.get("aas_id").getAsString(), aasIdShort = context.get("aas_id_short").getAsString();

@@ -38,11 +38,9 @@ import org.slf4j.LoggerFactory;
 /**
  * Final step of the declarative operation-delegation route: after the
  * response-direction Lua transform, take the value of the ResponseSink that
- * selects the Operation and answer the caller in the shape it invoked with — a
- * BaSyx operation-delegation caller receives the {@code OperationVariable[]}
- * envelope built from the DECLARED reply types (see
- * {@link OperationPayloads#toOperationVariables}); a direct REST caller receives
- * the outputs as a JSON object.
+ * selects the Operation and answer with the output and InOut variables as the
+ * {@code OperationVariable[]} BaSyx delegation expects, built from the DECLARED
+ * reply types (see {@link OperationPayloads#toOperationVariables}).
  *
  * @author aas-camel-dmp
  */
@@ -59,16 +57,10 @@ public class OperationReplyProcessor implements Processor {
 	@Override
 	public void process(Exchange exchange) {
 		Map<String, Object> replyMap = callerOutputs(exchange.getMessage().getBody());
-		boolean basyxDelegation = Boolean.TRUE.equals(
-				exchange.getProperty(OperationPayloads.BASYX_DELEGATION_BODY, Boolean.class));
-		if (basyxDelegation) {
-			exchange.getMessage().setBody(
-					OperationPayloads.toOperationVariables(coerce(replyMap), context.callerResponseTypes,
-							context.callerOutputOrder, context.callerOutputTemplates));
-			LOGGER.debug("Operation delegation reply prepared");
-		} else {
-			exchange.getMessage().setBody(coerce(replyMap));
-		}
+		exchange.getMessage().setBody(
+				OperationPayloads.toOperationVariables(coerce(replyMap), context.callerResponseTypes,
+						context.callerOutputOrder, context.callerOutputTemplates));
+		LOGGER.debug("Operation delegation reply prepared");
 		exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, HttpURLConnection.HTTP_OK);
 	}
 

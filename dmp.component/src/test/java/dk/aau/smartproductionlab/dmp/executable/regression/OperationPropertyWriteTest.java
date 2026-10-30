@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
@@ -126,7 +125,7 @@ class OperationPropertyWriteTest {
 		runtime.startComponent();
 		int port = freePort();
 		runtime.listener(port);
-		operationUri = "http://127.0.0.1:" + port + "/operations/contract/Calibrate";
+		operationUri = "http://127.0.0.1:" + port + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate");
 	}
 
 	private static final class Runtime extends DmpComponent {
@@ -177,14 +176,14 @@ class OperationPropertyWriteTest {
 		device.readOnly();
 		var reply = call("{\"Setpoint\":42}");
 		assertEquals(502, reply.statusCode(), reply.body());
-		assertEquals("DMP_DEVICE_ERROR", json(reply.body()).getAsJsonObject().get("code").getAsString());
+		assertEquals("DMP_DEVICE_ERROR", OperationCalls.error(reply.body()).get("code"));
 		assertTrue(writes.isEmpty(), "nothing is fanned out after a failed write: " + writes);
 	}
 
 	private HttpResponse<String> call(String body) throws Exception {
 		return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build().send(
 				HttpRequest.newBuilder(URI.create(operationUri)).timeout(Duration.ofSeconds(10))
-						.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+						.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of(body))).build(),
 				HttpResponse.BodyHandlers.ofString());
 	}
 

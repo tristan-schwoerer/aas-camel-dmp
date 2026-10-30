@@ -37,10 +37,13 @@ import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 /**
  * Exception mapping of the declarative operation-delegation route
  * ({@code doCatch}): marks the delegation failed (the writeback must NOT
- * store an error payload as the effective value) and answers the caller with
- * a safe diagnostic category. Typed failures map to 500/502/504; untyped
- * failures use the status wired by the route creator. Exception messages and
- * connector/validation details are never public diagnostics or log fields.
+ * store an error payload as the effective value) and answers with an HTTP
+ * error status and the AAS API's {@code Result}: one error message with the
+ * DMP's code, a safe text and the invocation id as its correlationId. Typed
+ * failures map to 400/500/502/504; untyped failures use the status wired
+ * by the route creator. Exception messages and connector/validation details
+ * are never public diagnostics or log fields; only the names of omitted inputs
+ * reach a 400. BaSyx reports a failed delegation by status alone.
  *
  * @author aas-camel-dmp
  */
@@ -130,9 +133,20 @@ public class OperationFailureProcessor implements Processor {
 			}
 			}
 		}
-		LOGGER.warn("Operation failed ({}): {}", callerStatus, code);
+		if (callerStatus == HttpURLConnection.HTTP_BAD_REQUEST && caught instanceof OperationValidationException validation
+				&& !validation.getViolations().isEmpty())
+			message += ": " + String.join(", ", validation.getViolations());
+		String correlationId = exchange.getProperty(SyncOperationProcessor.INVOCATION_ID, String.class);
+		LOGGER.warn("Operation failed ({}): {} [{}]", callerStatus, code, correlationId);
 		exchange.getMessage().setHeader(Exchange.HTTP_RESPONSE_CODE, callerStatus);
-		exchange.getMessage().setBody(JsonCodec.toJson(java.util.Map.of("code", code, "error", message)));
+		exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
+		java.util.Map<String, Object> error = new java.util.LinkedHashMap<>();
+		error.put("messageType", "Error");
+		error.put("code", code);
+		error.put("text", message);
+		if (correlationId != null) error.put("correlationId", correlationId);
+		error.put("timestamp", java.time.Instant.now().toString());
+		exchange.getMessage().setBody(JsonCodec.toJson(java.util.Map.of("messages", java.util.List.of(error))));
 	}
 
 }

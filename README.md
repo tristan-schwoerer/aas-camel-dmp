@@ -54,14 +54,20 @@ submodel events.
   committed; MQTT: clean session), so values published while the DMP was down
   are never replayed to devices. It runs only while such sources exist.
 - **Synchronous actions.** BaSyx delegates an AAS Operation to the URL in its
-  `invocationDelegation` qualifier; the DMP serves `POST` on that URL's path
-  (by convention `/operations/{aasIdShort}/{skill}`). It invokes the device
+  `invocationDelegation` qualifier; the DMP serves `POST` on that URL's path,
+  the Operation's AAS API invoke path
+  (`/submodels/{base64url(submodel id)}/submodel-elements/{idShortPath}/invoke`),
+  with BaSyx's `OperationVariable[]` body. It waits for the device up to the
+  mapping's `InvocationTimeout` (default `PT30S`, at most `PT15M`) and answers a
+  failure with an HTTP status and the AAS API's `Result`. It invokes the device
   action over HTTP, an OPC UA Method, or MQTT 5 request/reply (or a one-way
   MQTT publish for an action without output), and returns the typed result:
   the outputs the authored response mapping makes of the device's reply,
   never fields matched by name. Operation input, output and InOut variables may be Properties,
   SubmodelElementCollections (objects) or SubmodelElementLists (arrays),
-  nested freely; Lua sees them as typed Lua values.
+  nested freely; Lua sees them as typed Lua values. Further sources give the
+  request Lua more values: AAS elements read at the call (`ReadAtEvaluation`;
+  any other Evaluation blocks the mapping).
 
 ### Lua
 

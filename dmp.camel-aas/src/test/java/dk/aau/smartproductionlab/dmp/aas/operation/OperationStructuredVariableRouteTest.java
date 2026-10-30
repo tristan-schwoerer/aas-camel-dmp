@@ -99,21 +99,21 @@ class OperationStructuredVariableRouteTest {
 	}
 
 	@Test
-	void directCallerReceivesTypedNestedJson() throws Exception {
+	void aNestedRequestIsTypedByItsDeclaredVariables() throws Exception {
 		AtomicReference<Object> command = new AtomicReference<>();
-		String reply = invoke("{\"Target\":{\"x\":1.5,\"y\":2},\"Codes\":[3,4],\"Plan\":[{\"id\":\"a\",\"speed\":5}]}",
-				command, RESPONSE_LUA);
+		String reply = Delegation.outputs(invoke(basyxRequest(), command, RESPONSE_LUA));
 		assertEquals(Map.of("sum", 3.5, "speed", 5L), command.get());
 		assertEquals(Map.of("Plan", List.of(Map.of("id", "a", "speed", 6L)),
-				"Result", Map.of("ok", true, "codes", List.of(7L, 8L), "undeclared", 1L)), JsonCodec.parseJson(reply));
+				"Result", Map.of("ok", true, "codes", List.of(7L, 8L))), JsonCodec.parseJson(reply),
+				"members the declaration lacks are dropped");
 	}
 
 	@Test
 	void replyThatContradictsTheDeclaredShapeFails() throws Exception {
 		String basyx = basyxRequest();
 		String scalarForList = "function aimc_main(sources) return { Reply = { Plan = 'not a list' } } end";
-		var reply = JsonCodec.parseJson(invoke(basyx, new AtomicReference<>(), scalarForList, 500));
-		assertEquals("DMP_RESPONSE_MAPPING_FAILED", ((Map<?, ?>) reply).get("code"));
+		var reply = Delegation.error(invoke(basyx, new AtomicReference<>(), scalarForList, 500));
+		assertEquals("DMP_RESPONSE_MAPPING_FAILED", reply.get("code"));
 	}
 
 

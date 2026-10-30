@@ -16,7 +16,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -75,7 +74,7 @@ class OperationConnectorsTest {
 		runtime.startComponent();
 		int port = freePort();
 		runtime.listener(port);
-		operationUri = "http://127.0.0.1:" + port + "/operations/contract/Calibrate";
+		operationUri = "http://127.0.0.1:" + port + OperationCalls.path("a/submodels/ControlComponentInstance", "Calibrate");
 	}
 
 	@AfterEach
@@ -124,7 +123,7 @@ class OperationConnectorsTest {
 			status.set(500);
 			reply = call("{\"Setpoint\":8}");
 			assertEquals(502, reply.statusCode(), reply.body());
-			assertEquals("DMP_DEVICE_ERROR", json(reply.body()).getAsJsonObject().get("code").getAsString());
+			assertEquals("DMP_DEVICE_ERROR", OperationCalls.error(reply.body()).get("code"));
 		} finally {
 			device.stop(0);
 		}
@@ -209,7 +208,7 @@ class OperationConnectorsTest {
 				var reply = call("{\"Uuid\":\"ack-1\"}");
 				long answeredAt = System.nanoTime();
 				assertEquals(200, reply.statusCode(), reply.body());
-				assertEquals(json("{}"), json(reply.body()), "no outputs, and the reply is not passed through");
+				assertEquals(json("{}"), json(OperationCalls.outputs(reply.body())), "no outputs, and the reply is not passed through");
 				assertTrue(repliedAt.get() != 0 && answeredAt >= repliedAt.get(),
 						"the caller is answered only once the device's terminal reply arrived");
 			} finally {
@@ -228,7 +227,7 @@ class OperationConnectorsTest {
 			runtime.installBundle("invoke-only", compileInvokeOnlyMqttAction(broker));
 			var reply = call("{\"Uuid\":\"halt-1\"}");
 			assertEquals(200, reply.statusCode(), reply.body());
-			assertEquals(json("{}"), json(reply.body()), "an action without an output answers nothing");
+			assertEquals(json("{}"), json(OperationCalls.outputs(reply.body())), "an action without an output answers nothing");
 			assertEquals(1, commands.size(), "the broker accepted the command before the call returned");
 			assertEquals(json("{\"Uuid\":\"halt-1\"}"), json(commands.get(0).text()));
 			assertEquals(null, commands.get(0).correlationData(), "a one-way publish carries no correlation data");
@@ -242,7 +241,7 @@ class OperationConnectorsTest {
 
 	private HttpRequest request(String body) {
 		return HttpRequest.newBuilder(URI.create(operationUri)).timeout(Duration.ofSeconds(15))
-				.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build();
+				.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of(body))).build();
 	}
 
 	private static Consumer<JsonObject> setpointInput() {

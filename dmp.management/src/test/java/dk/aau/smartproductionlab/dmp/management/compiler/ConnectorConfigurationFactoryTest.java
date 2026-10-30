@@ -672,18 +672,74 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(explicitResponsePlan("aid-command"),"bridge",new ConnectorConfigurationFactory.RuntimeSettings(
 				URI.create("http://aas.example:8081")));
 		var bridge=assertInstanceOf(OperationRoute.class,result.routes().get(0));
-		assertEquals("/operations/asset%20one/Move",bridge.identity().restPath());
+		assertEquals(OperationPaths.invokePath("cci","Skills.Move.operation"),bridge.identity().restPath());
+		assertEquals("Skills.Move.operation",bridge.identity().path());
 
 		var plan=explicitResponsePlan("aid-command");
 		var operation=(org.eclipse.digitaltwin.aas4j.v3.model.Operation)((DirectTarget)plan.mappings().get(0).sources().get(0).target())
 				.resolved().element();
+		// Missing, relative, templated, empty, or any path but the Operation's own AAS API invoke path.
 		for (String invalid : new String[] { null, "", "/operations/asset/Move", "http://dmp:8080/operations/{aas_id_short}/Move",
-				"http://dmp:8080/" }) {
+				"http://dmp:8080/", "http://dmp:8080/operations/asset/Move",
+				"http://dmp:8080"+OperationPaths.invokePath("other","Skills.Move.operation"),
+				"http://dmp:8080"+OperationPaths.invokePath("cci","Skills.Halt.operation") }) {
 			operation.setQualifiers(invalid==null?List.of():List.of(AasFixtures.delegation(invalid)));
 			var blocked=factory.create(plan,"bridge",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 			assertTrue(blocked.routes().isEmpty(),String.valueOf(invalid));
 			assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("invocationDelegation")),String.valueOf(invalid));
 		}
+	}
+
+	/** {@code plan}'s one mapping with {@code timeout} as its InvocationTimeout. */
+	private static Plan withInvocationTimeout(Plan plan,String timeout) {
+		MappingPlan m=plan.mappings().get(0);
+		return new Plan(plan.aimcSubmodelId(),List.of(new MappingPlan(m.identity(),m.listIndex(),m.sources(),m.sinks(),
+				m.defaultPollingInterval(),m.transformation(),m.responseSources(),m.responseSinks(),m.responseTransformation(),
+				m.qualifiers(),Presence.of(timeout))));
+	}
+
+	@Test
+	void anOperationWaitsForItsActionAsLongAsItsInvocationTimeoutSays() {
+		var runtime=new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"));
+		var unauthored=assertInstanceOf(OperationRoute.class,factory.create(explicitResponsePlan("aid-command"),"bridge",runtime).routes().get(0));
+		assertEquals(30L,unauthored.command().connectorOptions().get("timeoutSeconds"),"30 s unless authored");
+		var authored=factory.create(withInvocationTimeout(explicitResponsePlan("aid-command"),"PT2M"),"bridge",runtime);
+		assertTrue(authored.issues().isEmpty(),authored.issues().toString());
+		assertEquals(120L,assertInstanceOf(OperationRoute.class,authored.routes().get(0)).command().connectorOptions().get("timeoutSeconds"));
+		for (String invalid : new String[] { "PT0S", "PT16M", "PT1.5S", "120", "P1D", "" }) {
+			var blocked=factory.create(withInvocationTimeout(explicitResponsePlan("aid-command"),invalid),"bridge",runtime);
+			assertTrue(blocked.routes().isEmpty(),invalid);
+			assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("InvocationTimeout")),invalid);
+		}
+	}
+
+	@Test
+	void anInvocationTimeoutOnAMappingNoOperationTriggersBlocksIt() {
+		var device=protocolTarget(WireModel.ProtocolFamily.HTTP,"http://device.example:8080","/state",Map.of(),"GET");
+		var plan=new Plan("aimc",List.of(new MappingPlan("plain",0,List.of(new EndpointPlan("In",reference(),device,Presence.of("1"))),
+				List.of(new EndpointPlan("Out",reference(),device)),Presence.absent(),Presence.absent(),
+				Presence.absent(),Presence.absent(),Presence.absent(),List.of(),Presence.of("PT2M"))));
+		var blocked=factory.create(plan,"plain",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
+		assertTrue(blocked.routes().isEmpty());
+		assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("not triggered by an Operation")),
+				blocked.issues().toString());
+	}
+
+	@Test
+	void anOperationInsideAListCannotBeDelegated() {
+		var plan=explicitResponsePlan("aid-command");
+		var source=plan.mappings().get(0).sources().get(0);
+		// Skills[0].Move.operation: the skill keeps its name, but the path holds a list index.
+		var listed=AasFixtures.reference("Submodel","cci","SubmodelElementList","Skills","SubmodelElementCollection","0",
+				"SubmodelElementCollection","Move","Operation","operation");
+		MappingPlan m=plan.mappings().get(0);
+		var blocked=factory.create(new Plan("aimc",List.of(new MappingPlan(m.identity(),m.listIndex(),
+				List.of(new EndpointPlan(source.id(),listed,source.target())),m.sinks(),m.defaultPollingInterval(),m.transformation(),
+				m.responseSources(),m.responseSinks(),m.responseTransformation(),m.qualifiers()))),"bridge",
+				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
+		assertTrue(blocked.routes().isEmpty());
+		assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("inside a SubmodelElementList")),
+				blocked.issues().toString());
 	}
 
 	@Test
@@ -1174,13 +1230,16 @@ class ConnectorConfigurationFactoryTest {
 				.filter(type::isInstance).map(type::cast).findFirst().orElseThrow();
 	}
 
+	/** The delegation URL of the test's Operation, Skills.Move.operation in submodel {@code cci}. */
+	private static final String MOVE_URL="http://dmp:8080"+OperationPaths.invokePath("cci","Skills.Move.operation");
+
 	private static Plan explicitResponsePlan(String responseAnchor) {
 		return explicitResponsePlan(responseAnchor,List.of());
 	}
 	private static Plan explicitResponsePlan(String responseAnchor,List<OperationVariable> inoutputs) {
 		var callerProperty=property("Count","0");
 		var operation=AasFixtures.operation("operation",List.of(),List.of(AasFixtures.variable(callerProperty)),inoutputs);
-		operation.setQualifiers(List.of(AasFixtures.delegation("http://dmp:8080/operations/asset%20one/Move")));
+		operation.setQualifiers(List.of(AasFixtures.delegation(MOVE_URL)));
 		var direct=new DirectTarget(new AasReferenceResolver.ResolvedElement(AasFixtures.submodel("cci","CCI",operation),operation));
 		var operationRef=AasFixtures.reference("Submodel","cci","SubmodelElementCollection","Skills",
 				"SubmodelElementCollection","Move","Operation","operation");
@@ -1235,7 +1294,7 @@ class ConnectorConfigurationFactoryTest {
 		var count=property("Count","0");
 		var operation=AasFixtures.operation("operation",List.of(AasFixtures.variable(position)),List.of(),
 				List.of(AasFixtures.variable(count)));
-		operation.setQualifiers(List.of(AasFixtures.delegation("http://dmp:8080/operations/asset/Move")));
+		operation.setQualifiers(List.of(AasFixtures.delegation(MOVE_URL)));
 		var submodel=AasFixtures.submodel("cci","CCI",operation);
 		String operationPath="Skills.Move.operation";
 		var sourceX=new EndpointPlan("x-source",AasFixtures.reference("Submodel","cci",

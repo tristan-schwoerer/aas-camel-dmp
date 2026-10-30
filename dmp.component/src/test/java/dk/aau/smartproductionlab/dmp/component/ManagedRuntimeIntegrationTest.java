@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT */
 package dk.aau.smartproductionlab.dmp.component;
 
+import dk.aau.smartproductionlab.dmp.executable.regression.OperationCalls;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.InetSocketAddress;
@@ -12,11 +13,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -95,9 +93,10 @@ class ManagedRuntimeIntegrationTest {
 			HttpClient caller = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 			for (String idShort : List.of("contract", "contractB")) {
 				var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-						+ "/operations/" + idShort + "/Restart")).timeout(Duration.ofSeconds(5))
+						+ OperationCalls.path(("contractB".equals(idShort) ? "b" : "a") + "/submodels/ControlComponentInstance", "Restart")))
+						.timeout(Duration.ofSeconds(5))
 						.header("Content-Type", "application/json")
-						.POST(HttpRequest.BodyPublishers.ofString("{\"Restart\":{\"x\":1}}")).build(),
+						.POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of("{\"Restart\":{\"x\":1}}"))).build(),
 						HttpResponse.BodyHandlers.ofString());
 				assertEquals(200, response.statusCode(), response.body());
 			}
@@ -118,9 +117,10 @@ class ManagedRuntimeIntegrationTest {
 				HttpClient restartedCaller = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 				for (String idShort : List.of("contract", "contractB")) {
 					var response = restartedCaller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-							+ "/operations/" + idShort + "/Restart")).timeout(Duration.ofSeconds(5))
+							+ OperationCalls.path(("contractB".equals(idShort) ? "b" : "a") + "/submodels/ControlComponentInstance", "Restart")))
+						.timeout(Duration.ofSeconds(5))
 							.header("Content-Type", "application/json")
-							.POST(HttpRequest.BodyPublishers.ofString("{\"Restart\":{\"x\":1}}")).build(),
+							.POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of("{\"Restart\":{\"x\":1}}"))).build(),
 							HttpResponse.BodyHandlers.ofString());
 					assertEquals(200, response.statusCode(), response.body());
 				}

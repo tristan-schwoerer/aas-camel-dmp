@@ -81,6 +81,13 @@ class OperationFailureProcessorTest {
 				500, 500, "DMP_OPERATION_VALIDATION_FAILED", "Operation validation failed");
 	}
 
+	@Test
+	void aRequestTheCallerGotWrongNamesTheOmittedInputs() throws Exception {
+		assertDiagnostic(new OperationValidationException("DMP_OPERATION_VALIDATION_FAILED", 400,
+				"Operation request omits the required input Speed", List.of("Speed")),
+				500, 400, "DMP_OPERATION_VALIDATION_FAILED", "Operation validation failed: Speed");
+	}
+
 	private void assertDiagnostic(Exception failure, int configuredStatus, int expectedStatus,
 			String expectedCode, String expectedMessage) throws Exception {
 		// The reactor's active SLF4J provider is SimpleLogger, not the legacy Log4j binding.
@@ -99,8 +106,11 @@ class OperationFailureProcessorTest {
 			new OperationFailureProcessor(context, configuredStatus).process(exchange);
 			assertEquals(expectedStatus, exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
 			assertEquals(true, exchange.getProperty(OperationPayloads.OPERATION_DELEGATION_FAILED));
-			assertEquals(Map.of("code", expectedCode, "error", expectedMessage),
-					JsonCodec.parseJson(exchange.getMessage().getBody(String.class)));
+			String result = exchange.getMessage().getBody(String.class);
+			assertEquals(Map.of("code", expectedCode, "error", expectedMessage), Delegation.error(result));
+			Map<?, ?> message = (Map<?, ?>) ((List<?>) ((Map<?, ?>) JsonCodec.parseJson(result)).get("messages")).get(0);
+			assertEquals("Error", message.get("messageType"), "the AAS API's Result: " + result);
+			assertTrue(message.get("timestamp") instanceof String, result);
 			String logged = logs.toString(StandardCharsets.UTF_8);
 			assertTrue(logged.contains("Operation failed (" + expectedStatus + "): " + expectedCode),
 					"the active logger must be captured, not silently ignored");

@@ -188,6 +188,11 @@ public final class ConnectorConfigurationFactory {
 		validateCapabilities(mapping,issues);
 		if(issues.size()!=issueStart)return null;
 		if (operationMapping(mapping)) return compileBridgeMapping(mapping,plan,routeId,mappingRouteId,runtime,issues);
+		if (mapping.invocationTimeout().present()) {
+			issue(issues,mapping,"MappingConfigurations/value/"+mapping.listIndex()+"/InvocationTimeout",
+					"InvocationTimeout bounds the action an Operation invokes; this mapping is not triggered by an Operation");
+			return null;
+		}
 		List<Source> sources = new ArrayList<>();
 		List<Integer> sourcePositions = new ArrayList<>();
 		for (int i = 0; i < mapping.sources().size(); i++) {
@@ -371,6 +376,12 @@ public final class ConnectorConfigurationFactory {
 		if(actionTarget==null && propertyTarget==null || issues.size()!=issueStart) return null;
 		boolean write=propertyTarget!=null;
 		AidTarget commandTarget=write?propertyTarget:actionTarget;
+		if(write && mapping.invocationTimeout().present()) {
+			issue(issues,mapping,root+"/InvocationTimeout","InvocationTimeout bounds an action's terminal reply;"
+					+" an Operation bound to a property writes it within its connector's own timeout");return null;
+		}
+		long timeoutSeconds=invocationTimeoutSeconds(mapping,root+"/InvocationTimeout",issues);
+		if(timeoutSeconds<=0)return null;
 		if(mapping.responseTransformation().present() && mapping.responseTransformation().value()==null) {
 			issue(issues,mapping,root+"/ResponseTransformation","response transformation Blob is explicitly null");return null;
 		}
@@ -378,7 +389,7 @@ public final class ConnectorConfigurationFactory {
 		Map<String,Object> connectorOptions=new LinkedHashMap<>();
 		Sink commandSink=write
 				?sink(mapping.sinks().get(0),mapping,0,plan,routeId,runtime,issues)
-				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,connectorOptions,runtime,issues,root+"/Sinks");
+				:bridgeCommandSink(mapping,action,actionTarget,plan,routeId,commandId,connectorOptions,timeoutSeconds,runtime,issues,root+"/Sinks");
 		if(commandSink==null || issues.size()!=issueStart) return null;
 		List<Source> fanInReads=new ArrayList<>();
 		for(int i=0;i<fanIn.size();i++) {
@@ -396,11 +407,22 @@ public final class ConnectorConfigurationFactory {
 		List<String> responseRequired=schemaRequired(response);
 		String restPath=delegationPath(cci);
 		if(restPath==null) { issue(issues,mapping,root+"/Sources","CCI Operation needs an invocationDelegation qualifier whose URL names the DMP path");return null; }
-		// The Operation's AAS identity (submodel ID, idShort path), passed to Lua as meta.invocation.
+		// The Operation's AAS identity (submodel ID, idShort path), passed to Lua as meta.invocation. The delegation
+		// path is the Operation's path in the AAS API, so no two Operations can share it.
 		List<Key> operationKeys=operationKeys(operation);
-		OperationRoute.Identity identity=new OperationRoute.Identity(restPath,action,
-				operationKeys.isEmpty()?null:operationKeys.get(0).getValue(),
-				operationKeys.isEmpty()?null:String.join(".",operationKeys.subList(1,operationKeys.size()).stream().map(Key::getValue).toList()));
+		String submodelId=operationKeys.isEmpty()?null:operationKeys.get(0).getValue();
+		String idShortPath=AasReferenceResolver.idShortPath(operationKeys);
+		if(idShortPath.contains("[")) {
+			// Camel's REST layer cannot serve the percent-encoded brackets of a list index in a path.
+			issue(issues,mapping,root+"/Sources","an Operation inside a SubmodelElementList cannot be delegated to the DMP: "
+					+"its AAS API path ("+idShortPath+") holds a list index");return null;
+		}
+		String expectedPath=submodelId==null?null:OperationPaths.invokePath(submodelId,idShortPath);
+		if(expectedPath==null || !OperationPaths.sameInvokePath(restPath,submodelId,idShortPath)) {
+			issue(issues,mapping,root+"/Sources","the Operation's invocationDelegation path must be its AAS API invoke path "
+					+expectedPath+", not "+restPath);return null;
+		}
+		OperationRoute.Identity identity=new OperationRoute.Identity(restPath,action,submodelId,idShortPath);
 		Map<String,String> callerInputSourcePaths=new LinkedHashMap<>();
 		for(EndpointPlan endpoint:mapping.sources()) if(operationModel(endpoint)!=null) {
 			if(isWholeOperation(endpoint)) callerInputSourcePaths.put(endpoint.id(), "$");
@@ -451,8 +473,7 @@ public final class ConnectorConfigurationFactory {
 				}
 			}
 		});
-		@SuppressWarnings("unchecked")
-		Map<String,Object> responseSchema=response==null?null:(Map<String,Object>)schema(Presence.of(response));
+		Map<String,Object> responseSchema=response==null?null:schema(Presence.of(response));
 		// The caller's outputs are only what the response mapping makes of the reply; nothing is
 		// matched by name. Without a response mapping the Operation answers with no outputs, which
 		// only an Operation whose outputs are all Optional (or that has none) may do.
@@ -498,9 +519,13 @@ public final class ConnectorConfigurationFactory {
 		return hasIssue(issues,mapping)?null:source;
 	}
 
-	/** The command of an Operation bound to an AID action; {@code connectorOptions} receives its invocation's options. */
+	/**
+	 * The command of an Operation bound to an AID action; {@code connectorOptions} receives its invocation's options,
+	 * {@code timeoutSeconds} bounding the wait for its terminal reply.
+	 */
 	private Sink bridgeCommandSink(MappingPlan mapping,String action,AidTarget target,Plan plan,
-			String routeId,String uniqueId,Map<String,Object> connectorOptions,RuntimeSettings runtime,List<Issue> issues,String path) {
+			String routeId,String uniqueId,Map<String,Object> connectorOptions,long timeoutSeconds,RuntimeSettings runtime,
+			List<Issue> issues,String path) {
 		List<WireModel.ProtocolFamily> families=target.resolved().owner().protocolFamilies();
 		if(families.size()!=1) { issue(issues,mapping,path,"Operation command requires one unambiguous AID binding, found "+families);return null; }
 		DataSchema input=target.resolved().affordance().input().present()?target.resolved().affordance().input().value():null;
@@ -516,7 +541,7 @@ public final class ConnectorConfigurationFactory {
 			if(security==null)return null;
 			HttpWrite invoke=new HttpWrite(uri.getScheme(),uri.getHost(),effectivePort(uri),uri.getPath(),uri.getQuery(),null,
 					httpOptions(form,false,security,mapping,path,issues));
-			connectorOptions.put("httpMethod",method);connectorOptions.put("timeoutSeconds",30);
+			connectorOptions.put("httpMethod",method);connectorOptions.put("timeoutSeconds",timeoutSeconds);
 			return new Sink(uniqueId,action,invoke).withSchema(schemaOptional(input));
 		}
 		if(family==WireModel.ProtocolFamily.OPCUA) {
@@ -529,7 +554,7 @@ public final class ConnectorConfigurationFactory {
 			options.put("method","RAW("+method+")");
 			OpcUaEndpoint call=OpcUaEndpoint.sink(base.host(),base.port(),base.servicePath(),
 					componentOf,base.username(),base.password(),options);
-			connectorOptions.put("timeoutSeconds",30);
+			connectorOptions.put("timeoutSeconds",timeoutSeconds);
 			return new Sink(uniqueId,action,call).withSchema(schemaOptional(input));
 		}
 		if(family==WireModel.ProtocolFamily.MQTT) {
@@ -552,7 +577,6 @@ public final class ConnectorConfigurationFactory {
 			if(invokeOnly && (qos==null || qos==0)) {
 				issue(issues,mapping,path+"/forms/mqv_qos","an invoke-only MQTT action needs mqv_qos 1 or 2 so the broker acknowledges the command");return null;
 			}
-			long timeoutSeconds=30;
 			MqttAction request=new MqttAction("tcp://"+base.host()+":"+base.port(),topic,
 					stableMqttClientId(plan,routeId,mapping,action,"operation"),qos==null?MQTT_DEFAULT_QOS:qos,
 					Boolean.TRUE.equals(retained),replyTopic,timeoutSeconds,Credentials.of(base.username(),base.password()));
@@ -563,6 +587,29 @@ public final class ConnectorConfigurationFactory {
 		}
 		issue(issues,mapping,path,"unsupported Operation connector family "+families);
 		return null;
+	}
+
+	/** The device's terminal reply is awaited this long unless the mapping authors an InvocationTimeout. */
+	static final long DEFAULT_INVOCATION_TIMEOUT_SECONDS=30;
+	/** BaSyx Go waits at most 15 minutes for a delegated Operation. */
+	public static final long MAX_INVOCATION_TIMEOUT_SECONDS=15*60;
+
+	/**
+	 * The mapping's InvocationTimeout in seconds: an xs:duration of whole seconds, above zero and at most 15 minutes;
+	 * {@value #DEFAULT_INVOCATION_TIMEOUT_SECONDS} when not authored. 0 after an issue.
+	 */
+	private static long invocationTimeoutSeconds(MappingPlan mapping,String path,List<Issue> issues) {
+		if(!mapping.invocationTimeout().present())return DEFAULT_INVOCATION_TIMEOUT_SECONDS;
+		String value=mapping.invocationTimeout().value();
+		java.time.Duration timeout;
+		try { timeout=java.time.Duration.parse(value==null?"":value.strip()); }
+		catch(java.time.format.DateTimeParseException invalid) {
+			issue(issues,mapping,path,"InvocationTimeout must be an xs:duration such as PT30S or PT2M, not "+value);return 0;
+		}
+		if(timeout.getNano()!=0 || timeout.getSeconds()<1 || timeout.getSeconds()>MAX_INVOCATION_TIMEOUT_SECONDS) {
+			issue(issues,mapping,path,"InvocationTimeout must be whole seconds above zero and at most PT15M, not "+value);return 0;
+		}
+		return timeout.getSeconds();
 	}
 
 	/** The path of the Operation's BaSyx invocationDelegation URL: where BaSyx will call this DMP. */
@@ -938,10 +985,6 @@ public final class ConnectorConfigurationFactory {
 				target.resolved().owner(),affordance,affordance.schema(),List.of(),target.resolved().submodelId()));
 		return sink.withPayload(schemaForAidTarget(root,mapping,"MappingConfigurations/value/"+mapping.listIndex()+"/Sinks",issues),
 				target.resolved().submodelId()+":"+target.resolved().owner().idShort()+":"+affordance.idShort().value());
-	}
-
-	private static String pathSegment(String value) {
-		return java.net.URLEncoder.encode(value,StandardCharsets.UTF_8).replace("+","%20");
 	}
 
 	private static Map<String,String> schemaTypes(DataSchema schema) {

@@ -96,12 +96,12 @@ class OptionalQualifierTest {
 		inputs.put("Volume", property("Volume", "true"));
 		var processor = new OperationRequestProcessor(inputs, Map.of("Dispensing", "$"));
 		Exchange given = new DefaultExchange(new DefaultCamelContext());
-		given.getMessage().setBody("{\"Uuid\":\"u-1\"}");
+		given.getMessage().setBody(Delegation.body(Map.of("Uuid", "u-1")));
 		processor.process(given);
 		assertEquals(Map.of("Dispensing", Map.of("Uuid", "u-1")), given.getMessage().getBody());
 
 		Exchange omitted = new DefaultExchange(new DefaultCamelContext());
-		omitted.getMessage().setBody("{\"Volume\":1.5}");
+		omitted.getMessage().setBody(Delegation.body(Map.of("Volume", 1.5)));
 		var failure = assertThrows(OperationValidationException.class, () -> processor.process(omitted));
 		assertEquals("DMP_OPERATION_VALIDATION_FAILED", failure.getCode());
 		assertEquals(400, failure.getStatus());

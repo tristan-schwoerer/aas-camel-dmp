@@ -67,10 +67,18 @@ public final class WireModel {
 		}
 		@Override public int hashCode() { return 31 * java.util.Arrays.hashCode(bytes) + java.util.Objects.hashCode(contentType); }
 	}
+	/** {@code invocationTimeout}: the authored InvocationTimeout (an xs:duration), a DMP extension. */
 	public record Mapping(Optional<String> authoredId, int listIndex, List<Endpoint> sources, List<Endpoint> sinks,
 			Presence<String> defaultPollingInterval, Presence<Blob> transformation,
 			Presence<List<Endpoint>> responseSources, Presence<List<Endpoint>> responseSinks,
-			Presence<Blob> responseTransformation, SubmodelElementCollection element) {
+			Presence<Blob> responseTransformation, SubmodelElementCollection element, Presence<String> invocationTimeout) {
+		public Mapping(Optional<String> authoredId, int listIndex, List<Endpoint> sources, List<Endpoint> sinks,
+				Presence<String> defaultPollingInterval, Presence<Blob> transformation,
+				Presence<List<Endpoint>> responseSources, Presence<List<Endpoint>> responseSinks,
+				Presence<Blob> responseTransformation, SubmodelElementCollection element) {
+			this(authoredId, listIndex, sources, sinks, defaultPollingInterval, transformation, responseSources, responseSinks,
+					responseTransformation, element, Presence.absent());
+		}
 		public Mapping { authoredId = authoredId == null ? Optional.empty() : authoredId;
 			sources = List.copyOf(sources); sinks = List.copyOf(sinks);
 			if (responseSources.present() && responseSources.value() != null) responseSources = Presence.of(List.copyOf(responseSources.value()));

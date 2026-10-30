@@ -21,16 +21,11 @@ import org.junit.jupiter.api.Test;
 
 class OperationCallerTypeRouteTest {
 	@Test
-	void directCallerUsesCciTypesAfterDeviceNormalizationAndOneResponseLua() throws Exception {
-		assertCallerReply(false);
-	}
-
-	@Test
 	void basyxCallerUsesCciNamesTypesAndOrderAfterDeviceNormalizationAndOneResponseLua() throws Exception {
-		assertCallerReply(true);
+		assertCallerReply();
 	}
 
-	private void assertCallerReply(boolean basyx) throws Exception {
+	private void assertCallerReply() throws Exception {
 		AtomicInteger sends = new AtomicInteger();
 		AtomicInteger responseTransforms = new AtomicInteger();
 		try (var camel = new DefaultCamelContext()) {
@@ -70,14 +65,13 @@ class OperationCallerTypeRouteTest {
 				camel.start();
 				try (var producer = camel.createProducerTemplate()) {
 					var result = producer.request("direct:caller-types", exchange -> exchange.getMessage().setBody(
-							basyx ? "[{\"value\":{\"modelType\":\"Property\",\"idShort\":\"argument\",\"valueType\":\"xs:int\",\"value\":\"1\"}}]" : "{\"argument\":1}"));
+							"[{\"value\":{\"modelType\":\"Property\",\"idShort\":\"argument\",\"valueType\":\"xs:int\",\"value\":\"1\"}}]"));
 					assertNull(result.getException());
 					assertEquals(200, result.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
-					Object expected = basyx ? List.of(
+					Object expected = List.of(
 							Map.of("value", Map.of("modelType", "Property", "idShort", "Flag", "valueType", "xs:boolean", "value", "true")),
 							Map.of("value", Map.of("modelType", "Property", "idShort", "Count", "valueType", "xs:string", "value", "007")),
-							Map.of("value", Map.of("modelType", "Property", "idShort", "Display", "valueType", "xs:double", "value", "3.5")))
-							: Map.of("Count", "007", "Display", 3.5, "Flag", true);
+							Map.of("value", Map.of("modelType", "Property", "idShort", "Display", "valueType", "xs:double", "value", "3.5")));
 					assertEquals(expected, JsonCodec.parseJson(result.getMessage().getBody(String.class)));
 				}
 				assertEquals(1, sends.get());

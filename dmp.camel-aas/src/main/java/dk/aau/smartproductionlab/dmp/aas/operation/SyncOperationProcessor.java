@@ -181,8 +181,6 @@ public class SyncOperationProcessor implements ManagedRouteResource {
 		Map<String, Object> invocation = new java.util.LinkedHashMap<>(operationIdentity);
 		invocation.put("id", id);
 		invocation.put("started", started.toString());
-		invocation.put("caller", Boolean.TRUE.equals(exchange.getProperty(OperationPayloads.BASYX_DELEGATION_BODY, Boolean.class))
-				? "basyx" : "rest");
 		exchange.setProperty(INVOCATION, invocation);
 		Map<String, Object> sinks = new java.util.LinkedHashMap<>();
 		for (String sinkId : context.commandSinkIds) sinks.put(sinkId, TransformerMeta.sink(context.commandSinkUri));

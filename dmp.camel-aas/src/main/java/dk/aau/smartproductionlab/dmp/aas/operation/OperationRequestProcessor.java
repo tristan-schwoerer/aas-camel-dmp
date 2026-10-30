@@ -31,11 +31,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * First step of the declarative operation-delegation route: the BaSyx
- * operation-delegation client POSTs an {@code OperationVariable[]} (JSON
- * ARRAY) body — flatten it into the {@code {idShort: value}} map the mapping
- * Lua expects; direct REST caller values retain their structure. Both caller
- * forms receive exactly one authored SourceId envelope at this boundary.
+ * First step of the declarative operation-delegation route: BaSyx (Java and Go alike) POSTs the input and InOut
+ * variables as an {@code OperationVariable[]} (JSON array); it is flattened into the {@code {idShort: value}} map
+ * the mapping Lua expects, keyed by the authored SourceIds. Any other body is the caller's 400.
  *
  * @author aas-camel-dmp
  */
@@ -62,11 +60,12 @@ public class OperationRequestProcessor implements Processor {
 	@Override
 	public void process(Exchange exchange) throws Exception {
 		Object body = decodeRestJson(exchange.getMessage().getBody());
-		if (body instanceof java.util.List<?> && OperationPayloads.isOperationVariables(body)) {
-			LOGGER.debug("BaSyx delegation body detected — flattening OperationVariable[]");
-			exchange.setProperty(OperationPayloads.BASYX_DELEGATION_BODY, true);
-			body = OperationPayloads.flattenOperationVariables(body, inputTemplates);
+		if (!(body instanceof java.util.List<?>) || !OperationPayloads.isOperationVariables(body)) {
+			throw new OperationValidationException("DMP_OPERATION_VALIDATION_FAILED", 400,
+					"Operation request must be the OperationVariable array BaSyx delegates", java.util.List.of());
 		}
+		LOGGER.debug("flattening the delegated OperationVariable[]");
+		body = OperationPayloads.flattenOperationVariables(body, inputTemplates);
 		requireInputs(body);
 		exchange.getMessage().setBody(JsonCodec.copyValue(keyedInputs(body)));
 	}

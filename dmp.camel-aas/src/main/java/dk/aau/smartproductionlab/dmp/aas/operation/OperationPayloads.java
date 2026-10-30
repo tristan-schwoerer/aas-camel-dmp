@@ -33,7 +33,6 @@ import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.PayloadAssembler;
 import java.math.BigInteger;
-import java.util.List;
 import java.util.Map;
 
 
@@ -50,9 +49,6 @@ public final class OperationPayloads {
 
 	/** Exchange property marking a failed delegation (writeback skipped). */
 	public static final String OPERATION_DELEGATION_FAILED = "operationDelegationFailed";
-
-	/** Exchange property marking a BaSyx OperationVariable[] caller. */
-	public static final String BASYX_DELEGATION_BODY = "basyxDelegationBody";
 
 	private OperationPayloads() {
 	}

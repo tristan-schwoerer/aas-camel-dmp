@@ -45,15 +45,13 @@ public record OperationRoute(String routeId, Identity identity, Endpoint request
 			if (action == null || action.isBlank()) throw new IllegalArgumentException("an Operation needs its action");
 		}
 
-		/** Lua's {@code meta.invocation} tags: submodel, path, skill, REST path and, where the path names it, the AAS. */
+		/** Lua's {@code meta.invocation} tags: submodel, path, skill and REST path. */
 		public Map<String, String> tags() {
 			Map<String, String> tags = new LinkedHashMap<>();
 			tags.put("submodel", submodelId);
 			tags.put("path", path);
 			tags.put("skill", action);
 			tags.put("restPath", restPath);
-			if (restPath.matches("/operations/[^/]+/[^/]+"))
-				tags.put("aas", java.net.URLDecoder.decode(restPath.split("/")[2], java.nio.charset.StandardCharsets.UTF_8));
 			tags.values().removeIf(Objects::isNull);
 			return tags;
 		}

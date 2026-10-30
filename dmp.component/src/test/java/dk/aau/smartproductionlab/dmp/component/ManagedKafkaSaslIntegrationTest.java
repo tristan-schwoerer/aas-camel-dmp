@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT */
 package dk.aau.smartproductionlab.dmp.component;
 
+import dk.aau.smartproductionlab.dmp.executable.regression.OperationCalls;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.net.InetSocketAddress;
@@ -12,12 +13,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -49,7 +47,6 @@ import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 
 
@@ -236,9 +233,9 @@ public class ManagedKafkaSaslIntegrationTest {
 			assertFalse(projection.contains(sensitive), "health/status must contain only safe fixed categories");
 	}
 	private void call(int port) throws Exception {
-		var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/operations/contract/Restart"))
+		var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + OperationCalls.path("a/submodels/ControlComponentInstance", "Restart")))
 				.timeout(Duration.ofSeconds(5)).header("Content-Type", "application/json")
-				.POST(HttpRequest.BodyPublishers.ofString("{\"Restart\":{\"x\":7}}")).build(), HttpResponse.BodyHandlers.ofString());
+				.POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of("{\"Restart\":{\"x\":7}}"))).build(), HttpResponse.BodyHandlers.ofString());
 		assertEquals(200, response.statusCode());
 	}
 	private static final class RuntimeComponent extends DmpComponent {

@@ -35,13 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashMap;
-import java.util.concurrent.atomic.AtomicReference;
-import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 
 import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
@@ -57,8 +53,6 @@ import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import org.junit.jupiter.api.Test;
 
 import com.google.gson.JsonParser;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import dk.aau.smartproductionlab.dmp.management.repository.FakeAasRepository;
 import dk.aau.smartproductionlab.dmp.management.repository.PublishedModels;
 
@@ -141,13 +135,13 @@ class ManagedBridgeLifecycleTest {
 				assertEquals(1, commands.get(), "quiesced caller must never invoke a device");
 				var siblingReply = caller.send(post(port, "/draining/B", "{\"slow\":false}"), java.net.http.HttpResponse.BodyHandlers.ofString());
 				assertEquals(200, siblingReply.statusCode());
-				assertEquals("{\"reply\":{\"result\":\"accepted\"}}",
-						siblingReply.body());
+				// The untyped reply output reaches BaSyx as one xs:string variable.
+				assertTrue(siblingReply.body().contains("{result=accepted}"), siblingReply.body());
 				assertSame(siblingRoute, runtime.context().getRoute("operation-B"));
 				commandRelease.countDown();
 				var accepted = request.get(3, java.util.concurrent.TimeUnit.SECONDS);
 				assertEquals(200, accepted.statusCode());
-				assertEquals("{\"reply\":{\"result\":\"accepted\"}}", accepted.body());
+				assertTrue(accepted.body().contains("{result=accepted}"), accepted.body());
 				assertTrue(writeEntered.await(2, java.util.concurrent.TimeUnit.SECONDS));
 				assertFalse(replace.isDone(), "old detached write must drain before old helpers/targets retire");
 				assertTrue(runtime.context().getRouteController().getRouteStatus("operation-A-response-write").isStarted());
@@ -172,7 +166,7 @@ class ManagedBridgeLifecycleTest {
 	private static java.net.http.HttpRequest post(int port, String path, String body) {
 		return java.net.http.HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
 				.timeout(Duration.ofSeconds(2)).header("Content-Type", "application/json")
-				.POST(java.net.http.HttpRequest.BodyPublishers.ofString(body)).build();
+				.POST(java.net.http.HttpRequest.BodyPublishers.ofString(OperationCalls.of(body))).build();
 	}
 
 	@Test
@@ -194,7 +188,7 @@ class ManagedBridgeLifecycleTest {
 			template = runtime.context().createProducerTemplate();
 			// Warm Camel's persistent shutdown executor before comparing steady-state inventories.
 			var warm = runtime.installBundle("warm", operationWithReply("warm", "/churn/warm", "direct:churn-reply"));
-			template.requestBody("direct:warm", Map.of("value", 1));
+			template.requestBody("direct:warm", OperationCalls.of("{\"value\":1}"));
 			runtime.removeBundle(warm);
 			int routes = runtime.context().getRoutesSize();
 			int endpoints = runtime.context().getEndpoints().size();
@@ -205,8 +199,8 @@ class ManagedBridgeLifecycleTest {
 			for (int i = 0; i < 6; i++) {
 				var first = runtime.installBundle(runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
 				var second = runtime.installBundle(runtime.stageBundle("B", runtime.nextBundleGeneration("B"), operationWithReply("operation-B", "/churn/B", "direct:churn-reply")));
-				template.requestBody("direct:operation-A", Map.of("value", 1));
-				template.requestBody("direct:operation-B", Map.of("value", 1));
+				template.requestBody("direct:operation-A", OperationCalls.of("{\"value\":1}"));
+				template.requestBody("direct:operation-B", OperationCalls.of("{\"value\":1}"));
 				try (var conflict = runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operation("operation-A", "/churn/B"))) {
 					assertThrows(IllegalStateException.class, () -> runtime.replaceBundle(first, conflict));
 					assertSame(first, runtime.managedBundle("A"));
@@ -214,7 +208,7 @@ class ManagedBridgeLifecycleTest {
 					assertSame(second, runtime.managedBundle("B"));
 				}
 				var replaced = runtime.replaceBundle(first, runtime.stageBundle("A", runtime.nextBundleGeneration("A"), operationWithReply("operation-A", "/churn/A", "direct:churn-reply")));
-				template.requestBody("direct:operation-A", Map.of("value", 1));
+				template.requestBody("direct:operation-A", OperationCalls.of("{\"value\":1}"));
 				runtime.removeBundle(replaced);
 				assertTrue(second.active());
 				runtime.removeBundle(second);
@@ -310,7 +304,8 @@ class ManagedBridgeLifecycleTest {
 				assertInstanceOf(OperationRoute.class,bundle.route(),name);
 				var installedBundle=dmp.installBundle(bundle.bundleId(),bundle.route());
 				assertTrue(installedBundle.restReservations().stream().anyMatch(reservation ->
-						reservation.path().equals("/operations/contract/"+action)),name);
+						reservation.path().startsWith("/submodels/")
+								&& reservation.path().endsWith("/submodel-elements/Skills."+action+".operation/invoke")),name);
 				Set<String> installedRouteIds=installedBundle.routeIds();
 				dmp.removeBundle(installedBundle);
 
@@ -331,14 +326,6 @@ class ManagedBridgeLifecycleTest {
 			if(stream==null)throw new IllegalStateException("missing fixture resource: "+path);
 			return new String(stream.readAllBytes(),StandardCharsets.UTF_8);
 		}
-	}
-
-	private static void respond(HttpExchange exchange,int status,String body) throws java.io.IOException {
-		byte[] bytes=body.getBytes(StandardCharsets.UTF_8);
-		exchange.getResponseHeaders().set("Content-Type","application/json");
-		exchange.sendResponseHeaders(status,bytes.length);
-		exchange.getResponseBody().write(bytes);
-		exchange.close();
 	}
 
 	private static OperationRoute operation(String routeId, String path) {

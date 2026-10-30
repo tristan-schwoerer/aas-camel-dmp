@@ -122,18 +122,10 @@ class OperationCommandValidationTest {
 	@Test
 	void requestValueIsKeyedByTheAuthoredOperationSourceId() throws Exception {
 		var exchange = new DefaultExchange(new DefaultCamelContext());
-		exchange.getMessage().setBody("{\"Position\":{\"x\":1}}");
+		exchange.getMessage().setBody(Delegation.body(Map.of("Position", Map.of("x", 1L))));
 		new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange);
 		Map<?, ?> actual = exchange.getMessage().getBody(Map.class);
 		assertEquals(Map.of("Position", Map.of("x", 1L)), actual.get("Invoke"));
-	}
-
-	@Test
-	void operationRequestProcessorMarksBaSyxArrayBeforeFlattening() throws Exception {
-		var exchange = new DefaultExchange(new DefaultCamelContext());
-		exchange.getMessage().setBody("[{\"value\":{\"modelType\":\"Property\",\"idShort\":\"Uuid\",\"valueType\":\"xs:string\",\"value\":\"abc\"}}]");
-		new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange);
-		assertEquals(true, exchange.getProperty(OperationPayloads.BASYX_DELEGATION_BODY));
 	}
 
 	@Test

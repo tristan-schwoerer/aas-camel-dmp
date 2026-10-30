@@ -1,8 +1,8 @@
 package dk.aau.smartproductionlab.dmp.aas.operation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -21,33 +21,21 @@ import org.junit.jupiter.api.Test;
 
 class OperationRequestProcessorTest {
 	@Test
-	void directSameNameOnlyPreservesItsObjectLevelThroughLua() throws Exception {
-		assertRequestThroughLua(false, false);
+	void sameNameOnlyPreservesItsObjectLevelThroughLua() throws Exception {
+		assertRequestThroughLua(false);
 	}
 
 	@Test
-	void directSameNameAndSiblingPreserveTheirObjectLevelsThroughLua() throws Exception {
-		assertRequestThroughLua(false, true);
+	void sameNameAndSiblingPreserveTheirObjectLevelsThroughLua() throws Exception {
+		assertRequestThroughLua(true);
 	}
 
-	@Test
-	void basyxSameNameOnlyPreservesItsObjectLevelThroughLua() throws Exception {
-		assertRequestThroughLua(true, false);
-	}
-
-	@Test
-	void basyxSameNameAndSiblingPreserveTheirObjectLevelsThroughLua() throws Exception {
-		assertRequestThroughLua(true, true);
-	}
-
-	private void assertRequestThroughLua(boolean basyx, boolean siblings) throws Exception {
+	private void assertRequestThroughLua(boolean siblings) throws Exception {
 		for (String sourceId : List.of("Invoke", "body", "Body")) {
 			Map<String, Object> caller = new LinkedHashMap<>();
-			// A BaSyx delegation carries scalar Property values; a plain REST caller may send any JSON tree.
-			caller.put(sourceId, basyx ? "1" : Map.of("x", 1L));
-			if (siblings) caller.put("sibling", basyx ? "2" : 2L);
-			Object request = basyx ? caller.entrySet().stream().map(entry -> Map.of("value", Map.of("modelType", "Property",
-					"idShort", entry.getKey(), "valueType", "xs:string", "value", entry.getValue()))).toList() : caller;
+			caller.put(sourceId, Map.of("x", 1L));
+			if (siblings) caller.put("sibling", "2");
+			String request = Delegation.body(caller);
 			AtomicInteger sends = new AtomicInteger();
 			AtomicReference<Object> boundary = new AtomicReference<>();
 			AtomicReference<Object> command = new AtomicReference<>();
@@ -74,9 +62,8 @@ class OperationRequestProcessorTest {
 					camel.start();
 					try (var producer = camel.createProducerTemplate()) {
 						var result = producer.request("direct:request-boundary",
-								exchange -> exchange.getMessage().setBody(JsonCodec.toJson(request)));
+								exchange -> exchange.getMessage().setBody(request));
 						assertNull(result.getException());
-						assertEquals(basyx ? true : null, result.getProperty(OperationPayloads.BASYX_DELEGATION_BODY));
 					}
 					assertEquals(Map.of(sourceId, caller), boundary.get(), "external boundary must add exactly one envelope");
 					assertEquals(caller, command.get(), "Lua must see the complete caller object, not its same-name member");
@@ -90,16 +77,14 @@ class OperationRequestProcessorTest {
 	}
 
 	@Test
-	void externalScalarArrayAndNullValuesAlsoGetExactlyOneEnvelope() throws Exception {
+	void aBodyOtherThanTheDelegatedVariablesIsTheCallersError() throws Exception {
 		try (var camel = new DefaultCamelContext()) {
-			for (Object value : java.util.Arrays.asList("READY", "001",
-					"[{\"value\":{\"idShort\":\"Invoke\",\"value\":1}}]", List.of(1L, 2L), null)) {
+			for (Object value : java.util.Arrays.asList("READY", Map.of("Invoke", 1L), List.of(1L, 2L), null)) {
 				var exchange = new DefaultExchange(camel);
 				exchange.getMessage().setBody(JsonCodec.toJson(value));
-				new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange);
-				Map<String, Object> expected = new LinkedHashMap<>();
-				expected.put("Invoke", value);
-				assertEquals(expected, exchange.getMessage().getBody());
+				var failure = assertThrows(OperationValidationException.class,
+						() -> new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange));
+				assertEquals(400, failure.getStatus(), String.valueOf(value));
 			}
 		}
 	}
@@ -111,34 +96,32 @@ class OperationRequestProcessorTest {
 		new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange);
 		assertEquals(Map.of("Invoke", Map.of("Uuid", "00000000-0000-0000-0000-000000000001")),
 				exchange.getMessage().getBody());
-		assertEquals(true, exchange.getProperty(OperationPayloads.BASYX_DELEGATION_BODY));
 	}
 
 	@Test
 	void multipleOperationVariableSourcesProjectFromOneCallerRequest() throws Exception {
 		var exchange = new DefaultExchange(new DefaultCamelContext());
-		exchange.getMessage().setBody("{\"Position\":{\"x\":1,\"y\":2}}");
+		exchange.getMessage().setBody(Delegation.body(Map.of("Position", Map.of("x", 1L, "y", 2L))));
 		new OperationRequestProcessor(Map.of(), Map.of("source-x", "$.Position.x", "source-y", "$.Position.y"))
 				.process(exchange);
 		assertEquals(Map.of("source-x", 1L, "source-y", 2L), exchange.getMessage().getBody());
 	}
 
 	@Test
-	void wholeOperationSourceTakesTheRequestAsItIs() throws Exception {
+	void wholeOperationSourceTakesAllVariables() throws Exception {
 		var exchange = new DefaultExchange(new DefaultCamelContext());
-		exchange.getMessage().setBody("\"now\"");
+		exchange.getMessage().setBody(Delegation.body(Map.of("At", "now")));
 		new OperationRequestProcessor(Map.of(), Map.of("Halt", "$")).process(exchange);
-		assertEquals(Map.of("Halt", "now"), exchange.getMessage().getBody(),
-				"a request that is not an object reaches its whole-Operation source as it is");
+		assertEquals(Map.of("Halt", Map.of("At", "now")), exchange.getMessage().getBody());
 	}
 
 	@Test
 	void omittedOptionalInputGivesItsSourceNoValue() throws Exception {
 		var exchange = new DefaultExchange(new DefaultCamelContext());
-		exchange.getMessage().setBody("{\"Speed\":3}");
+		exchange.getMessage().setBody(Delegation.body(Map.of("Speed", "3")));
 		new OperationRequestProcessor(Map.of("Speed", OptionalQualifierTest.property("Speed", null),
 						"Ramp", OptionalQualifierTest.property("Ramp", "true")),
 				Map.of("speed", "$.Speed", "ramp", "$.Ramp")).process(exchange);
-		assertEquals(Map.of("speed", 3L), exchange.getMessage().getBody());
+		assertEquals(Map.of("speed", "3"), exchange.getMessage().getBody());
 	}
 }

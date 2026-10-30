@@ -75,8 +75,8 @@ class OperationReplyProcessorTest {
 		types.put("State", "xs:string");
 		new OperationReplyProcessor(context(types)).process(exchange);
 
-		assertJson("{\"State\":\"SUCCESS\",\"Uuid\":\"1\"}", exchange.getMessage().getBody());
-		assertEquals("1", String.valueOf(((Map<?, ?>) exchange.getMessage().getBody()).get("Uuid")),
+		assertJson("{\"State\":\"SUCCESS\",\"Uuid\":\"1\"}", outputs(exchange));
+		assertEquals("1", String.valueOf(outputs(exchange).get("Uuid")),
 				"a numeric-looking string Uuid must not come back as a double");
 	}
 
@@ -86,7 +86,7 @@ class OperationReplyProcessorTest {
 
 		new OperationReplyProcessor(context(Map.of("count", "integer"))).process(exchange);
 
-		assertEquals(858383L, ((Number) ((Map<?, ?>) exchange.getMessage().getBody()).get("count")).longValue(),
+		assertEquals(858383L, ((Number) outputs(exchange).get("count")).longValue(),
 				"an integral count must not become 858383.0");
 	}
 
@@ -96,7 +96,7 @@ class OperationReplyProcessorTest {
 
 		new OperationReplyProcessor(context(Map.of("v", "number"))).process(exchange);
 
-		assertEquals(103.5585973, ((Number) ((Map<?, ?>) exchange.getMessage().getBody()).get("v")).doubleValue());
+		assertEquals(103.5585973, ((Number) outputs(exchange).get("v")).doubleValue());
 	}
 
 	@Test
@@ -116,13 +116,10 @@ class OperationReplyProcessorTest {
 				.callerInputSourcePaths(Map.of("Occupy", "$"))
 				.commandSinkIds(List.of("Occupy"))
 				.build();
-		for (boolean basyx : List.of(false, true)) {
-			Exchange exchange = exchangeWith(Map.of("Uuid", "1", "State", "SUCCESS"));
-			exchange.setProperty(OperationPayloads.BASYX_DELEGATION_BODY, basyx);
-			new OperationReplyProcessor(ctx).process(exchange);
-			assertEquals(basyx ? List.of() : Map.of(), exchange.getMessage().getBody());
-			assertEquals(200, exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
-		}
+		Exchange exchange = exchangeWith(Map.of("Uuid", "1", "State", "SUCCESS"));
+		new OperationReplyProcessor(ctx).process(exchange);
+		assertEquals(List.of(), exchange.getMessage().getBody());
+		assertEquals(200, exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
 	}
 
 	@Test
@@ -135,7 +132,6 @@ class OperationReplyProcessorTest {
 				.explicitResponseMapping(true)
 				.build();
 		Exchange exchange = exchangeWith(Map.of("LastHalt", "SUCCESS"));
-		exchange.setProperty(OperationPayloads.BASYX_DELEGATION_BODY, true);
 		new OperationReplyProcessor(ctx).process(exchange);
 		assertEquals(List.of(), exchange.getMessage().getBody());
 	}
@@ -145,7 +141,7 @@ class OperationReplyProcessorTest {
 		Exchange exchange = exchangeWith(Map.of(OUTPUTS, Map.of("State", "SUCCESS", "TimeStamp", "t"),
 				"Audit", "a ResponseSink value, not a caller output"));
 		new OperationReplyProcessor(context(Map.of("State", "xs:string"))).process(exchange);
-		assertEquals(Map.of("State", "SUCCESS"), exchange.getMessage().getBody());
+		assertEquals(Map.of("State", "SUCCESS"), outputs(exchange));
 	}
 
 	@Test
@@ -160,7 +156,7 @@ class OperationReplyProcessorTest {
 				.build();
 		Exchange exchange = exchangeWith(Map.of("x-sink", 1L, "y-sink", 2L));
 		new OperationReplyProcessor(context).process(exchange);
-		assertEquals(Map.of("Position", Map.of("x", 1L, "y", 2L)), exchange.getMessage().getBody());
+		assertEquals("{Position={x=1, y=2}}", outputs(exchange).toString(), "both sinks fill the one Position output");
 	}
 
 	@Test
@@ -179,7 +175,7 @@ class OperationReplyProcessorTest {
 				.build();
 		Exchange answered = exchangeWith(Map.of("state-sink", "SUCCESS"));
 		new OperationReplyProcessor(context).process(answered);
-		assertEquals(Map.of("State", "SUCCESS"), answered.getMessage().getBody());
+		assertEquals(Map.of("State", "SUCCESS"), outputs(answered));
 		OperationValidationException missing = assertThrows(OperationValidationException.class,
 				() -> new OperationReplyProcessor(context).process(exchangeWith(Map.of("outcome-sink", true))));
 		assertTrue(missing.getMessage().contains("State"), missing.getMessage());
@@ -205,7 +201,7 @@ class OperationReplyProcessorTest {
 		outputs.put("Outcome", OptionalQualifierTest.property("Outcome", "true"));
 		Exchange answered = exchangeWith(outputs(Map.of("State", "SUCCESS")));
 		new OperationReplyProcessor(withTemplates(outputs)).process(answered);
-		assertEquals(Map.of("State", "SUCCESS"), answered.getMessage().getBody(), "the optional Outcome may be absent");
+		assertEquals(Map.of("State", "SUCCESS"), outputs(answered), "the optional Outcome may be absent");
 
 		// A Lua typo leaves out the required State: that fails instead of answering without it.
 		OperationValidationException failure = assertThrows(OperationValidationException.class,
@@ -243,7 +239,6 @@ class OperationReplyProcessorTest {
 		types.put("Uuid", "xs:string");
 		types.put("State", "xs:string");
 		Exchange exchange = exchangeWith(outputs(reply));
-		exchange.setProperty(OperationPayloads.BASYX_DELEGATION_BODY, true);
 		new OperationReplyProcessor(context(types)).process(exchange);
 		assertJson("[{\"value\":{\"modelType\":\"Property\",\"idShort\":\"Uuid\","
 				+ "\"valueType\":\"xs:string\",\"value\":\"00000000-0000-0000-0000-000000000001\"}},"
@@ -258,7 +253,7 @@ class OperationReplyProcessorTest {
 
 		new OperationReplyProcessor(context(Map.of("State", "string"))).process(exchange);
 
-		assertEquals(Map.of("State", "1"), exchange.getMessage().getBody(),
+		assertEquals(Map.of("State", "1"), outputs(exchange),
 				"a declared xs:string output must be stringified in the reply too");
 	}
 
@@ -291,21 +286,14 @@ class OperationReplyProcessorTest {
 	void callerTypesAndOrderAreIndependentOfSameNameAndDifferentlyNamedDeviceOutputs() {
 		Map<String, String> callerTypes = Map.of("Count", "string", "Display", "number", "Flag", "boolean");
 		OperationContext ctx = separateTypes(callerTypes, List.of("Flag", "Count", "Display"));
-		for (boolean basyx : List.of(false, true)) {
-			Exchange exchange = exchangeWith(Map.of("Reply",
-					Map.of("Count", "001", "Display", "1.5", "Flag", "true", "DeviceFlag", "not caller output")));
-			exchange.setProperty(OperationPayloads.BASYX_DELEGATION_BODY, basyx);
-			new OperationReplyProcessor(ctx).process(exchange);
-			if (basyx) {
-				assertEquals(List.of(
-						Map.of("value", Map.of("modelType", "Property", "idShort", "Flag", "valueType", "xs:boolean", "value", "true")),
-						Map.of("value", Map.of("modelType", "Property", "idShort", "Count", "valueType", "xs:string", "value", "001")),
-						Map.of("value", Map.of("modelType", "Property", "idShort", "Display", "valueType", "xs:double", "value", "1.5"))),
-						envelope(exchange.getMessage().getBody()));
-			} else {
-				assertEquals(Map.of("Count", "001", "Display", 1.5, "Flag", true), exchange.getMessage().getBody());
-			}
-		}
+		Exchange exchange = exchangeWith(Map.of("Reply",
+				Map.of("Count", "001", "Display", "1.5", "Flag", "true", "DeviceFlag", "not caller output")));
+		new OperationReplyProcessor(ctx).process(exchange);
+		assertEquals(List.of(
+				Map.of("value", Map.of("modelType", "Property", "idShort", "Flag", "valueType", "xs:boolean", "value", "true")),
+				Map.of("value", Map.of("modelType", "Property", "idShort", "Count", "valueType", "xs:string", "value", "001")),
+				Map.of("value", Map.of("modelType", "Property", "idShort", "Display", "valueType", "xs:double", "value", "1.5"))),
+				envelope(exchange.getMessage().getBody()));
 		assertEquals(Map.of("Count", "integer", "DeviceFlag", "string"), ctx.responseTypes);
 		assertEquals(callerTypes, ctx.callerResponseTypes);
 	}
@@ -314,6 +302,12 @@ class OperationReplyProcessorTest {
 	void explicitEmptyCallerTypeMapDoesNotFallBackToDeviceTypes() {
 		Exchange exchange = exchangeWith(Map.of("Reply", Map.of("Count", "001")));
 		new OperationReplyProcessor(separateTypes(Map.of(), List.of("Count"))).process(exchange);
-		assertEquals(Map.of("Count", "001"), exchange.getMessage().getBody());
+		assertEquals(Map.of("Count", "001"), outputs(exchange));
 	}
+
+	/** The reply's output and InOut variables, decoded as BaSyx would: idShort to typed value. */
+	static Map<String, Object> outputs(Exchange exchange) {
+		return OperationPayloads.flattenOperationVariables(OperationPayloads.encodeReply(exchange.getMessage().getBody()));
+	}
+
 }

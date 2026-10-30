@@ -128,7 +128,7 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 	}
 
 	private Exchange invoke(String route) {
-		return template.request("direct:r0-" + route, exchange -> exchange.getMessage().setBody(Map.of("argument", 1L)));
+		return template.request("direct:r0-" + route, exchange -> exchange.getMessage().setBody(Delegation.body(Map.of("argument", 1L))));
 	}
 
 	@Test
@@ -137,7 +137,7 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 		assertEquals(200, result.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
 		Map<String, Object> expected = new LinkedHashMap<>();
 		expected.put("Optional", null);
-		assertEquals(expected, JsonCodec.parseJson(result.getMessage().getBody(String.class)));
+		assertEquals(expected, JsonCodec.parseJson(Delegation.outputs(result.getMessage().getBody(String.class))));
 		assertEquals(1, invocations.get());
 		assertEquals(1, responseTransforms.get());
 	}
@@ -165,8 +165,7 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 
 	private void assertMappingFailure(Exchange result) {
 		assertEquals(500, result.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
-		assertEquals("DMP_RESPONSE_MAPPING_FAILED", ((Map<?, ?>) JsonCodec.parseJson(
-				result.getMessage().getBody(String.class))).get("code"));
+		assertEquals("DMP_RESPONSE_MAPPING_FAILED", Delegation.error(result.getMessage().getBody(String.class)).get("code"));
 		assertEquals(1, invocations.get());
 		assertEquals(0, responseTransforms.get());
 	}
@@ -175,7 +174,7 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 	void withoutAResponseMappingTheNativeReplyIsNotPassedThrough() {
 		Exchange result = invoke("native");
 		assertEquals(200, result.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
-		assertEquals(Map.of(), JsonCodec.parseJson(result.getMessage().getBody(String.class)));
+		assertEquals(Map.of(), JsonCodec.parseJson(Delegation.outputs(result.getMessage().getBody(String.class))));
 		assertEquals(1, invocations.get());
 		assertEquals(0, responseTransforms.get());
 	}
@@ -186,15 +185,16 @@ class OperationResponseRouteRegressionTest extends CamelTestSupport {
 		try {
 			long started = System.nanoTime();
 			Exchange result = template.request("direct:r0-whole", exchange -> {
-				exchange.getMessage().setBody(Map.of("argument", 1L));
+				exchange.getMessage().setBody(Delegation.body(Map.of("argument", 1L)));
 				exchange.getMessage().setHeader("payload", tree);
 				exchange.setProperty("payload", tree);
 			});
 			assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < 2_000,
 					"detached sinks must not delay the caller or run on its thread");
 			assertEquals(200, result.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE));
-			assertEquals(Map.of("Reply", Map.of("x", 1L), "sibling", 2L, "values", List.of("original")),
-					JsonCodec.parseJson(result.getMessage().getBody(String.class)));
+			// The context declares no output types, so BaSyx's variables carry each value as an xs:string.
+			assertEquals(Map.of("Reply", "{x=1}", "sibling", "2", "values", "[original]"),
+					JsonCodec.parseJson(Delegation.outputs(result.getMessage().getBody(String.class))));
 			// One writer per mapping: the second write waits for the first.
 			releaseWrites.countDown();
 			assertTrue(writes.await(2, TimeUnit.SECONDS));

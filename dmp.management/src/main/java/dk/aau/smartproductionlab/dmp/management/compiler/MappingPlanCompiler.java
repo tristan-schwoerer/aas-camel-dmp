@@ -67,7 +67,17 @@ public final class MappingPlanCompiler {
 			WireModel.Presence<WireModel.Blob> transformation,
 			WireModel.Presence<List<EndpointPlan>> responseSources,
 			WireModel.Presence<List<EndpointPlan>> responseSinks,
-			WireModel.Presence<WireModel.Blob> responseTransformation, List<Qualifier> qualifiers) {
+			WireModel.Presence<WireModel.Blob> responseTransformation, List<Qualifier> qualifiers,
+			WireModel.Presence<String> invocationTimeout) {
+		public MappingPlan(String identity, int listIndex, List<EndpointPlan> sources,
+				List<EndpointPlan> sinks, WireModel.Presence<String> defaultPollingInterval,
+				WireModel.Presence<WireModel.Blob> transformation,
+				WireModel.Presence<List<EndpointPlan>> responseSources,
+				WireModel.Presence<List<EndpointPlan>> responseSinks,
+				WireModel.Presence<WireModel.Blob> responseTransformation, List<Qualifier> qualifiers) {
+			this(identity, listIndex, sources, sinks, defaultPollingInterval, transformation, responseSources, responseSinks,
+					responseTransformation, qualifiers, WireModel.Presence.absent());
+		}
 		public MappingPlan {
 			sources=List.copyOf(sources); sinks=List.copyOf(sinks); qualifiers=List.copyOf(qualifiers);
 			if(responseSources.present() && responseSources.value()!=null) responseSources=WireModel.Presence.of(List.copyOf(responseSources.value()));
@@ -175,7 +185,8 @@ public final class MappingPlanCompiler {
 				}
 			}
 			MappingPlan plan=failures.isEmpty()?new MappingPlan(identity,mapping.listIndex(),sources,sinks,mapping.defaultPollingInterval(),
-					mapping.transformation(),responseSourcesResult.value(),responseSinksResult.value(),mapping.responseTransformation(),Aas.nonNull(mapping.element().getQualifiers())):null;
+					mapping.transformation(),responseSourcesResult.value(),responseSinksResult.value(),mapping.responseTransformation(),Aas.nonNull(mapping.element().getQualifiers()),
+					mapping.invocationTimeout()):null;
 			outcomes.add(new DesiredMapping(identity,mapping.listIndex(),plan,failures,dependencies,mapping,null,failurePaths));
 		}
 		for (WireModel.MappingFailure failure : aimc.mappingFailures()) {

@@ -230,7 +230,9 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 	/**
 	 * Drives the bridge through its REST surface (the rest-DSL merge folds the
 	 * direct assembly route into the jetty consumer, so the operation is
-	 * invoked like a caller would).
+	 * invoked like BaSyx would): {@code body}'s variables are delegated as an
+	 * OperationVariable array, and a successful reply's variables are read back
+	 * as one JSON object.
 	 */
 	private static int post(String path, String body, StringBuilder out) throws Exception {
 		java.net.HttpURLConnection connection = (java.net.HttpURLConnection)
@@ -240,11 +242,12 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 		connection.setDoOutput(true);
 		connection.setConnectTimeout(2000);
 		try (var os = connection.getOutputStream()) {
-			os.write(body.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+			os.write(Delegation.of(body).getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		}
 		int status = connection.getResponseCode();
 		try (var is = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
-			out.append(is == null ? "" : new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+			String reply = is == null ? "" : new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+			out.append(status >= 400 ? reply : Delegation.outputs(reply));
 		}
 		return status;
 	}
@@ -295,7 +298,7 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 		int status = post("/operations/packingCellAAS/Restart/failure", "{}", body);
 		assertEquals(500, status);
 		assertEquals(java.util.Map.of("code", "DMP_OPERATION_FAILED", "error", "Operation failed"),
-				dk.aau.smartproductionlab.dmp.core.util.JsonCodec.parseJson(body.toString()));
+				Delegation.error(body.toString()));
 		assertEquals(before, COMMAND_INVOCATIONS.get());
 	}
 
@@ -306,7 +309,7 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 		int status = post("/operations/packingCellAAS/Restart/reply-failure", "{}", body);
 		assertEquals(500, status);
 		assertEquals(java.util.Map.of("code", "DMP_OPERATION_FAILED", "error", "Operation failed"),
-				dk.aau.smartproductionlab.dmp.core.util.JsonCodec.parseJson(body.toString()));
+				Delegation.error(body.toString()));
 		assertEquals(before + 1, COMMAND_INVOCATIONS.get());
 	}
 
@@ -318,7 +321,6 @@ class ProtocolBridgeRouteCreatorTest extends CamelTestSupport {
 		Map<?, ?> invocation = (Map<?, ?>) meta.get("invocation");
 		assertEquals("Succeeded", invocation.get("outcome"));
 		assertEquals("Restart", invocation.get("skill"));
-		assertEquals("rest", invocation.get("caller"));
 		assertTrue(invocation.get("id") instanceof String id && !id.isBlank(), String.valueOf(invocation));
 		assertTrue(invocation.get("durationMs") instanceof Long, String.valueOf(invocation));
 		assertEquals(Map.of("kind", "direct"), ((Map<?, ?>) meta.get("sinks")).get("Log"));

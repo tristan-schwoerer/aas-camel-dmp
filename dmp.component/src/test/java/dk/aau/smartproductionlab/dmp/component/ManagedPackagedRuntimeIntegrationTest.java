@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT */
 package dk.aau.smartproductionlab.dmp.component;
 
+import dk.aau.smartproductionlab.dmp.executable.regression.OperationCalls;
 import static org.junit.jupiter.api.Assertions.*;
 import static dk.aau.smartproductionlab.dmp.component.ManagedKafkaControlIntegrationTest.*;
 
@@ -20,7 +21,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -203,7 +203,7 @@ class ManagedPackagedRuntimeIntegrationTest {
 		}
 		/**
 		 * Another asset like the first: its own AIMC ({@code <id>/submodels/AIMC}) and CCI, whose Operation BaSyx
-		 * delegates to {@code /operations/<idShort>/Restart}. Returns the AIMC, added to the repository.
+		 * delegates to the Operation's own AAS API path. Returns the AIMC, added to the repository.
 		 */
 		String unit(String id, String idShort) throws Exception {
 			String cci = id + "/submodels/ControlComponentInstance";
@@ -276,11 +276,12 @@ class ManagedPackagedRuntimeIntegrationTest {
 			throw new AssertionError("installed scope disappeared");
 		}
 		void call(String owner, String version) throws Exception {
-			var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + "/operations/" + owner + "/Restart"))
+			String cci = "contractB".equals(owner) ? "contractBAS/submodels/ControlComponentInstance" : CCI;
+			var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + OperationCalls.path(cci, "Restart")))
 					.timeout(Duration.ofSeconds(8)).header("Content-Type", "application/json")
-					.POST(HttpRequest.BodyPublishers.ofString("{\"x\":7}")).build(), HttpResponse.BodyHandlers.ofString());
+					.POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of("{\"x\":7}"))).build(), HttpResponse.BodyHandlers.ofString());
 			assertEquals(200, response.statusCode(), response.body());
-			assertEquals("001/" + version, JsonParser.parseString(response.body()).getAsJsonObject().get("deviceReply").getAsString());
+			assertEquals("001/" + version, JsonParser.parseString(OperationCalls.outputs(response.body())).getAsJsonObject().get("deviceReply").getAsString());
 			assertNull(peerFailure.get());
 		}
 		void awaitConsumer() {

@@ -85,7 +85,7 @@ public final class WireProjection {
 	/** An event's {@code data}: the schema of each notification (WoT TD 1.1 §5.3.1.5). */
 	private static final String WOT_NOTIFICATION = "https://www.w3.org/2019/wot/td#hasNotificationSchema";
 	private static final Set<String> MAPPING_FIELDS = Set.of("Sources","Sinks","DefaultPollingInterval","Transformation",
-			"ResponseSources","ResponseSinks","ResponseTransformation");
+			"ResponseSources","ResponseSinks","ResponseTransformation","InvocationTimeout");
 	/** ExecutionSemantics/TriggerSourceIds gave way to each Source's Evaluation (2026-10-23). */
 	private static final Set<String> RETIRED_ID_SHORTS = Set.of("executionpolicy","writedelegation","luamode","transformengine","jsonata",
 			"querylanguage","executionsemantics");
@@ -187,8 +187,9 @@ public final class WireProjection {
 		Presence<List<Endpoint>> responseSources = optionalEndpoints(mapping, "ResponseSources", "Source", i);
 		Presence<List<Endpoint>> responseSinks = optionalEndpoints(mapping, "ResponseSinks", "Sink", i);
 		Presence<Blob> responseTransformation = blobField(mapping, "ResponseTransformation", i);
+		Presence<String> invocationTimeout = scalarField(mapping, "InvocationTimeout", i);
 		return new Mapping(id, i, sources, sinks, polling, transformation, responseSources, responseSinks,
-				responseTransformation, mapping);
+				responseTransformation, mapping, invocationTimeout);
 	}
 
 	private static List<RejectedReference> rejectedReferences(SubmodelElement mapping) {

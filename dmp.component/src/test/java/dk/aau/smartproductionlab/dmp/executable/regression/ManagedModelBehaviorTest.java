@@ -12,9 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -163,8 +161,8 @@ class ManagedModelBehaviorTest {
 							"{\"Restart\":{\"x\":1},\"other\":\"001\"}")) {
 						int before = sends.get();
 						var response = caller.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
-								+ "/operations/contract/Restart")).timeout(Duration.ofSeconds(5))
-								.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(payload)).build(),
+								+ OperationCalls.path("a/submodels/ControlComponentInstance", "Restart"))).timeout(Duration.ofSeconds(5))
+								.header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(OperationCalls.of(payload))).build(),
 								HttpResponse.BodyHandlers.ofString());
 						assertEquals(before + 1, sends.get(), "one device invocation, including response failure");
 						assertNull(handlerFailure.get(), "device simulator must not fail on its handler thread");
@@ -174,7 +172,7 @@ class ManagedModelBehaviorTest {
 						assertEquals(scenario == 2 ? 500 : scenario == 3 ? 502 : 200, response.statusCode(), response.body());
 						assertFalse(response.body().contains("secret-password"), "caller diagnostics must not expose connector causes");
 						if (scenario < 2) assertEquals(JsonParser.parseString(scenario == 0 ? "{}"
-								: "{\"seen\":\"001\"}"), JsonParser.parseString(response.body()));
+								: "{\"seen\":\"001\"}"), JsonParser.parseString(OperationCalls.outputs(response.body())));
 					}
 				} finally { runtime.removeBundle(installed); }
 				assertEquals(baselineEndpoints, runtime.endpoints(), "real HTTP invocation endpoints must not outlive their bundle");

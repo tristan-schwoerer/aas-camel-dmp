@@ -29,7 +29,9 @@ public final class SourceReads {
 			FanIn decoder) {
 		String readRouteId = (routeId + "-read-" + index).replaceAll("[^A-Za-z0-9_.:-]", "-");
 		if (routeBuilder instanceof DmpRouteBuilder managed) managed.registerRouteId(readRouteId);
-		var route = routeBuilder.from("direct:" + readRouteId).routeId(readRouteId).doTry();
+		// The read starts clean: no header of the evaluation or the Operation's caller (e.g. its Content-Type) reaches
+		// the connector or decides how the value is decoded.
+		var route = routeBuilder.from("direct:" + readRouteId).routeId(readRouteId).removeHeaders("*").doTry();
 		RouteCreatorHelper.configureSyncRead(route, build.uri(source.endpoint()), ExecutionPolicyRouteCreator.SYNC_POLL_TIMEOUT_MS);
 		route.process(exchange -> exchange.getMessage().setBody(decoder.decode(source.id(), exchange)))
 				.doCatch(Exception.class)

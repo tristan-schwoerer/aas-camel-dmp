@@ -546,6 +546,18 @@ Lua row, reads the latest row with Flux, never creates buckets or orgs. One
 from the environment. One request per row; batching only with per-batch
 acknowledgement.
 
+**Operation endpoints (2026-10-28).** An Operation is served at its AAS API
+invoke path (`/submodels/{base64url(submodel id)}/submodel-elements/{idShortPath}/invoke`),
+unique by construction; aas-model writes it into `invocationDelegation`, the
+compiler rejects any other path (and Operations inside lists, whose brackets
+Camel's REST layer cannot serve). The body is BaSyx's `OperationVariable[]`
+only (the plain-JSON caller form and `meta.invocation.caller`/`.aas` are
+gone); failures are an HTTP status with the AAS API's `Result`, though BaSyx
+(Java and Go) forwards only the status of a failed delegation. BaSyx Go turns
+`$value` and `invoke-async` into the same synchronous delegation, so the DMP
+needs neither; it waits the authored `InvocationTimeout` (default `PT30S`, at
+most `PT15M`, BaSyx Go's own maximum).
+
 **Web UI.** The TimeSeries plugin reads a TimeSeries submodel or SMC (children
 from `value`, the group's idShortPath as prefix), resolves references and
 names fields by idShortPath.
