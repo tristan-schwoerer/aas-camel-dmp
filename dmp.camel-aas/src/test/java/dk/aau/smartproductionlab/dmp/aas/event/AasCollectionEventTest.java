@@ -141,6 +141,24 @@ class AasCollectionEventTest extends CamelTestSupport {
 	}
 
 	@Test
+	void aBulkPatchCarriesTheValueOfTheElementsItPatchesAndConcernsNoOther() throws Exception {
+		MockEndpoint status = getMockEndpoint("mock:status");
+		MockEndpoint items = getMockEndpoint("mock:items");
+		status.reset();
+		items.reset();
+		status.expectedMessageCount(1);
+		items.expectedMessageCount(0);
+		int before = reads.get();
+		// PATCH /submodels/{id}/$value, as BaSyx's MQTT feature reports it: the patched top-level elements.
+		hub().publish("{\"type\":\"SME_PATCHED\",\"id\":\"" + SUBMODEL + "\",\"smElements\":["
+				+ STATUS.replace("AUTO", "MANUAL") + "]}", Map.of());
+		status.assertIsSatisfied(5000);
+		items.assertIsSatisfied(500);
+		assertEquals(Map.of("Mode", "MANUAL", "Speed", 2.5), status.getExchanges().get(0).getMessage().getBody(Map.class));
+		assertEquals(before, reads.get(), "the patch carries the value; nothing is read");
+	}
+
+	@Test
 	void aCollectionWhoseValueBaSyxWithheldIsReadNotEmpty() throws Exception {
 		MockEndpoint values = getMockEndpoint("mock:status");
 		values.reset();

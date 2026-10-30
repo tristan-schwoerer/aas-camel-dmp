@@ -160,7 +160,11 @@ to devices. Such a source has no value until its first change event, unless
 it is `Cached`: a `Cached` source is read once when its mapping is installed
 (§6). An event on the element itself, on a collection holding it or on the
 whole submodel carries the value, so batch updates reach event-sourced sources
-too. An event on a member of a watched collection or list (created, updated or
+too. So does a bulk patch of the submodel (`PATCH /submodels/{id}/$value`): on
+MQTT (`…/submodelElements/patched`) it carries the patched top-level elements,
+and only sources inside one of them take a value from it; Kafka reports it as a
+submodel update. A value BaSyx withholds from its MQTT events (qualifier
+`emptyValueUpdateEvent`) is read instead. An event on a member of a watched collection or list (created, updated or
 removed) carries at most that member, so the element is read again (one read per
 member event); the removal of the element itself is a change of its mapping
 (§4.2), not a value. A collection

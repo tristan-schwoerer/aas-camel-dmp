@@ -64,7 +64,7 @@ public final class AasEventHub {
 	/**
 	 * Delivers an event to every listener it can concern: the element itself, an ancestor of it (an ancestor
 	 * update carries the subtree), an element inside it (a member of a watched collection or list, created, updated
-	 * or deleted), or a whole-submodel update.
+	 * or deleted), a whole-submodel update, or a bulk patch of the top-level element holding it.
 	 */
 	public void publish(String event, Map<String, Object> headers) {
 		try {
@@ -90,10 +90,27 @@ public final class AasEventHub {
 				// to read (its mapping is recompiled).
 				case "SME_DELETED" -> path != null && !path.equals(listener.idShortPath()) && within(path, listener.idShortPath());
 				case "SM_CREATED", "SM_UPDATED" -> true;
+				case "SME_PATCHED" -> patched(object, listener.idShortPath()) != null;
 				default -> false;
 			};
 			if (concerned) listener.deliver(object, headers);
 		}
+	}
+
+	/**
+	 * The top-level element of {@code idShortPath} as a bulk patch ({@code SME_PATCHED}) carries it in its
+	 * {@code smElements}, or null when the patch leaves it alone.
+	 */
+	static JsonObject patched(JsonObject event, String idShortPath) {
+		JsonElement elements = event.get("smElements");
+		if (elements == null || !elements.isJsonArray()) return null;
+		int end = idShortPath.length();
+		for (char separator : new char[] { '.', '[' })
+			if (idShortPath.indexOf(separator) >= 0) end = Math.min(end, idShortPath.indexOf(separator));
+		String topLevel = idShortPath.substring(0, end);
+		for (JsonElement element : elements.getAsJsonArray())
+			if (element.isJsonObject() && topLevel.equals(text(element.getAsJsonObject(), "idShort"))) return element.getAsJsonObject();
+		return null;
 	}
 
 	private static boolean within(String path, String ancestor) {

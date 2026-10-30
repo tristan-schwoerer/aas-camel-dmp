@@ -170,8 +170,10 @@ public final class AasControlEvent {
 			if (levels.length < 6 || !"submodelElements".equals(levels[4])) return ignored("unknown");
 			String id = new String(Base64.getUrlDecoder().decode(levels[3]), StandardCharsets.UTF_8);
 			if (levels.length == 6 && "patched".equals(action)) {
-				// A bulk element patch: which elements changed is only in the payload.
-				return of("SME_PATCHED", id, null, () -> event("SME_PATCHED", id, null, null));
+				// A bulk patch (PATCH /submodels/{id}/$value): the payload is the patched top-level elements, each now as
+				// given (BaSyx's in-memory backend also drops the ones it leaves out; its MongoDB backend keeps them).
+				String text = payload == null ? "" : new String(payload, StandardCharsets.UTF_8);
+				return of("SME_PATCHED", id, null, () -> patchedEvent(id, text.isEmpty() ? null : JsonParser.parseString(text)));
 			}
 			boolean attachment = levels.length >= 8 && "attachment".equals(levels[levels.length - 2]);
 			boolean value = levels.length >= 8 && "value".equals(levels[levels.length - 2]) && "updated".equals(action);
@@ -190,6 +192,13 @@ public final class AasControlEvent {
 		event.addProperty("type", type);
 		event.addProperty("id", id);
 		event.add("submodel", submodel);
+		return event;
+	}
+
+	/** A bulk patch's event: its elements under {@code smElements} (a DMP name; BaSyx's Kafka feature has none). */
+	private static JsonObject patchedEvent(String id, JsonElement elements) {
+		JsonObject event = event("SME_PATCHED", id, null, null);
+		if (elements != null) event.add("smElements", elements);
 		return event;
 	}
 

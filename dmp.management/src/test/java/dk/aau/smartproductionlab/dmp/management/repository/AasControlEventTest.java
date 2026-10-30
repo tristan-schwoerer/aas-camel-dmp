@@ -111,9 +111,12 @@ class AasControlEventTest {
 		assertEquals(id, created.resourceId());
 		assertEquals(Set.of("urn:aimc"), created.semanticIds());
 
-		var patched = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/patched", "[]".getBytes());
+		var patched = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/patched",
+				("[" + new String(property, java.nio.charset.StandardCharsets.UTF_8) + "]").getBytes(java.nio.charset.StandardCharsets.UTF_8));
 		assertEquals("SME_PATCHED", patched.type());
 		assertEquals(null, patched.elementPath());
+		assertEquals(com.google.gson.JsonParser.parseString(new String(property, java.nio.charset.StandardCharsets.UTF_8)),
+				patched.json().getAsJsonArray("smElements").get(0), "the patched elements reach the value feed");
 		var file = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Docs.Manual/attachment/updated", property);
 		assertEquals("SME_UPDATED", file.type());
 		assertEquals("Docs.Manual", file.elementPath());

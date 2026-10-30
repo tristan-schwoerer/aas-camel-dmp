@@ -25,6 +25,7 @@ import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -33,9 +34,11 @@ import com.google.gson.JsonParser;
  * Converts a BaSyx submodel event into an ordinary mapping source
  * contribution: the new value of the watched Property, collection or list.
  * An event on the element itself, on an ancestor or on the whole submodel
- * carries it; an event on a member of a watched collection or list carries
- * only that member (or, for a removed member, nothing), so the element is read again. The processor is
- * transport-neutral: the filter contract is the source's {@link AasEventSource}.
+ * carries it, as does a bulk patch of the top-level element holding it; an
+ * event on a member of a watched collection or list carries only that member
+ * (or, for a removed member, nothing), so the element is read again. The
+ * processor is transport-neutral: the filter contract is the source's
+ * {@link AasEventSource}.
  */
 public final class AasElementEventProcessor implements Processor {
 
@@ -100,6 +103,14 @@ public final class AasElementEventProcessor implements Processor {
 		}
 		// A member of a watched collection or list changed: the event carries only the member, so the element is
 		// read below.
+		// A bulk patch carries the top-level element holding the watched one, as an ancestor's event does.
+		if (value == null && "SME_PATCHED".equals(eventType)) {
+			JsonObject patched = new JsonObject();
+			JsonArray elements = new JsonArray();
+			elements.add(AasEventHub.patched(event, watched));
+			patched.add("submodelElements", elements);
+			value = propertyValueFromSubmodel(patched, watched, expectedType);
+		}
 		if (value == null && ("SM_UPDATED".equals(eventType) || "SM_CREATED".equals(eventType))) {
 			value = propertyValueFromSubmodel(event.get("submodel"), watched, expectedType);
 		}
@@ -149,6 +160,9 @@ public final class AasElementEventProcessor implements Processor {
 		String type = text(event, "type");
 		if ("SM_UPDATED".equals(type) || "SM_CREATED".equals(type)) {
 			return true;
+		}
+		if ("SME_PATCHED".equals(type)) {
+			return AasEventHub.patched(event, source.idShortPath()) != null;
 		}
 		boolean deleted = "SME_DELETED".equals(type);
 		if (!deleted && !"SME_CREATED".equals(type) && !"SME_UPDATED".equals(type)) {
