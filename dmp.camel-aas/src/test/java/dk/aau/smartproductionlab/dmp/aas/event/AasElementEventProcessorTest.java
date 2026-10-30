@@ -16,7 +16,7 @@ import org.apache.camel.test.junit5.CamelTestSupport;
 import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventSource;
 import org.junit.jupiter.api.Test;
 
-class AasPropertyEventProcessorTest extends CamelTestSupport {
+class AasElementEventProcessorTest extends CamelTestSupport {
 
 	private static AasEventSource source(String modelType, String elementPath) {
 		return new AasEventSource("urn:test:sm", elementPath, modelType, null);
@@ -29,15 +29,15 @@ class AasPropertyEventProcessorTest extends CamelTestSupport {
 			@Override
 			public void configure() {
 				from("direct:event-source")
-						.process(new AasPropertyEventProcessor(source))
+						.process(new AasElementEventProcessor(source))
 						.filter(exchange -> Boolean.TRUE.equals(
-							exchange.getProperty(AasPropertyEventProcessor.MATCH_PROPERTY)))
+							exchange.getProperty(AasElementEventProcessor.MATCH_PROPERTY)))
 						.to("mock:matched");
 				from("direct:smc-event-source")
-						.process(new AasPropertyEventProcessor(
+						.process(new AasElementEventProcessor(
 								source("SubmodelElementCollection", "Runtime.State")))
 						.filter(exchange -> Boolean.TRUE.equals(
-							exchange.getProperty(AasPropertyEventProcessor.MATCH_PROPERTY)))
+							exchange.getProperty(AasElementEventProcessor.MATCH_PROPERTY)))
 						.to("mock:smc-matched");
 			}
 		};

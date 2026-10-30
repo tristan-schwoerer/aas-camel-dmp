@@ -1273,10 +1273,13 @@ public final class ConnectorConfigurationFactory {
 		if(submodelEndpoint==null)return null;
 		OptionalLong interval=endpoint.pollingInterval().present()
 				? endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues) : pollingMillis(mapping,new ArrayList<>());
-		if(target.resolved().element() instanceof Property && interval.isEmpty()) {
-			// Without a positive PollingInterval (none, or 0) a Property follows the repository's change events.
+		SubmodelElement element=target.resolved().element();
+		if((element instanceof Property || element instanceof SubmodelElementCollection || element instanceof SubmodelElementList)
+				&& interval.isEmpty()) {
+			// Without a positive PollingInterval (none, or 0) a Property, collection or list follows the repository's
+			// change events; a member's event has the element read again (SPEC §4.3).
 			String idShortPath=AasReferenceResolver.idShortPath(Aas.keys(endpoint.reference()));
-			AasEventSource events=new AasEventSource(target.resolved().submodel().getId(),idShortPath,"Property",
+			AasEventSource events=new AasEventSource(target.resolved().submodel().getId(),idShortPath,Aas.modelType(element),
 					dk.aau.smartproductionlab.dmp.aas.http.AasHttp.elementUrl(submodelEndpoint,idShortPath));
 			Source source=new Source(entityId(mapping,"source",position),endpoint.id(),events,Source.Delivery.OBSERVED,0)
 					.withSchema(schemaFromAasElement(target.resolved().element(),mapping,path,issues));

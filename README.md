@@ -46,9 +46,10 @@ submodel events.
 - **Property and event routing.** Read or observe a source (MQTT, OPC UA,
   HTTP polling and observation, Modbus via PLC4X, SNMP, AAS elements,
   TimeSeries segments), transform it with Lua,
-  and write to sinks (AAS elements, MQTT, OPC UA, HTTP, PLC4X). An AAS Property
-  source without a `PollingInterval` follows the repository's change events
-  instead of being polled: each event carries the new value. These values come
+  and write to sinks (AAS elements, MQTT, OPC UA, HTTP, PLC4X). An AAS Property,
+  collection or list source without a `PollingInterval` follows the repository's
+  change events instead of being polled: an event carries the new value, and a
+  change of a collection's or list's member has the element read again. These values come
   from a separate value feed, not the configuration consumer: it reads only
   new events (Kafka: own consumer group at the latest offset, nothing
   committed; MQTT: clean session), so values published while the DMP was down

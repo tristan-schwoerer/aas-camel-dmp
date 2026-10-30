@@ -143,8 +143,8 @@ This is the only full discovery. There is no periodic repair.
 
 ### 4.3 Value feed
 
-AAS Property sources without a positive polling interval (§5.1) are event-sourced: each
-change event carries the new value. Values come from a separate feed (Kafka:
+AAS Property, collection and list sources without a positive polling interval
+(§5.1) are event-sourced: a change event carries the new value. Values come from a separate feed (Kafka:
 per-process consumer group at the latest offset, no commits; MQTT: clean
 session), started only while such sources exist, so a backlog is never replayed
 to devices. Such a source has no value until its first change event. A
@@ -474,9 +474,8 @@ no such payloads.
 | Reference target | Interaction |
 | --- | --- |
 | Operation as Source | Accept invocation (bridge mapping) |
-| Property Source with a polling interval (§5.1) | Read (`GET` of the element) |
-| Property Source without one | Observe through the value feed (§4.3) |
-| Collection/list Source | Read; requires a polling interval |
+| Property, collection or list Source with a polling interval (§5.1) | Read (`GET` of the element) |
+| Property, collection or list Source without one | Observe through the value feed (§4.3) |
 | Property/collection Sink | Write (`PATCH …/$value`, ValueOnly) |
 | List Sink | Rejected; its items are Sinks (`Items[0]`) |
 | Operation as Sink | Rejected (no chained actions) |

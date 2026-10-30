@@ -15,7 +15,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 /**
- * Hands repository element events from the control-plane consumer to event-sourced AAS Property routes in the
+ * Hands repository element events from the control-plane consumer to event-sourced AAS element routes in the
  * same Camel context, so value changes reach routes without polling or a second broker subscription.
  *
  * <p>Events use the BaSyx Kafka shape ({@code type}, {@code id}, {@code smElementPath}, {@code smElement},
@@ -63,7 +63,8 @@ public final class AasEventHub {
 
 	/**
 	 * Delivers an event to every listener it can concern: the element itself, an ancestor of it (an ancestor
-	 * update carries the subtree), or a whole-submodel update.
+	 * update carries the subtree), an element inside it (a member of a watched collection or list), or a
+	 * whole-submodel update.
 	 */
 	public void publish(String event, Map<String, Object> headers) {
 		try {
@@ -80,9 +81,11 @@ public final class AasEventHub {
 		if (candidates == null) return;
 		String type = text(object, "type");
 		String path = text(object, "smElementPath");
+		if (path != null) path = path.replace('/', '.');
 		for (Listener listener : candidates) {
 			boolean concerned = switch (type == null ? "" : type) {
-				case "SME_CREATED", "SME_UPDATED" -> path != null && within(listener.idShortPath(), path);
+				case "SME_CREATED", "SME_UPDATED" -> path != null
+						&& (within(listener.idShortPath(), path) || within(path, listener.idShortPath()));
 				case "SM_CREATED", "SM_UPDATED" -> true;
 				default -> false;
 			};

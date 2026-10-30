@@ -28,7 +28,7 @@ import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSink;
 import dk.aau.smartproductionlab.dmp.aas.configuration.AasElementSource;
 import dk.aau.smartproductionlab.dmp.aas.configuration.AasEventSource;
-import dk.aau.smartproductionlab.dmp.aas.event.AasPropertyEventProcessor;
+import dk.aau.smartproductionlab.dmp.aas.event.AasElementEventProcessor;
 import dk.aau.smartproductionlab.dmp.aas.operation.OperationRoute;
 import dk.aau.smartproductionlab.dmp.http.configuration.HttpObservation;
 import dk.aau.smartproductionlab.dmp.http.configuration.HttpPoll;
@@ -509,7 +509,7 @@ class ConnectorConfigurationFactoryTest {
 		assertEquals("urn:owner/submodels/Variables",ds.submodelId());
 		assertEquals("Status.State",ds.idShortPath());
 		assertEquals(Source.Delivery.OBSERVED,source.delivery());
-		assertInstanceOf(AasPropertyEventProcessor.class,ds.normalizer(source),"repository events are read as element events");
+		assertInstanceOf(AasElementEventProcessor.class,ds.normalizer(source),"repository events are read as element events");
 		assertTrue(uri(ds).startsWith("aas-event:"));
 		String encoded=java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
 				"urn:owner/submodels/Variables".getBytes(StandardCharsets.UTF_8));
@@ -625,6 +625,40 @@ class ConnectorConfigurationFactoryTest {
 		var result=factory.create(plan,"route",new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().isEmpty(),result.issues().toString());
 		assertInstanceOf(AasEventSource.class,sources(result).get(0).endpoint());
+	}
+
+	@Test
+	void aCollectionOrListSourceWithoutAPollingIntervalFollowsRepositoryEventsAndOneWithAnIntervalIsRead() {
+		var collection=AasFixtures.collection("Status",property("State","RUNNING"));
+		var list=new org.eclipse.digitaltwin.aas4j.v3.model.impl.DefaultSubmodelElementList.Builder().idShort("Readings")
+				.typeValueListElement(org.eclipse.digitaltwin.aas4j.v3.model.AasSubmodelElements.PROPERTY)
+				.valueTypeListElement(dk.aau.smartproductionlab.dmp.aas.model.Aas.xsd("xs:double")).build();
+		var submodel=AasFixtures.submodel("urn:owner/submodels/Variables","Variables");
+		var collectionReference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementCollection","Status");
+		var listReference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementList","Readings");
+		var out=new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,property("Out","")));
+		var outReference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","Property","Out");
+		var runtime=new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"));
+		java.util.function.BiFunction<EndpointPlan,EndpointPlan,Source> compiled=(source,sink) -> {
+			var result=factory.create(new Plan(List.of(mappingPlan("aas-element",0,source,sink))),"route",runtime);
+			assertTrue(result.issues().isEmpty(),result.issues().toString());
+			return sources(result).get(0);
+		};
+		var followed=compiled.apply(new EndpointPlan("Status",collectionReference,
+				new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,collection))),new EndpointPlan("Out",outReference,out));
+		var events=assertInstanceOf(AasEventSource.class,followed.endpoint());
+		assertEquals("SubmodelElementCollection",events.modelType());
+		assertEquals("Status",events.idShortPath());
+		assertEquals(Source.Delivery.OBSERVED,followed.delivery());
+		var listEvents=assertInstanceOf(AasEventSource.class,compiled.apply(new EndpointPlan("Readings",listReference,
+				new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,list)),Presence.of("0")),
+				new EndpointPlan("Out",outReference,out)).endpoint());
+		assertEquals("SubmodelElementList",listEvents.modelType());
+		var polled=compiled.apply(new EndpointPlan("Status",collectionReference,
+				new DirectTarget(new AasReferenceResolver.ResolvedElement(submodel,collection)),Presence.of("2")),
+				new EndpointPlan("Out",outReference,out));
+		assertInstanceOf(AasElementSource.class,polled.endpoint(),"a positive PollingInterval reads the collection");
+		assertEquals(2000,polled.pollingIntervalMs());
 	}
 
 	@Test

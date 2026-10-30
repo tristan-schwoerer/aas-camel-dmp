@@ -31,11 +31,13 @@ import com.google.gson.JsonParser;
 
 /**
  * Converts a BaSyx submodel event into an ordinary mapping source
- * contribution.  The processor is deliberately transport-neutral: Kafka is
- * only the current event connector, while the filter contract is expressed by
- * the source's {@link AasEventSource}.
+ * contribution: the new value of the watched Property, collection or list.
+ * An event on the element itself, on an ancestor or on the whole submodel
+ * carries it; an event on a member of a watched collection or list carries
+ * only that member, so the element is read again. The processor is
+ * transport-neutral: the filter contract is the source's {@link AasEventSource}.
  */
-public final class AasPropertyEventProcessor implements Processor {
+public final class AasElementEventProcessor implements Processor {
 
 	static final String MATCH_PROPERTY = "dmp.aasEventMatch";
 	static final String EVENT_ID_HEADER = "AasEvent.EventId";
@@ -53,7 +55,7 @@ public final class AasPropertyEventProcessor implements Processor {
 	private final AasEventSource source;
 	private final Set<String> seenEvents = ConcurrentHashMap.newKeySet();
 
-	public AasPropertyEventProcessor(AasEventSource source) {
+	public AasElementEventProcessor(AasEventSource source) {
 		this.source = source;
 	}
 
@@ -88,13 +90,16 @@ public final class AasPropertyEventProcessor implements Processor {
 		JsonElement value = null;
 		if (elementPath != null && watched.equals(elementPath.replace('/', '.'))) {
 			value = propertyValue(event);
-		} else if (elementPath != null && event.get("smElement") != null) {
+		} else if (elementPath != null && event.get("smElement") != null
+				&& watched.startsWith(elementPath.replace('/', '.'))) {
 			String ancestor = elementPath.replace('/', '.');
 			String rest = watched.substring(ancestor.length());
 			if (rest.startsWith(".")) {
 				value = propertyValueFromSubmodel(event.get("smElement"), rest.substring(1), expectedType);
 			}
 		}
+		// A member of a watched collection or list changed: the event carries only the member, so the element is
+		// read below.
 		if (value == null && ("SM_UPDATED".equals(eventType) || "SM_CREATED".equals(eventType))) {
 			value = propertyValueFromSubmodel(event.get("submodel"), watched, expectedType);
 		}
@@ -102,7 +107,7 @@ public final class AasPropertyEventProcessor implements Processor {
 			value = readCurrentValue(exchange.getContext());
 		}
 		if (value == null) {
-			throw new IllegalStateException("AAS Property event matched but contained no value and enrichment failed");
+			throw new IllegalStateException("AAS element event matched but contained no value and enrichment failed");
 		}
 		if (eventId != null) {
 			seenEvents.add(eventId);
@@ -155,8 +160,10 @@ public final class AasPropertyEventProcessor implements Processor {
 		}
 		actualPath = actualPath.replace('/', '.');
 		if (!expectedPath.equals(actualPath)) {
-			// An update of an ancestor carries the watched element in its subtree.
-			return expectedPath.startsWith(actualPath + ".") || expectedPath.startsWith(actualPath + "[");
+			// An update of an ancestor carries the watched element in its subtree; one of a member of a watched
+			// collection or list changes its value.
+			return expectedPath.startsWith(actualPath + ".") || expectedPath.startsWith(actualPath + "[")
+					|| actualPath.startsWith(expectedPath + ".") || actualPath.startsWith(expectedPath + "[");
 		}
 		JsonElement element = event.get("smElement");
 		return source.modelType() == null || element == null || !element.isJsonObject()
