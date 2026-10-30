@@ -172,8 +172,9 @@ as a `Log` TimeSeries written by the mappings themselves (SPEC §5.5, §10).
   actions from AID forms share one MQTT 5 connection per broker and credentials
   (`dmp-paho-mqtt5:`, on the HiveMQ client), also when Kafka carries the events. Their credentials are bound in the Camel
   registry per bundle; endpoint URIs only reference them by name.
-- An AAS Property source that follows events has no value until its first
-  change event; startup does not replay current values.
+- An AAS element source that follows events has no value until its first
+  change event; startup does not replay current values. A `Cached` source is
+  the exception: it is read once when its mapping is installed.
 
 ## Modules
 

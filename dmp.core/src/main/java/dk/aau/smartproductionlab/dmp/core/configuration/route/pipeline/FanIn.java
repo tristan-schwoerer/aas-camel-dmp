@@ -164,6 +164,11 @@ public final class FanIn implements ManagedRouteResource {
 	 * delivered" and "delivered nothing" are treated alike by the gate.
 	 */
 	public Processor disassemble(String dataSourceId) {
+		return contribute(dataSourceId, false);
+	}
+
+	/** One source's contribution; an initial read ({@code seed}) only fills a source that has no value yet. */
+	private Processor contribute(String dataSourceId, boolean seed) {
 		String sourceId = sourceIdByEndpoint.get(dataSourceId);
 		return exchange -> {
 			exchange.setProperty(CONTRIBUTION_PROPERTY, false);
@@ -180,8 +185,10 @@ public final class FanIn implements ManagedRouteResource {
 				return;
 			}
 			if (exchange.getProperty(ARRIVED_PROPERTY) == null) exchange.setProperty(ARRIVED_PROPERTY, System.nanoTime());
-			SourceCache.Snapshot accepted = cache.accept(sourceId, value,
+			SourceCache.Snapshot accepted = seed ? cache.seed(sourceId, value) : cache.accept(sourceId, value,
 					evaluationByEndpoint.get(dataSourceId) == Evaluation.ON_CHANGE);
+			// An update that arrived before the initial read is newer than it.
+			if (accepted == null) return;
 			exchange.setProperty(ACCEPTED_SNAPSHOT_PROPERTY, accepted.values());
 			exchange.setProperty(ACCEPTED_TIMES_PROPERTY, accepted.times());
 			exchange.setProperty(CONTRIBUTION_PROPERTY, true);
@@ -196,7 +203,19 @@ public final class FanIn implements ManagedRouteResource {
 	 * payload fails only when no source could read it.
 	 */
 	public Processor disassemble(List<String> dataSourceIds) {
-		List<Processor> disassemblers = dataSourceIds.stream().map(this::disassemble).toList();
+		return contribute(dataSourceIds, false);
+	}
+
+	/**
+	 * An initial read of {@code dataSourceIds} ({@link Source#initialRead()}): contributes like {@link #disassemble(List)},
+	 * except that a source which already has a value keeps it, as an update that arrived first is the newer value.
+	 */
+	public Processor seed(List<String> dataSourceIds) {
+		return contribute(dataSourceIds, true);
+	}
+
+	private Processor contribute(List<String> dataSourceIds, boolean seed) {
+		List<Processor> disassemblers = dataSourceIds.stream().map(id -> contribute(id, seed)).toList();
 		return exchange -> {
 			bufferStream(exchange);
 			List<String> contributing = new ArrayList<>();
@@ -534,6 +553,11 @@ public final class FanIn implements ManagedRouteResource {
 			latest.put(sourceId, next);
 			accepted.put(sourceId, java.time.Instant.now());
 			return snapshot(changed);
+		}
+
+		/** Caches {@code value} only when the source has none yet; null when it kept the one it had. */
+		synchronized Snapshot seed(String sourceId, Object value) {
+			return latest.containsKey(sourceId) ? null : accept(sourceId, value, false);
 		}
 
 		synchronized Snapshot snapshot() { return snapshot(false); }

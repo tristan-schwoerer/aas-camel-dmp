@@ -4,6 +4,7 @@ import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -612,6 +613,62 @@ class ConnectorConfigurationFactoryTest {
 				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
 		assertTrue(result.issues().stream().anyMatch(issue -> issue.message().contains("only trigger; it takes no Evaluation")),
 				result.issues().toString());
+	}
+
+	/** An AAS Property that follows repository events (no PollingInterval), with the authored {@code mode}. */
+	private static EndpointPlan eventProperty(String id,String idShort,String mode) {
+		var target=new DirectTarget(new AasReferenceResolver.ResolvedElement(
+				AasFixtures.submodel("urn:owner/submodels/Variables","Variables"),property(idShort,"IDLE")));
+		return new EndpointPlan(id,AasFixtures.reference("Submodel","urn:owner/submodels/Variables","Property",idShort),
+				target,Presence.absent(),mode==null?Presence.absent():Presence.of(mode));
+	}
+
+	@Test
+	void aCachedSourceThatCanBeReadIsReadOnceThenFollowsItsUpdates() {
+		var sink=endpointPlan("write",protocolTarget(WireModel.ProtocolFamily.HTTP,"http://api.example:8080","/state",Map.of(),"POST"));
+		var mqtt=protocolTarget(WireModel.ProtocolFamily.MQTT,"mqtt://broker.example:1883","/state",Map.of("mqv_retain","true"),null);
+		var mapping=new MappingPlan("cached",0,List.of(eventProperty("trigger","Mode",null),eventProperty("state","State","Cached"),
+				new EndpointPlan("topic",reference(),mqtt,Presence.absent(),Presence.of("Cached"))),List.of(sink),
+				Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),Presence.absent(),List.of());
+		var result=factory.create(new Plan(List.of(mapping)),"route",
+				new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081")));
+		assertTrue(result.issues().isEmpty(),result.issues().toString());
+		var configured=sources(result);
+		assertNull(configured.get(0).initialRead(),"a trigger is not read: its first update evaluates the mapping");
+		assertInstanceOf(AasEventSource.class,configured.get(1).endpoint());
+		var read=assertInstanceOf(AasElementSource.class,configured.get(1).initialRead());
+		assertEquals("State",read.idShortPath());
+		assertNull(configured.get(2).initialRead(),"an MQTT topic is only received by subscription");
+	}
+
+	@Test
+	void anOperationReadsItsFurtherAasSourcesAtTheCallAndAcceptsNoOtherEvaluation() {
+		var bridge=explicitResponsePlan("aid-command").mappings().get(0);
+		var mqtt=protocolTarget(WireModel.ProtocolFamily.MQTT,"mqtt://broker.example:1883","/state",Map.of("mqv_retain","true"),null);
+		java.util.function.Function<List<EndpointPlan>,MappingPlan> withFurther=further -> {
+			List<EndpointPlan> sources=new ArrayList<>(bridge.sources());
+			sources.addAll(further);
+			return new MappingPlan(bridge.identity(),bridge.listIndex(),sources,bridge.sinks(),bridge.defaultPollingInterval(),
+					bridge.transformation(),bridge.responseSources(),bridge.responseSinks(),bridge.responseTransformation(),
+					bridge.qualifiers());
+		};
+		var runtime=new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"));
+		var result=factory.create(new Plan(List.of(withFurther.apply(List.of(eventProperty("mode","Mode",null),
+				eventProperty("state","State","ReadAtEvaluation"))))),"bridge",runtime);
+		assertTrue(result.issues().isEmpty(),result.issues().toString());
+		var fanIn=assertInstanceOf(OperationRoute.class,result.routes().get(0)).fanIn();
+		assertEquals(List.of(Evaluation.READ_AT_EVALUATION,Evaluation.READ_AT_EVALUATION),fanIn.stream().map(Source::evaluation).toList());
+		fanIn.forEach(source -> assertInstanceOf(AasElementSource.class,source.endpoint(),"read at the call"));
+
+		for(var rejected:List.of(
+				Map.entry(eventProperty("state","State","Cached"),"reads its further sources at the call"),
+				Map.entry(eventProperty("state","State","OnUpdate"),"reads its further sources at the call"),
+				Map.entry(new EndpointPlan("topic",reference(),mqtt),"fans in AAS elements only"))) {
+			var failed=factory.create(new Plan(List.of(withFurther.apply(List.of(rejected.getKey())))),"bridge",runtime);
+			assertTrue(failed.routes().isEmpty());
+			assertTrue(failed.issues().stream().anyMatch(issue -> issue.message().contains(rejected.getValue())),
+					failed.issues().toString());
+		}
 	}
 
 	@Test

@@ -147,9 +147,15 @@ AAS Property, collection and list sources without a positive polling interval
 (§5.1) are event-sourced: a change event carries the new value. Values come from a separate feed (Kafka:
 per-process consumer group at the latest offset, no commits; MQTT: clean
 session), started only while such sources exist, so a backlog is never replayed
-to devices. Such a source has no value until its first change event. A
-submodel event carries the whole submodel; the source takes its Property's
-value from it, so batch updates reach event-sourced sources too.
+to devices. Such a source has no value until its first change event, unless
+it is `Cached`: a `Cached` source is read once when its mapping is installed
+(§6). An event on the element itself, on a collection holding it or on the
+whole submodel carries the value, so batch updates reach event-sourced sources
+too. An event on a member of a watched collection or list carries only that
+member, so the element is read again (one read per member event). A collection
+written whole (one `PATCH` of its `$value`) is one event and one value; one
+written member by member is one value per member write, the earlier ones
+showing a partly updated collection, as a poll at that moment would.
 
 ### 4.4 Compilation and installation
 
@@ -602,7 +608,7 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   | --- | --- | --- |
   | `OnUpdate` (without an `Evaluation`) | on every new value | observe, or poll at its interval |
   | `OnChange` | when the new value differs from the source's previous one (the first counts) | observe, or poll |
-  | `Cached` | never | observe, or poll; the latest value |
+  | `Cached` | never | observe, or poll; the latest value. An observed source whose affordance can be read is also read once at installation |
   | `ReadAtEvaluation` | never | one Read per evaluation |
 
   Values are compared after `valuePath`: maps, lists and numbers by content.
@@ -615,6 +621,17 @@ Sources[] ──► latest-value cache ──► aimc_main(sources) ──► pe
   the last source has delivered counts it as a trigger (`meta.sources.<id>.trigger`).
   The cache keeps each value as it was accepted, immutable, and every
   evaluation, the Lua conversion and the sinks share it; it is copied once.
+- An observed `Cached` source whose affordance can also be read (an AAS
+  Property following events, an OPC UA variable; anything `ReadAtEvaluation`
+  could read) is read once when its bundle starts, so the readiness gate need
+  not wait for its first update. The read fills only an empty cache: an update
+  that arrived first is newer and is kept. A trigger the gate held back for it
+  then evaluates. A failed read is logged and the source waits for its first
+  update. A source that can only be observed (an MQTT topic, an event, an HTTP
+  subprotocol) is not read; MQTT retained messages and OPC UA monitored items
+  deliver a first value of their own. A change between the read and the moment
+  the event feed is connected (Kafka's assignment) reaches the source only with
+  the next change.
 - A `ReadAtEvaluation` source has no consumer and no interval (a
   `PollingInterval` other than 0 blocks the mapping). Each evaluation reads it
   once, after the readiness gate and before the Lua; a failed read fails the
@@ -1011,7 +1028,7 @@ id can read it; the status itself stays without names and messages.
 | ADR-020 | One fixed execution rule per mapping (§6); no authorable execution policy. |
 | ADR-022 | Operation delegation: the Operation is the source, one AID action or property is the sink (§7.1). |
 | ADR-023 | Variables/Parameters are plain Properties; references address the element itself. |
-| ADR-024 | Each Source's `Evaluation/Mode` (`OnUpdate` without one) says whether it triggers and how it is read; acquisition otherwise comes from declared capability (2026-10-23, replacing `TriggerSourceIds`). |
+| ADR-024 | Each Source's `Evaluation/Mode` (`OnUpdate` without one) says whether it triggers and how it is read; acquisition otherwise comes from declared capability (2026-10-23, replacing `TriggerSourceIds`). An observed `Cached` source that can be read is read once at installation (2026-10-27). An Operation's further sources are `ReadAtEvaluation` only: `Cached` fan-in was tried and withdrawn (2026-10-28). |
 | ADR-025 | Connector capabilities are explicit per interaction (§9). |
 | ADR-027 | Single Java process; Python management node, per-asset containers and file configuration removed (2026-10-15). |
 | ADR-028 | Need-to-know discovery and event-only lifecycle; no periodic repair (2026-10-15). |

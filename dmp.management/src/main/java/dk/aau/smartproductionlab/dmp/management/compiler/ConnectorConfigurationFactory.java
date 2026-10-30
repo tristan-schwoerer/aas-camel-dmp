@@ -202,7 +202,7 @@ public final class ConnectorConfigurationFactory {
 					? readSource(endpoint, mapping, i, plan, routeId, runtime, issues)
 					: source(endpoint, mapping, i, plan, routeId, runtime, issues);
 			if (source != null) {
-				sources.add(source.withEvaluation(evaluation));
+				sources.add(withInitialRead(source.withEvaluation(evaluation), endpoint, mapping, i, plan, routeId, runtime));
 				sourcePositions.add(i);
 			}
 		}
@@ -215,21 +215,7 @@ public final class ConnectorConfigurationFactory {
 			Sink sink = sink(endpoint, mapping, i, plan, routeId, runtime, issues);
 			if (sink != null) sinks.add(payloadBinding(sink,endpoint,mapping,issues));
 		}
-		// A read source is polled at its PollingInterval, else at the mapping's DefaultPollingInterval
-		// (IDTA AIMC; ignored for asynchronous sources). Without a positive one (none, or 0) the source
-		// is event-based, and one its binding can only read blocks the mapping: no interval is assumed.
-		java.util.function.Predicate<Source> unpaced = source -> source.evaluation() != Evaluation.READ_AT_EVALUATION
-				&& source.read() && source.pollingIntervalMs()<=0;
-		java.util.function.IntPredicate ownInterval = k -> mapping.sources().get(sourcePositions.get(k)).pollingInterval().present();
-		boolean fallback = java.util.stream.IntStream.range(0, sources.size())
-				.anyMatch(k -> unpaced.test(sources.get(k)) && !ownInterval.test(k));
-		OptionalLong pollingMillis = fallback ? pollingMillis(mapping, issues) : OptionalLong.empty();
-		if (pollingMillis.isPresent()) for (int k = 0; k < sources.size(); k++)
-			if (unpaced.test(sources.get(k)) && !ownInterval.test(k))
-				sources.set(k, sources.get(k).withPollingIntervalMs(pollingMillis.getAsLong()));
-		for (int k = 0; k < sources.size(); k++) if (unpaced.test(sources.get(k))) issue(issues, mapping,
-				endpointPath(mapping, "Sources", sourcePositions.get(k)),
-				"the source can only be read, not observed; it needs a positive PollingInterval or DefaultPollingInterval");
+		paceReadSources(mapping, sources, sourcePositions, issues);
 		if (mapping.qualifiers().stream().anyMatch(ConnectorConfigurationFactory::behaviorQualifier)) issue(issues, mapping,
 				"MappingConfigurations/value/" + mapping.listIndex() + "/qualifiers",
 				"mapping qualifier semantics are not represented by the runtime route API");
@@ -794,6 +780,42 @@ public final class ConnectorConfigurationFactory {
 
 	private static List<String> remainder(List<String> prefix,List<String> path) {
 		return path.size()>=prefix.size() && path.subList(0,prefix.size()).equals(prefix) ? path.subList(prefix.size(),path.size()) : null;
+	}
+
+	/**
+	 * A read source is polled at its PollingInterval, else at the mapping's DefaultPollingInterval
+	 * (IDTA AIMC; ignored for asynchronous sources). Without a positive one (none, or 0) the source
+	 * is event-based, and one its binding can only read blocks the mapping: no interval is assumed.
+	 * {@code sourcePositions} are the sources' positions in the mapping's Sources.
+	 */
+	private static void paceReadSources(MappingPlan mapping, List<Source> sources, List<Integer> sourcePositions,
+			List<Issue> issues) {
+		java.util.function.Predicate<Source> unpaced = source -> source.evaluation() != Evaluation.READ_AT_EVALUATION
+				&& source.read() && source.pollingIntervalMs()<=0;
+		java.util.function.IntPredicate ownInterval = k -> mapping.sources().get(sourcePositions.get(k)).pollingInterval().present();
+		boolean fallback = java.util.stream.IntStream.range(0, sources.size())
+				.anyMatch(k -> unpaced.test(sources.get(k)) && !ownInterval.test(k));
+		OptionalLong pollingMillis = fallback ? pollingMillis(mapping, issues) : OptionalLong.empty();
+		if (pollingMillis.isPresent()) for (int k = 0; k < sources.size(); k++)
+			if (unpaced.test(sources.get(k)) && !ownInterval.test(k))
+				sources.set(k, sources.get(k).withPollingIntervalMs(pollingMillis.getAsLong()));
+		for (int k = 0; k < sources.size(); k++) if (unpaced.test(sources.get(k))) issue(issues, mapping,
+				endpointPath(mapping, "Sources", sourcePositions.get(k)),
+				"the source can only be read, not observed; it needs a positive PollingInterval or DefaultPollingInterval");
+	}
+
+	/**
+	 * An observed {@code Cached} source whose affordance can also be read (an AAS Property, an OPC UA variable) is
+	 * read once when its mapping is installed, then follows its updates; it has a value before its first update.
+	 * A source that can only be observed (an MQTT topic, an event, an HTTP subprotocol) waits for its first update.
+	 */
+	private static Source withInitialRead(Source source, EndpointPlan endpoint, MappingPlan mapping, int position,
+			Plan plan, String routeId, RuntimeSettings runtime) {
+		if (source.evaluation() != Evaluation.CACHED || source.read() || polled(endpoint)) return source;
+		// Read as ReadAtEvaluation would read it; its issues only say that it cannot be read.
+		List<Issue> unreadable = new ArrayList<>();
+		Source read = readSource(endpoint, mapping, position, plan, routeId, runtime, unreadable);
+		return read == null || !unreadable.isEmpty() ? source : source.withInitialRead(read.endpoint());
 	}
 
 	/** A Source's authored {@code Evaluation/Mode}; without one, {@link Evaluation#ON_UPDATE}. */

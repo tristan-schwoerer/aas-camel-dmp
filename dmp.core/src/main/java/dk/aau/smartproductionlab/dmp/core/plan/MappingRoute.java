@@ -31,7 +31,10 @@ public record MappingRoute(String routeId, List<Source> sources, Endpoint transf
 	@Override
 	public List<Endpoint> endpoints() {
 		List<Endpoint> endpoints = new ArrayList<>();
-		sources.forEach(source -> endpoints.add(source.endpoint()));
+		sources.forEach(source -> {
+			endpoints.add(source.endpoint());
+			if (source.initialRead() != null) endpoints.add(source.initialRead());
+		});
 		if (transformation != null) endpoints.add(transformation);
 		sinks.forEach(sink -> endpoints.add(sink.endpoint()));
 		if (response != null) endpoints.addAll(response.endpoints());

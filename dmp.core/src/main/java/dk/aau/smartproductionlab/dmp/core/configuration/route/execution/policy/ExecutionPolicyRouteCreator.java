@@ -30,20 +30,17 @@ import java.util.Map;
 
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.ProcessorDefinition;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.core.RouteCreatorHelper;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanIn;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.FanOut;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.ResponseHalf;
+import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.SourceAcquisition;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.SourceReads;
-import dk.aau.smartproductionlab.dmp.core.execution.DmpPollComponent;
 import dk.aau.smartproductionlab.dmp.core.plan.Evaluation;
 import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
 import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.DmpRouteBuilder;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.PlanBuild;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * The ONE mapping-route creator: every {@link MappingRoute} is
@@ -63,7 +60,9 @@ import org.slf4j.LoggerFactory;
  * ({@code OnUpdate}, or {@code OnChange} with a changed value) and once all
  * cached sources have delivered;</li>
  * <li>a source read at evaluation has no consumer or poll of its own: each
- * evaluation reads it once, after the readiness gate.</li>
+ * evaluation reads it once, after the readiness gate;</li>
+ * <li>an observed {@code Cached} source with an initial read is read once when
+ * its route starts ({@link SourceAcquisition}).</li>
  * </ul>
  *
  * <p>
@@ -75,8 +74,6 @@ import org.slf4j.LoggerFactory;
  * Fan-out reuses the shared transform-once multicast {@link FanOut}.
  */
 public class ExecutionPolicyRouteCreator {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutionPolicyRouteCreator.class);
 
 	private final RouteBuilder routeBuilder;
 	private final PlanBuild build;
@@ -106,7 +103,7 @@ public class ExecutionPolicyRouteCreator {
 		// before any source can contribute during dynamic route startup. Sources reach it
 		// through FanIn.evaluate, which queues one evaluation at a time on the shared workers.
 		registerRouteId(routeId);
-		if (mapping.sources().isEmpty()) registerIngressRouteId(routeId);
+		if (mapping.sources().isEmpty() && routeBuilder instanceof DmpRouteBuilder managed) managed.registerIngressRouteId(routeId);
 		ProcessorDefinition<?> cycle = routeBuilder.from(collectUri)
 				.routeId(routeId)
 				.filter(fanIn.gatePredicate())
@@ -131,53 +128,7 @@ public class ExecutionPolicyRouteCreator {
 					.end();
 		}
 
-		Map<Acquisition, List<Source>> acquisitions = new LinkedHashMap<>();
-		for (Source source : mapping.sources()) {
-			if (source.evaluation() == Evaluation.READ_AT_EVALUATION) continue;
-			acquisitions.computeIfAbsent(Acquisition.of(source, build.uri(source.endpoint())),
-					ignored -> new java.util.ArrayList<>()).add(source);
-		}
-		for (List<Source> group : acquisitions.values()) {
-			Source source = group.get(0);
-			List<String> endpointIds = group.stream().map(Source::id).toList();
-			String endpointId = source.id();
-			String uri = build.uri(source.endpoint());
-			if (source.read()) {
-				// Read sources issue a fresh Read when the connector has a read
-				// adapter; consumer-only sources retain their polling consumer path.
-				long periodMs = effectivePollingIntervalMs(source);
-				LOGGER.info("route {}: {} sync source(s) polled every {} ms", routeId, endpointIds.size(), periodMs);
-				String pollRouteId = routeId + "-poll-" + endpointId;
-				registerRouteId(pollRouteId);
-				registerIngressRouteId(pollRouteId);
-				ProcessorDefinition<?> poll = routeBuilder
-						.from(DmpPollComponent.uri("policy-" + routeId + "-" + endpointId, periodMs))
-						.routeId(pollRouteId);
-				RouteCreatorHelper.configureSyncRead(poll, uri, SYNC_POLL_TIMEOUT_MS);
-				poll.filter(exchange -> exchange.getMessage().getBody() != null)
-						.process(fanIn.disassemble(endpointIds))
-						.filter(fanIn::contributed)
-						.filter(fanIn::selectedTrigger)
-						.process(fanIn.evaluate(collectUri));
-			} else {
-				// observed source: the consumer feeds the cache and drives an
-				// evaluation on every arrival
-				String sourceRouteId = routeId + "-source-" + endpointId;
-				registerRouteId(sourceRouteId);
-				registerIngressRouteId(sourceRouteId);
-				ProcessorDefinition<?> sourceRoute = routeBuilder
-						.from(uri)
-						.routeId(sourceRouteId)
-						;
-				sourceRoute = RouteCreatorHelper.normalizeSourceEvents(sourceRoute, source);
-				sourceRoute
-						.process(fanIn.disassemble(endpointIds))
-						.filter(fanIn::contributed)
-						.filter(fanIn::selectedTrigger)
-						.process(fanIn.evaluate(collectUri));
-			}
-		}
-
+		SourceAcquisition.install(routeBuilder, build, routeId, fanIn, mapping.sources(), collectUri);
 	}
 
 	/** One fresh Read per evaluation of each source read at evaluation, into the sources map. */
@@ -195,32 +146,6 @@ public class ExecutionPolicyRouteCreator {
 		}
 	}
 
-	private void registerIngressRouteId(String routeId) {
-		if (routeBuilder instanceof DmpRouteBuilder managed) managed.registerIngressRouteId(routeId);
-	}
-
 	/** Per-source poll ceiling for one sync read. */
 	public static final long SYNC_POLL_TIMEOUT_MS = Long.getLong("dmp.policy.syncPollTimeoutMs", 5000L);
-
-	/** A read source is polled only at an authored interval; none is assumed. */
-	private static long effectivePollingIntervalMs(Source source) {
-		long authored = source.pollingIntervalMs();
-		if (authored <= 0) throw new IllegalArgumentException("read source " + source.id()
-				+ " has no polling interval; it needs a positive PollingInterval or DefaultPollingInterval");
-		return authored;
-	}
-
-	/**
-	 * What makes two sources share one acquisition: the same consumer or poll, delivered
-	 * and normalized the same way. The normalizer is built from the group's first source,
-	 * so its sources must also agree on whether their schema decodes the payload as JSON.
-	 */
-	private record Acquisition(Class<?> type, String uri, Source.Delivery delivery, long pollingIntervalMs,
-			boolean jsonSchema) {
-		static Acquisition of(Source source, String uri) {
-			long pollingIntervalMs = source.read() ? effectivePollingIntervalMs(source) : 0;
-			return new Acquisition(source.endpoint().getClass(), uri, source.delivery(), pollingIntervalMs,
-					FanIn.jsonSchema(source.schema()));
-		}
-	}
 }

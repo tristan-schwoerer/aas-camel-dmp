@@ -19,6 +19,7 @@ import org.apache.camel.support.DefaultEndpoint;
  * rate, the first after {@code delay} (default 1000, as {@code timer:}). Unlike {@code timer:}, which keeps a
  * thread per timer name, the ticks come from the context's one scheduler and the route runs on a shared worker
  * ({@link DmpExecutors#every}); a tick while the previous message is still being processed is skipped.
+ * {@code dmp-poll:<name>?once=true} sends one message when its route starts.
  */
 public final class DmpPollComponent extends DefaultComponent {
 	public static final String SCHEME = "dmp-poll";
@@ -28,23 +29,36 @@ public final class DmpPollComponent extends DefaultComponent {
 		return SCHEME + ":" + name.replaceAll("[^A-Za-z0-9_.-]", "-") + "?period=" + periodMs;
 	}
 
+	/** The endpoint URI of a single message named {@code name}, sent when its route starts. */
+	public static String once(String name) {
+		return SCHEME + ":" + name.replaceAll("[^A-Za-z0-9_.-]", "-") + "?once=true";
+	}
+
 	@Override
 	protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) throws Exception {
+		boolean once = getAndRemoveParameter(parameters, "once", Boolean.class, false);
 		Long period = getAndRemoveParameter(parameters, "period", Long.class);
+		if (once) {
+			if (period != null) throw new IllegalArgumentException("dmp-poll endpoint " + remaining + " is sent once and takes no period");
+			// The one message is sent at once; the ticker stops itself after it (PollConsumer.poll).
+			period = Duration.ofDays(1).toMillis();
+		}
 		if (period == null || period <= 0) throw new IllegalArgumentException("dmp-poll endpoint " + remaining + " needs a positive period");
-		long delay = getAndRemoveParameter(parameters, "delay", Long.class, 1000L);
+		long delay = getAndRemoveParameter(parameters, "delay", Long.class, once ? 0L : 1000L);
 		if (delay < 0) throw new IllegalArgumentException("dmp-poll endpoint " + remaining + " has a negative delay");
-		return new PollEndpoint(uri, this, Duration.ofMillis(delay), Duration.ofMillis(period));
+		return new PollEndpoint(uri, this, Duration.ofMillis(delay), Duration.ofMillis(period), once);
 	}
 
 	private static final class PollEndpoint extends DefaultEndpoint {
 		private final Duration delay;
 		private final Duration period;
+		private final boolean once;
 
-		PollEndpoint(String uri, DmpPollComponent component, Duration delay, Duration period) {
+		PollEndpoint(String uri, DmpPollComponent component, Duration delay, Duration period, boolean once) {
 			super(uri, component);
 			this.delay = delay;
 			this.period = period;
+			this.once = once;
 		}
 
 		@Override public Producer createProducer() { throw new UnsupportedOperationException("dmp-poll endpoints only consume"); }
@@ -57,18 +71,26 @@ public final class DmpPollComponent extends DefaultComponent {
 	}
 
 	private static final class PollConsumer extends DefaultConsumer {
-		private DmpExecutors.Ticker ticker;
+		private volatile DmpExecutors.Ticker ticker;
+		/** A {@code once} endpoint's message was sent; a later tick sends nothing. */
+		private final java.util.concurrent.atomic.AtomicBoolean sent = new java.util.concurrent.atomic.AtomicBoolean();
 
 		PollConsumer(PollEndpoint endpoint, Processor processor) { super(endpoint, processor); }
 
 		@Override protected void doStart() throws Exception {
 			super.doStart();
 			PollEndpoint endpoint = (PollEndpoint) getEndpoint();
+			sent.set(false);
 			ticker = DmpExecutors.of(endpoint.getCamelContext()).every(endpoint.delay, endpoint.period, this::poll);
 		}
 
 		private void poll() {
 			if (!isRunAllowed()) return;
+			boolean once = ((PollEndpoint) getEndpoint()).once;
+			if (once && !sent.compareAndSet(false, true)) {
+				stopTicking();
+				return;
+			}
 			Exchange exchange = createExchange(false);
 			try {
 				getProcessor().process(exchange);
@@ -77,6 +99,18 @@ public final class DmpPollComponent extends DefaultComponent {
 			}
 			if (exchange.getException() != null) getExceptionHandler().handleException("poll failed", exchange, exchange.getException());
 			releaseExchange(exchange, false);
+			if (once) stopTicking();
+		}
+
+		/** Called from the ticker's own run, so it does not wait for itself; before the ticker is stored, a later tick stops it. */
+		private void stopTicking() {
+			DmpExecutors.Ticker current = ticker;
+			if (current == null) return;
+			try {
+				current.cancel(Duration.ZERO);
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 
 		@Override protected void doStop() throws Exception {
