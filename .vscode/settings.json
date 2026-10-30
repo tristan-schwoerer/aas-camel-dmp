@@ -1,3 +1,5 @@
 {
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    // camel-component-maven-plugin regenerates these on every build: their warnings are not ours to fix.
+    "java.diagnostic.filter": ["**/src/generated/**"]
 }
