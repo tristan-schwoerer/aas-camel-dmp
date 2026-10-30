@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.camel.CamelContext;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
 import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;

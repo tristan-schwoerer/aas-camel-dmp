@@ -9,7 +9,6 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import org.apache.camel.builder.RouteBuilder;

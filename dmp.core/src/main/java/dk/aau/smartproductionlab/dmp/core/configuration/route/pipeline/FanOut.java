@@ -30,7 +30,6 @@ import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Objects;
-import java.util.Set;
 
 import org.apache.camel.AggregationStrategy;
 import org.apache.camel.Exchange;

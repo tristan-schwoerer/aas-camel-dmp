@@ -1,21 +1,15 @@
 package dk.aau.smartproductionlab.dmp.opcua.metadata;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
-import java.util.LinkedHashMap;
 import java.util.Set;
 
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvocationException;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.SynchronousInvocationAdapter;
-import dk.aau.smartproductionlab.dmp.core.configuration.route.pipeline.AffordanceValidation;
-import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
-import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 import org.junit.jupiter.api.Test;
 
 class OpcUaSynchronousInvocationAdapterTest {

@@ -16,7 +16,6 @@ import dk.aau.smartproductionlab.dmp.core.plan.Endpoint;
 import dk.aau.smartproductionlab.dmp.core.plan.MappingRoute;
 import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.plan.Source;
-import dk.aau.smartproductionlab.dmp.core.util.TransformerMeta;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource.AccountingEntry;
 import dk.aau.smartproductionlab.dmp.lua.configuration.LuaScript;
