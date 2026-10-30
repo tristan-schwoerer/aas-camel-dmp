@@ -163,10 +163,11 @@
 				<artifactId>milo-stack-core</artifactId>
 				<version>${milo.version}</version>
 			</dependency>
+			<!-- MQTT 5 client of dmp.camel-paho; its Netty modules follow the netty-bom below. -->
 			<dependency>
-				<groupId>org.eclipse.paho</groupId>
-				<artifactId>org.eclipse.paho.mqttv5.client</artifactId>
-				<version>1.2.5</version>
+				<groupId>com.hivemq</groupId>
+				<artifactId>hivemq-mqtt-client</artifactId>
+				<version>1.4.0</version>
 			</dependency>
 			<dependency>
 				<groupId>org.snmp4j</groupId>
@@ -198,8 +199,8 @@
 				<artifactId>junit-jupiter</artifactId>
 				<version>5.14.4</version>
 			</dependency>
-			<!-- One Netty line for Milo (built against 4.1.136) and the PLC4X drivers, which bring older 4.1.x
-			     modules; mixed Netty modules break at runtime. -->
+			<!-- One Netty line for Milo (built against 4.1.136), the PLC4X drivers, which bring older 4.1.x
+			     modules, and the HiveMQ MQTT client (built against 4.1.137); mixed Netty modules break at runtime. -->
 			<dependency>
 				<groupId>io.netty</groupId>
 				<artifactId>netty-bom</artifactId>

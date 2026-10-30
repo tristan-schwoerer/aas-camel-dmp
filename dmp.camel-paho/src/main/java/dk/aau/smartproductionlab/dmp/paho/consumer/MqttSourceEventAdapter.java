@@ -11,13 +11,18 @@ import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
-/** Decodes MQTT payload bytes only when the transport/schema declares JSON. */
+/**
+ * Decodes MQTT payload bytes only when the transport/schema declares JSON. A source that references a member of
+ * the payload ({@link Source#valuePath()}) receives a JSON document by definition: the payload is decoded as JSON
+ * and the member is selected from it, whatever the member's own schema (a string member is not bare text).
+ */
 public final class MqttSourceEventAdapter {
 	public Processor normalizer(Source source) {
+		boolean member = source.valuePath() != null && !source.valuePath().isEmpty();
 		return exchange -> {
 			Object body = exchange.getMessage().getBody();
-			boolean json = jsonContent(exchange) || jsonSchema(source.schema());
-			Object normalized = decode(body, json, textSchema(source.schema()));
+			boolean json = member || jsonContent(exchange) || jsonSchema(source.schema());
+			Object normalized = decode(body, json, !member && textSchema(source.schema()));
 			exchange.getMessage().setBody(normalized);
 			exchange.setProperty(Source.NORMALIZED_VALUE_PROPERTY, true);
 			exchange.setProperty(Source.CONTRIBUTION_PROPERTY, normalized != null);

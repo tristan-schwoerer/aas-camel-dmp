@@ -80,8 +80,8 @@ flowchart LR
 event-sourced AAS sources run on one pool of workers (`dmp.workerThreads`,
 32 by default; created on demand, ended after a minute idle), each owner's
 work in order through a queue of its own; one scheduler thread only ticks the
-polls and connector watchdogs. A connector's thread (Paho's callback, Milo's
-notifications, the value feed) only accepts a value. MQTT sources, sinks and
+polls and connector watchdogs. A connector's thread (an MQTT session's lane,
+Milo's notifications, the value feed) only accepts a value. MQTT sources, sinks and
 actions share one connection per broker and credentials, PLC4X endpoints one
 connection per device. What still has threads per endpoint: HTTP observation
 (a request loop per source).
@@ -907,7 +907,7 @@ any component, and the upstream component stays usable unchanged:
 | Scheme | Extends | Adds |
 | --- | --- | --- |
 | `dmp-plc4x:` | camel-plc4x | acknowledged writes and checked reads (failures raise instead of being logged or read as `{}`); the body is the tag value; one connection per device, one request at a time (camel-plc4x opens one per endpoint, so per tag) |
-| `dmp-paho-mqtt5:` | camel-paho-mqtt5 | sources (subscriptions), sinks (publishes) and actions (MQTT 5 request/reply with correlation, or a one-way publish) on one shared connection per broker and credentials, reconnected with its subscriptions; an unreachable broker fails no installation, the connection is retried and publications fail until it is up (camel-paho-mqtt5 opens a client with threads of its own per endpoint, allows one consumer per endpoint and has no request/reply); a source new to a topic filter others already subscribed gets its retained message |
+| `dmp-paho-mqtt5:` | — (in place of camel-paho-mqtt5; on the HiveMQ MQTT client) | sources (subscriptions), sinks (publishes) and actions (MQTT 5 request/reply with correlation, or a one-way publish) on one shared connection per broker and credentials, reconnected with its subscriptions; an unreachable broker fails no installation, the connection is retried and publications fail until it is up (camel-paho-mqtt5 opens a client with threads of its own per endpoint, allows one consumer per endpoint and has no request/reply); a source new to a topic filter others already subscribed gets its retained message; the repository's MQTT event channel runs on dedicated, persistent sessions of the same component. The scheme keeps its name, which Lua sees in `meta.sinks.<id>.kind` |
 | `dmp-poll:` | — (in place of `timer:`) | a fixed-rate tick from the one scheduler, run on a worker, skipped while the previous poll lasts (`timer:` keeps a thread per timer) |
 | `dmp-milo-client:` | camel-milo client | a Method producer that answers with the Call's result (camel-milo 4.22 drops it); a consumer whose monitored item has its own subscription and a sample queue (camel-milo shares one subscription per server, created with the first endpoint's publishing interval, and keeps only the latest sample); event monitored items with an EventFilter (options `eventFields`, `eventType`; camel-milo has only data-change filters); a Write producer that waits for the server, fails on a Bad status and writes scalars as the variable's DataType (camel-milo ignores the status); structures decoded and encoded with the server's DataTypes (§5.2) |
 | `dmp-snmp:` | camel-snmp (SNMP4J) | checked GET (error status, missing object and timeout raise) and SET of the object's own SMI type; camel-snmp has no SET |

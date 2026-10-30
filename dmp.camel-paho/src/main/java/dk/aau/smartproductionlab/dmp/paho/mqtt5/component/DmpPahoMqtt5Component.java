@@ -14,7 +14,7 @@ import dk.aau.smartproductionlab.dmp.core.execution.DmpExecutors;
  * [&replyTopic=…][&replyTimeout=<seconds>][&userName=#…&password=#…]}: MQTT 5 sources (a subscription to the topic
  * filter), sinks (a publish to the topic) and actions (a publish, with {@code replyTopic} an MQTT 5 request/reply)
  * on the context's {@link MqttSession} for the broker and credentials, one connection however many mappings use
- * them. camel-paho-mqtt5 opens a connection with threads of its own per endpoint and has no request/reply.
+ * them, carried by the HiveMQ MQTT client.
  *
  * <p>{@code name} only tells endpoints apart (each mapping's endpoint is its own). Credentials are registry
  * references (bound by the owning bundle), never values. QoS defaults to 0, the WoT MQTT binding's.
@@ -42,6 +42,19 @@ public final class DmpPahoMqtt5Component extends DefaultComponent {
 		String password = getAndRemoveOrResolveReferenceParameter(parameters, "password", String.class);
 		return new DmpPahoMqtt5Endpoint(uri, this, remaining, new MqttSession.Key(brokerUrl, userName, password), qos, retained,
 				replyTopic, replyTimeout);
+	}
+
+	/**
+	 * A subscription on a session of its own: a fixed client identifier and, when {@code persistent}, a session the
+	 * broker keeps for {@code sessionExpirySeconds}, so messages published while it was disconnected arrive when it
+	 * reconnects. The repository's MQTT event channel uses it; the URI only names the endpoint (no credentials).
+	 */
+	public DmpPahoMqtt5Endpoint dedicatedEndpoint(String name, String topic, String brokerUrl, String clientId,
+			String userName, String password, int qos, boolean persistent, long sessionExpirySeconds) {
+		if (clientId == null || clientId.isBlank()) throw new IllegalArgumentException(SCHEME + " dedicated session needs a client identifier");
+		MqttSession.qos(qos);
+		return new DmpPahoMqtt5Endpoint(SCHEME + ":" + name, this, topic,
+				new MqttSession.Key(brokerUrl, userName, password, clientId, persistent, sessionExpirySeconds), qos, false, null, 30L);
 	}
 
 	/** The session for {@code key}, held by {@code owner}; a new one connects, or keeps trying in the background. */

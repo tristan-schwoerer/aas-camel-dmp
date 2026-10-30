@@ -17,7 +17,8 @@ import org.apache.camel.component.mock.MockEndpoint;
 import org.apache.camel.impl.DefaultCamelContext;
 import dk.aau.smartproductionlab.dmp.aas.event.AasEventComponent;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
-import org.eclipse.paho.mqttv5.common.util.MqttTopicValidator;
+import com.hivemq.client.mqtt.datatypes.MqttTopic;
+import com.hivemq.client.mqtt.datatypes.MqttTopicFilter;
 import dk.aau.smartproductionlab.dmp.paho.testing.Mqtt5TestBroker;
 import org.junit.jupiter.api.Test;
 
@@ -66,11 +67,11 @@ class MqttControlEventRouteBuilderTest {
 				"sm-repository/sm-repo/submodels/c2Q/submodelElements/Status.State/updated",
 				"sm-repository/sm-repo/submodels/c2Q/submodelElements/Status.State/value/updated",
 				"sm-repository/sm-repo/submodels/c2Q/submodelElements/patched"))
-			assertTrue(topics.stream().anyMatch(filter -> MqttTopicValidator.isMatched(filter, repository)), repository);
+			assertTrue(topics.stream().anyMatch(filter -> MqttTopicFilter.of(filter).matches(MqttTopic.of(repository))), repository);
 		// Telemetry on the same broker is for the data plane's own clients, never the control channel.
 		for (String telemetry : List.of("base/state", "stations/stoppering/PackML/State", "spBv1.0/group/DDATA/edge",
 				"aas-repository/aas-repo/shells/created"))
-			assertFalse(topics.stream().anyMatch(filter -> MqttTopicValidator.isMatched(filter, telemetry)), telemetry);
+			assertFalse(topics.stream().anyMatch(filter -> MqttTopicFilter.of(filter).matches(MqttTopic.of(telemetry))), telemetry);
 	}
 
 	private static MappingReconciliationService reconciliation() {

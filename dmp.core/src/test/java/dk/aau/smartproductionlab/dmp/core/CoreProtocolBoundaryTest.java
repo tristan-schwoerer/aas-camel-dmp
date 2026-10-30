@@ -21,6 +21,7 @@ class CoreProtocolBoundaryTest {
 				"dk/aau/smartproductionlab/dmp/aas/",
 				"org/eclipse/milo/opcua/",
 				"org/apache/camel/component/paho/",
+				"com/hivemq/",
 				"org/apache/camel/component/milo/",
 				"org/apache/camel/component/plc4x/",
 				"org/apache/http/");

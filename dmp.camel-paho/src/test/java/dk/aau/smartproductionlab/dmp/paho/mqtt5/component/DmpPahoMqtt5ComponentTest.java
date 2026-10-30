@@ -116,6 +116,51 @@ class DmpPahoMqtt5ComponentTest {
 	}
 
 	@Test
+	void aStringForAJsonSinkIsPublishedAsAJsonString() throws Exception {
+		// FanOut wraps a string bound for a JSON sink; it once went out as the wrapper's toString().
+		var published = new java.util.concurrent.CompletableFuture<String>();
+		broker.onPublish(publication -> published.complete(new String(publication.payload(), java.nio.charset.StandardCharsets.UTF_8)));
+		context.addRoutes(new RouteBuilder() {
+			@Override public void configure() {
+				from("direct:write").to(sink("sink", "station/setpoint"));
+			}
+		});
+		context.start();
+		context.createProducerTemplate().sendBody("direct:write",
+				new dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload("READY"));
+		assertEquals("\"READY\"", published.get(5, TimeUnit.SECONDS));
+	}
+
+	@Test
+	void largeMessagesArriveWholeWithoutPerByteCosts() throws Exception {
+		// Paho's MQTT 5 client read a payload one synchronized byte at a time: at least 70 ms per 2 MiB on Java 21,
+		// so 30 of them took over two seconds on its single receiver thread (EVALUATION.md §8.4).
+		int messages = 30;
+		String payload = "x".repeat(2 * 1024 * 1024);
+		context.addRoutes(new RouteBuilder() {
+			@Override public void configure() {
+				// The probes that find the subscription stay out of the count.
+				from(source("camera", "cell/image")).filter(exchange -> exchange.getMessage().getBody(byte[].class).length > 1_000)
+						.to("mock:image");
+			}
+		});
+		context.start();
+		MockEndpoint image = context.getEndpoint("mock:image", MockEndpoint.class);
+		await(() -> {
+			try { return broker.publish("cell/image", "probe") > 0; }
+			catch (java.io.IOException e) { return false; }
+		}, "the source subscribed");
+		image.expectedMessageCount(messages);
+		long started = System.nanoTime();
+		for (int i = 0; i < messages; i++) broker.publish("cell/image", payload);
+		image.assertIsSatisfied(10_000);
+		long millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+		for (var exchange : image.getReceivedExchanges())
+			assertEquals(payload.length(), exchange.getMessage().getBody(byte[].class).length, "the payload arrives whole");
+		assertTrue(millis < 2_000, messages + " messages of 2 MiB took " + millis + " ms");
+	}
+
+	@Test
 	void aLostConnectionIsReestablishedWithItsSubscriptions() throws Exception {
 		context.addRoutes(new RouteBuilder() {
 			@Override public void configure() {

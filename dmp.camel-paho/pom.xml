@@ -46,17 +46,11 @@
 			<version>${revision}</version>
 		</dependency>
 
-		<!-- MQTT 5 transport: the paho-mqtt5-inout component delegates the wire
-		     protocol (connections, publish, reply subscriptions, reconnect) to
-		     the upstream camel-paho-mqtt5 component and only owns the InOut
-		     semantics (correlation, pending replies, RUNNING filter, timeout) -->
+		<!-- MQTT 5 transport: the HiveMQ client (Apache-2.0) carries the wire protocol; MqttSession owns the
+		     connection sharing, subscriptions, reconnects and request/reply on top of it. -->
 		<dependency>
-			<groupId>org.apache.camel</groupId>
-			<artifactId>camel-paho-mqtt5</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>org.eclipse.paho</groupId>
-			<artifactId>org.eclipse.paho.mqttv5.client</artifactId>
+			<groupId>com.hivemq</groupId>
+			<artifactId>hivemq-mqtt-client</artifactId>
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>

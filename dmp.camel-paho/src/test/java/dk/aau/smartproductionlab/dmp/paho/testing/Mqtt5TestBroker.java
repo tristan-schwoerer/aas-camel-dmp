@@ -23,7 +23,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.eclipse.paho.mqttv5.common.util.MqttTopicValidator;
+import com.hivemq.client.mqtt.datatypes.MqttTopic;
+import com.hivemq.client.mqtt.datatypes.MqttTopicFilter;
 
 /**
  * An in-process MQTT 5 broker for tests: CONNECT, SUBSCRIBE, UNSUBSCRIBE, PING, DISCONNECT and PUBLISH at QoS 0,
@@ -135,7 +136,7 @@ public final class Mqtt5TestBroker implements AutoCloseable {
 		}
 		int delivered = 0;
 		for (var client : clients.entrySet())
-			if (client.getValue().stream().anyMatch(filter -> MqttTopicValidator.isMatched(filter, topic))) {
+			if (client.getValue().stream().anyMatch(filter -> MqttTopicFilter.of(filter).matches(MqttTopic.of(topic)))) {
 				try { send(client.getKey(), 0x30, publication(topic, properties, payload)); delivered++; }
 				catch (IOException gone) { }
 			}
@@ -188,7 +189,7 @@ public final class Mqtt5TestBroker implements AutoCloseable {
 					}
 					send(socket, header >> 4 == 8 ? 0x90 : 0xb0, acks.toByteArray());
 					for (var message : retained.entrySet())
-						if (added.stream().anyMatch(filter -> MqttTopicValidator.isMatched(filter, message.getKey())))
+						if (added.stream().anyMatch(filter -> MqttTopicFilter.of(filter).matches(MqttTopic.of(message.getKey()))))
 							send(socket, 0x31, publication(message.getKey(), message.getValue()[0], message.getValue()[1]));
 				}
 				case 4, 5, 7 -> { }

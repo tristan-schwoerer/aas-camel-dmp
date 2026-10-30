@@ -9,16 +9,14 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Component;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Configuration;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Constants;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Consumer;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Endpoint;
 import dk.aau.smartproductionlab.dmp.aas.event.AasEventComponent;
 import dk.aau.smartproductionlab.dmp.aas.event.AasEventHub;
+import dk.aau.smartproductionlab.dmp.paho.mqtt5.component.DmpPahoMqtt5Component;
+import dk.aau.smartproductionlab.dmp.paho.mqtt5.component.DmpPahoMqtt5Endpoint;
 
 /**
- * Repository events from the BaSyx submodel-repository MQTT feature, over Camel's paho-mqtt5 component.
+ * Repository events from the BaSyx submodel-repository MQTT feature, each subscription on a dedicated session of
+ * the DMP's MQTT component ({@link DmpPahoMqtt5Component#dedicatedEndpoint}).
  *
  * <p><b>Control:</b> two fixed subscriptions, like the Kafka topic: {@code sm-repository/<repo>/submodels/+}
  * (submodels created, updated, deleted) and {@code sm-repository/<repo>/submodels/+/submodelElements/#} (every
@@ -84,35 +82,25 @@ public final class MqttControlEventRouteBuilder extends RouteBuilder {
 	}
 
 	private static AasControlEvent event(org.apache.camel.Exchange exchange) {
-		String topic = exchange.getMessage().getHeader(PahoMqtt5Constants.MQTT_TOPIC, String.class);
+		String topic = exchange.getMessage().getHeader(DmpPahoMqtt5Endpoint.MQTT_TOPIC, String.class);
 		return AasControlEvent.parseMqtt(topic == null ? "" : topic, exchange.getMessage().getBody(byte[].class));
 	}
 
-	/** A paho-mqtt5 consumer route; {@code persistent} sessions resume, the others start clean without backlog. */
+	/** A QoS 1 consumer route; {@code persistent} sessions resume, the others start clean without backlog. */
 	private org.apache.camel.model.RouteDefinition route(String routeId, String topic, String clientSuffix, boolean persistent) {
-		PahoMqtt5Component component = getContext().getComponent("paho-mqtt5", PahoMqtt5Component.class);
-		PahoMqtt5Configuration configuration = new PahoMqtt5Configuration();
-		configuration.setBrokerUrl(settings.brokerUri().toString());
-		configuration.setClientId(settings.clientId() + clientSuffix);
-		configuration.setQos(1);
-		configuration.setCleanStart(!persistent);
-		configuration.setSessionExpiryInterval(persistent ? settings.sessionExpirySeconds() : 0);
-		configuration.setAutomaticReconnect(true);
+		DmpPahoMqtt5Component component = getContext().getComponent(DmpPahoMqtt5Component.SCHEME, DmpPahoMqtt5Component.class);
 		// Credentials stay out of the endpoint URI, and so out of logs and diagnostics.
-		if (settings.username() != null) {
-			configuration.setUserName(settings.username());
-			configuration.setPassword(settings.password());
-		}
-		var endpoint = new PahoMqtt5Endpoint("paho-mqtt5:" + routeId, topic, component, configuration);
+		var endpoint = component.dedicatedEndpoint(routeId, topic, settings.brokerUri().toString(), settings.clientId() + clientSuffix,
+				settings.username(), settings.password(), 1, persistent, persistent ? settings.sessionExpirySeconds() : 0);
 		return from(endpoint).routeId(routeId);
 	}
 
-	/** Both subscriptions are connected. */
+	/** Both subscriptions are acknowledged by the broker on a live connection. */
 	public boolean consumerReady() {
 		for (String routeId : List.of(SUBMODELS_ROUTE, ELEMENTS_ROUTE)) {
 			var route = getContext().getRoute(routeId);
-			if (route == null || !(route.getConsumer() instanceof PahoMqtt5Consumer consumer) || !consumer.isStarted()
-					|| consumer.getClient() == null || !consumer.getClient().isConnected()) return false;
+			if (route == null || !org.apache.camel.support.service.ServiceHelper.isStarted(route.getConsumer())
+					|| !(route.getEndpoint() instanceof DmpPahoMqtt5Endpoint endpoint) || !endpoint.isSubscribed()) return false;
 		}
 		return true;
 	}

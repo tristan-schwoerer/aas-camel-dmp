@@ -46,6 +46,17 @@ class MqttSourceEventAdapterTest {
 	}
 
 	@Test
+	void aMemberSourceDecodesTheWholeMessageEvenWhenTheMemberIsAString() throws Exception {
+		// The source references "value" in an object payload: its schema is the member's (a string), the
+		// message is a JSON object. Taken as bare text, the member could not be selected from it.
+		var source = source(Map.of("type", "string")).withValuePath("$.value");
+		var exchange = new DefaultExchange(new DefaultCamelContext());
+		exchange.getMessage().setBody("{\"seq\":3,\"value\":\"3|17|xx\"}".getBytes(StandardCharsets.UTF_8));
+		new MqttSourceEventAdapter().normalizer(source).process(exchange);
+		assertEquals(Map.of("seq", 3L, "value", "3|17|xx"), exchange.getMessage().getBody());
+	}
+
+	@Test
 	void scalarSchemasDecodeJsonAndAStringTakesBareText() throws Exception {
 		var context = new DefaultCamelContext();
 		Object[][] cases = { { "number", "21.5", 21.5 }, { "integer", "7", 7L }, { "boolean", "true", true },

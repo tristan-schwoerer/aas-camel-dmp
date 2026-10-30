@@ -406,6 +406,38 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
   without a response transformation cannot be expressed any more (the
   compiler never produced one).
 
+### H7. MQTT on the HiveMQ client — done (2026-10-25), not committed
+
+- Why: at 2 MiB × 10 msg/s the DMP fell behind (EVALUATION.md §8.4). Paho
+  MQTT v5 1.2.5 reads a payload through a `CountingInputStream` with only a
+  single-byte `read()`, one synchronized `ByteArrayInputStream.read()` per
+  byte on its single receiver thread: 69 ms per 2 MiB on Java 21 (8 ms on
+  Java 11, biased locking). Paho Java is unmaintained.
+- `MqttSession` runs on `com.hivemq:hivemq-mqtt-client` 1.4.0 (Apache-2.0;
+  Netty follows the parent's netty-bom). Kept: one connection per broker and
+  credentials, filters counted per listener at the highest QoS, retained
+  messages for late joiners, SUBACK confirmation per connection, its own
+  reconnect (1 s doubling to 30 s). The client's automatic reconnect is not
+  used: it would queue publications made while disconnected (actions are
+  never replayed; a publication without a session fails "not connected").
+- Messages arrive through one global flow, manually acknowledged; the client
+  ends that flow with every session, so each connection attempt starts a new
+  one (and disposes the previous). They are dispatched in order on the
+  session's `SerialLane` on the shared workers and acknowledged after their
+  listeners took them; Netty's threads never run a listener.
+- The control plane's event routes moved off camel-paho-mqtt5 onto dedicated
+  sessions of the same component (`dedicatedEndpoint`: fixed client id,
+  persistent or clean, `tcp`/`ssl`/`ws`/`wss`); a dedicated session connects
+  when its filter is subscribed, so a resumed session's backlog has a
+  listener. Header names stay camel-paho-mqtt5's; the scheme stays
+  `dmp-paho-mqtt5` (Lua sees it in `meta.sinks.<id>.kind`). Paho and
+  camel-paho-mqtt5 are gone from the runtime (camel-aas keeps the latter in
+  one test, as a credential-bearing endpoint Camel rejects).
+- Tests: the connector's 36 pass unchanged against the in-process broker; new
+  `largeMessagesArriveWholeWithoutPerByteCosts` (30 × 2 MiB in under 2 s).
+- Optional later: rename module, packages and scheme (`dmp.camel-mqtt`,
+  `dmp-mqtt5:`); the scheme rename changes what Lua sees.
+
 ### Documents
 
 - SPEC corrections that still apply after the fixes: the default QoS, OPC UA

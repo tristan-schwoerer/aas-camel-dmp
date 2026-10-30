@@ -18,31 +18,31 @@ import org.apache.camel.Exchange;
 import org.apache.camel.MultipleConsumersSupport;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
-import org.apache.camel.component.paho.mqtt5.PahoMqtt5Constants;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.support.DefaultProducer;
-import org.eclipse.paho.mqttv5.client.MqttClientException;
-import org.eclipse.paho.mqttv5.common.MqttException;
-import org.eclipse.paho.mqttv5.common.MqttMessage;
-import org.eclipse.paho.mqttv5.common.packet.MqttProperties;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5Publish;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishBuilder;
+import com.hivemq.client.mqtt.mqtt5.message.publish.Mqtt5PublishResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.core.configuration.route.core.ConnectorInvocationException;
+import dk.aau.smartproductionlab.dmp.core.util.ConnectorJsonPayload;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 
 /**
  * A topic on a shared {@link MqttSession}.
  *
- * <p>A consumer subscribes the topic filter and receives each message as its payload bytes with the headers
- * camel-paho-mqtt5 sets ({@code CamelMqttTopic}, {@code CamelMqttQoS}, the MQTT 5 properties) and the message's
+ * <p>A consumer subscribes the topic filter and receives each message as its payload bytes with the topic and
+ * QoS headers ({@link #MQTT_TOPIC}, {@link #MQTT_QOS}, named as camel-paho-mqtt5 named them) and the message's
  * content type as {@link Exchange#CONTENT_TYPE}.
  *
  * <p>A producer publishes the body (a map, list, number or boolean as JSON) and returns once the broker took it
- * (QoS 1 and 2) or it was sent (QoS 0); the topic, QoS, retain flag and properties may be set per message with
- * camel-paho-mqtt5's headers. With a {@code replyTopic}, an exchange that expects a reply is an MQTT 5 request:
+ * (QoS 1 and 2) or it was sent (QoS 0); the topic, QoS and retain flag may be set per message with
+ * {@link #OVERRIDE_TOPIC}, {@link #MSG_QOS} and {@link #MSG_RETAINED}. With a {@code replyTopic}, an exchange that
+ * expects a reply is an MQTT 5 request:
  * the reply topic is subscribed (confirmed again on every new connection, before anything is published), the
  * request carries the ResponseTopic and fresh CorrelationData, and the first message on the reply topic with that
  * correlation data is the reply; the device publishes anything else (progress) without it. One deadline,
@@ -53,6 +53,13 @@ import dk.aau.smartproductionlab.dmp.core.util.JsonPointer;
 public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements MultipleConsumersSupport,
 		ManagedRouteResource.AccountedEndpoint {
 	private static final Logger LOGGER = LoggerFactory.getLogger(DmpPahoMqtt5Endpoint.class);
+	/** A received message's topic and QoS. */
+	public static final String MQTT_TOPIC = "CamelMqttTopic";
+	public static final String MQTT_QOS = "CamelMqttQoS";
+	/** Per-message overrides of the endpoint's topic, QoS and retain flag on a publication. */
+	public static final String OVERRIDE_TOPIC = "CamelPahoMqtt5OverrideTopic";
+	public static final String MSG_QOS = "CamelPahoMqtt5Qos";
+	public static final String MSG_RETAINED = "CamelPahoMqtt5Retained";
 	/** Scheduling margin beyond {@code replyTimeout}. */
 	static final long WAIT_MARGIN_MILLIS = 1_000L;
 
@@ -104,6 +111,12 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 				Map.of("mqttClients", 1L, "mqttConnectedClients", session.isConnected() ? 1L : 0L)));
 	}
 
+	/** The broker acknowledged this endpoint's topic filter on its session's current connection. */
+	public boolean isSubscribed() {
+		MqttSession session = component.session(key);
+		return session != null && session.confirmed(topic);
+	}
+
 	private long deadline() {
 		return System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(replyTimeout * 1_000L + WAIT_MARGIN_MILLIS);
 	}
@@ -141,18 +154,14 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 			super.doStop();
 		}
 
-		/** On the session's callback thread: the route only accepts the value there. */
-		@Override public void deliver(String messageTopic, MqttMessage message) {
+		/** On the session's lane, one message at a time: the route only accepts the value there. */
+		@Override public void deliver(String messageTopic, Mqtt5Publish message) {
 			if (!isRunAllowed()) return;
 			Exchange exchange = createExchange(false);
-			exchange.getMessage().setBody(message.getPayload());
-			exchange.getMessage().setHeader(PahoMqtt5Constants.MQTT_TOPIC, messageTopic);
-			exchange.getMessage().setHeader(PahoMqtt5Constants.MQTT_QOS, message.getQos());
-			MqttProperties properties = message.getProperties();
-			if (properties != null) {
-				exchange.getMessage().setHeader(PahoMqtt5Constants.CAMEL_PAHO_MSG_PROPERTIES, properties);
-				if (properties.getContentType() != null) exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, properties.getContentType());
-			}
+			exchange.getMessage().setBody(message.getPayloadAsBytes());
+			exchange.getMessage().setHeader(MQTT_TOPIC, messageTopic);
+			exchange.getMessage().setHeader(MQTT_QOS, message.getQos().getCode());
+			message.getContentType().ifPresent(type -> exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, type.toString()));
 			try {
 				getProcessor().process(exchange);
 			} catch (Exception failure) {
@@ -206,27 +215,23 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 				admitted = generation;
 			}
 			var in = exchange.getMessage();
-			MqttMessage message = new MqttMessage(payload(exchange));
-			message.setQos(in.getHeader(PahoMqtt5Constants.CAMEL_PAHO_MSG_QOS, qos, Integer.class));
-			message.setRetained(in.getHeader(PahoMqtt5Constants.CAMEL_PAHO_MSG_RETAINED, retained, Boolean.class));
-			MqttProperties properties = in.getHeader(PahoMqtt5Constants.CAMEL_PAHO_MSG_PROPERTIES, MqttProperties.class);
-			if (properties != null) message.setProperties(properties);
-			String target = in.getHeader(PahoMqtt5Constants.CAMEL_PAHO_OVERRIDE_TOPIC, topic, String.class);
+			Mqtt5PublishBuilder.Complete message = Mqtt5Publish.builder()
+					.topic(in.getHeader(OVERRIDE_TOPIC, topic, String.class))
+					.qos(MqttSession.qos(in.getHeader(MSG_QOS, qos, Integer.class)))
+					.retain(in.getHeader(MSG_RETAINED, retained, Boolean.class))
+					.payload(payload(exchange));
 			try {
 				if (replyTopic == null || !exchange.getPattern().isOutCapable()) {
-					publish(current, admitted, target, message, deadline);
+					publish(current, admitted, message.build(), deadline);
 					return;
 				}
-				exchange.getMessage().setBody(request(current, admitted, target, message, deadline));
+				exchange.getMessage().setBody(request(current, admitted, message, deadline));
 			} catch (TimeoutException timedOut) {
 				throw timeout();
-			} catch (MqttException failed) {
-				if (failed.getReasonCode() == MqttClientException.REASON_CODE_CLIENT_TIMEOUT) throw timeout();
-				throw failed;
 			}
 		}
 
-		private String request(MqttSession current, long admitted, String target, MqttMessage message, long deadline)
+		private String request(MqttSession current, long admitted, Mqtt5PublishBuilder.Complete message, long deadline)
 				throws Exception {
 			awaitReplySubscription(current, deadline);
 			String correlation = UUID.randomUUID().toString();
@@ -236,12 +241,10 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 				reply = replies.register(this, key.brokerUrl(), replyTopic, correlation);
 			}
 			try {
-				MqttProperties properties = message.getProperties() == null ? new MqttProperties() : message.getProperties();
-				properties.setResponseTopic(replyTopic);
-				properties.setCorrelationData(correlation.getBytes(StandardCharsets.UTF_8));
-				message.setProperties(properties);
-				publish(current, admitted, target, message, deadline);
-				LOGGER.debug("MQTT request on {} (replyTopic={}, correlation={})", target, replyTopic, correlation);
+				Mqtt5Publish request = message.responseTopic(replyTopic)
+						.correlationData(correlation.getBytes(StandardCharsets.UTF_8)).build();
+				publish(current, admitted, request, deadline);
+				LOGGER.debug("MQTT request on {} (replyTopic={}, correlation={})", request.getTopic(), replyTopic, correlation);
 				return reply.get(remaining(deadline).toNanos(), TimeUnit.NANOSECONDS);
 			} catch (CancellationException cancelled) {
 				throw stopped();
@@ -272,24 +275,28 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 		}
 
 		/** Starts the publication unless the producer stopped since the call was admitted, then waits for it. */
-		private void publish(MqttSession current, long admitted, String target, MqttMessage message, long deadline) throws Exception {
-			org.eclipse.paho.mqttv5.client.IMqttToken token;
+		private void publish(MqttSession current, long admitted, Mqtt5Publish message, long deadline) throws Exception {
+			CompletableFuture<Mqtt5PublishResult> sent;
 			synchronized (this) {
 				if (generation != admitted) throw stopped();
-				token = current.send(target, message);
+				sent = current.send(message);
 			}
-			token.waitForCompletion(Math.max(1, remaining(deadline).toMillis()));
+			try {
+				sent.get(Math.max(1, remaining(deadline).toMillis()), TimeUnit.MILLISECONDS);
+			} catch (ExecutionException failed) {
+				// The broker refused it (a PUBACK/PUBREC error) or the connection ended before it was acknowledged.
+				throw failed.getCause() instanceof Exception cause ? cause : failed;
+			}
 		}
 
 		/** A reply: the first one carrying a pending request's correlation data completes it. */
-		@Override public void deliver(String messageTopic, MqttMessage message) {
-			MqttProperties properties = message.getProperties();
-			if (properties == null || properties.getCorrelationData() == null) {
+		@Override public void deliver(String messageTopic, Mqtt5Publish message) {
+			if (message.getCorrelationData().isEmpty()) {
 				LOGGER.debug("MQTT reply on {} without correlation data ignored", messageTopic);
 				return;
 			}
-			String correlation = new String(properties.getCorrelationData(), StandardCharsets.UTF_8);
-			if (!replies.complete(key.brokerUrl(), replyTopic, correlation, new String(message.getPayload(), StandardCharsets.UTF_8)))
+			String correlation = StandardCharsets.UTF_8.decode(message.getCorrelationData().get()).toString();
+			if (!replies.complete(key.brokerUrl(), replyTopic, correlation, new String(message.getPayloadAsBytes(), StandardCharsets.UTF_8)))
 				LOGGER.debug("MQTT reply with unknown correlation {} ignored", correlation);
 		}
 
@@ -311,6 +318,8 @@ public final class DmpPahoMqtt5Endpoint extends DefaultEndpoint implements Multi
 		Object body = exchange.getMessage().getBody();
 		if (body == null) return new byte[0];
 		if (body instanceof byte[] bytes) return bytes;
+		// A string for a JSON sink: the JSON string, quoted, never the wrapper's toString().
+		if (body instanceof ConnectorJsonPayload json) return JsonCodec.toJson(json.value()).getBytes(StandardCharsets.UTF_8);
 		String text = body == JsonPointer.JSON_NULL || body instanceof Map<?, ?> || body instanceof List<?>
 				|| body instanceof Number || body instanceof Boolean ? JsonCodec.toJson(body)
 				: exchange.getMessage().getBody(String.class);

@@ -154,16 +154,16 @@ as a `Log` TimeSeries written by the mappings themselves (SPEC §5.5, §10).
   event and converges.
 - Kafka resumes from committed offsets. The DMP uses Kafka 4.3 clients, which
   work with brokers from Kafka 2.1 on (the compose stack runs cp-kafka 7.9 =
-  Kafka 3.9). MQTT uses Camel's `paho-mqtt5` with two
+  Kafka 3.9). MQTT uses the DMP's MQTT component (on the HiveMQ client) with two
   fixed QoS 1 subscriptions on persistent sessions
   (`sm-repository/<repo>/submodels/+` and `…/submodels/+/submodelElements/#`,
   clients `<clientId>-submodels` and `<clientId>-elements`), so events published
   while the DMP was disconnected arrive on reconnect. If the broker drops the
   session (expiry, broker reset), events from that gap are lost until the next
   restart.
-- The event transport is only the repository's channel. MQTT sources and sinks
-  from AID forms use their own MQTT 5 clients (`paho-mqtt5`), one per endpoint,
-  also when Kafka carries the events. Their credentials are bound in the Camel
+- The event transport is only the repository's channel. MQTT sources, sinks and
+  actions from AID forms share one MQTT 5 connection per broker and credentials
+  (`dmp-paho-mqtt5:`, on the HiveMQ client), also when Kafka carries the events. Their credentials are bound in the Camel
   registry per bundle; endpoint URIs only reference them by name.
 - An AAS Property source that follows events has no value until its first
   change event; startup does not replay current values.
