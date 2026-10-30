@@ -128,3 +128,4 @@ buildNumber.properties
 *.db
 dmp.component/src/test/resources/runtime-model-contracts/*
 EVALUATION.md
+.vscode/settings.json
