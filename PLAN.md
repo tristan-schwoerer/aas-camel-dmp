@@ -438,6 +438,27 @@ resources and javadoc references. CI runs on `main`. Kept: the one-shot
 - Optional later: rename module, packages and scheme (`dmp.camel-mqtt`,
   `dmp-mqtt5:`); the scheme rename changes what Lua sees.
 
+### H8. The relevance filter reads no values — done (2026-10-25), not committed
+
+- Every repository event on a referenced element (the DMP's own sink writes
+  included) was parsed whole for the relevance check: Gson tree, aas4j model,
+  then `Aas.withoutValues` writing, parsing and reading it again, values
+  dropped only at the end. At 2 MiB per write that was ≈ 23 ms CPU per event,
+  55 % of the DMP's CPU in the 2 MiB run.
+- `AasControlEvent.elementStructure()`/`submodelStructure()` (replacing
+  `element()`/`submodel()`, which only the relevance filter read) and
+  `semanticIds()` come from `withoutLeafValues`: a streaming parse that skips a
+  string `value` in an object whose `modelType` (before it, as BaSyx writes
+  elements) is Property, File or Blob. Keys', qualifiers' and extensions'
+  values, MultiLanguageProperty texts, Range bounds and lists are kept;
+  `withoutValues` still removes what it removed, so decisions are unchanged.
+  `json()`, which the value feeds read, stays the whole event.
+- Now ≈ 6 ms per 2 MiB event: two scans of the string (the identity pass, as
+  before, and the structure pass); DMP CPU 1.05 → 0.81 cores in that run.
+- Test: `theStructureLeavesOutLeafValuesAndTheValueFeedKeepsTheWholeEvent`
+  (what is kept and dropped, same `withoutValues` result as the whole event,
+  value feed intact); RepositoryDiscoveryTest's relevance cases pass unchanged.
+
 ### Documents
 
 - SPEC corrections that still apply after the fixes: the default QoS, OPC UA

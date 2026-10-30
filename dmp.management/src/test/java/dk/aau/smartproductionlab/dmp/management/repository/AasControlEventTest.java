@@ -13,6 +13,7 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
 import org.apache.camel.builder.AdviceWith;
+import dk.aau.smartproductionlab.dmp.aas.model.Aas;
 import dk.aau.smartproductionlab.dmp.core.component.DmpComponent;
 import org.junit.jupiter.api.Test;
 
@@ -44,9 +45,38 @@ class AasControlEventTest {
 				+ "\"id\":\"urn:sm\",\"semanticId\":{\"type\":\"ExternalReference\",\"keys\":[{\"type\":\"GlobalReference\",\"value\":\"urn:aimc\"}]}}}");
 		assertEquals(Set.of("urn:aimc"), created.semanticIds());
 		assertEquals("SM_CREATED", created.json().get("type").getAsString());
-		assertEquals("urn:sm", created.submodel().getId());
+		assertEquals("urn:sm", created.submodelStructure().getId());
 		assertEquals(null, AasControlEvent.parse("{\"type\":\"SM_CREATED\",\"id\":\"urn:sm\"}").semanticIds(),
 				"no submodel in the event: semantics unknown");
+	}
+
+	@Test
+	void theStructureLeavesOutLeafValuesAndTheValueFeedKeepsTheWholeEvent() {
+		String large = "x".repeat(100_000);
+		String element = "{\"modelType\":\"SubmodelElementCollection\",\"idShort\":\"Status\",\"value\":["
+				+ "{\"modelType\":\"Property\",\"idShort\":\"State\",\"valueType\":\"xs:string\",\"value\":\"" + large + "\","
+				+ "\"semanticId\":{\"type\":\"ExternalReference\",\"keys\":[{\"type\":\"GlobalReference\",\"value\":\"urn:state\"}]},"
+				+ "\"qualifiers\":[{\"type\":\"Unit\",\"valueType\":\"xs:string\",\"value\":\"mm\"}]},"
+				+ "{\"modelType\":\"File\",\"idShort\":\"Manual\",\"contentType\":\"application/pdf\",\"value\":\"/manual.pdf\"},"
+				+ "{\"modelType\":\"ReferenceElement\",\"idShort\":\"Link\",\"value\":{\"type\":\"ModelReference\","
+				+ "\"keys\":[{\"type\":\"Submodel\",\"value\":\"urn:other\"}]}},"
+				+ "{\"idShort\":\"Late\",\"valueType\":\"xs:int\",\"value\":\"7\",\"modelType\":\"Property\"}]}";
+		var event = AasControlEvent.parse("{\"type\":\"SME_UPDATED\",\"id\":\"urn:sm\",\"smElementPath\":\"Status\",\"smElement\":"
+				+ element + "}");
+		var status = (org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElementCollection) event.elementStructure();
+		var state = (org.eclipse.digitaltwin.aas4j.v3.model.Property) status.getValue().get(0);
+		assertEquals(null, state.getValue(), "a Property's value is left out");
+		assertEquals("urn:state", state.getSemanticId().getKeys().get(0).getValue(), "keys keep their values");
+		assertEquals("mm", state.getQualifiers().get(0).getValue(), "qualifiers keep their values");
+		assertEquals(null, ((org.eclipse.digitaltwin.aas4j.v3.model.File) status.getValue().get(1)).getValue(), "a File's value is left out");
+		assertEquals("urn:other", ((org.eclipse.digitaltwin.aas4j.v3.model.ReferenceElement) status.getValue().get(2))
+				.getValue().getKeys().get(0).getValue(), "a ReferenceElement's reference is kept");
+		assertEquals("7", ((org.eclipse.digitaltwin.aas4j.v3.model.Property) status.getValue().get(3)).getValue(),
+				"a value met before its model type is read, as before");
+		assertEquals(Aas.withoutValues(Aas.read(element, org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElement.class)),
+				Aas.withoutValues(status), "compared by structure, the event reads as before");
+		assertEquals(large, event.json().getAsJsonObject("smElement").getAsJsonArray("value").get(0).getAsJsonObject()
+				.get("value").getAsString(), "the value feed gets the whole event");
 	}
 
 	@Test
@@ -59,14 +89,16 @@ class AasControlEventTest {
 		assertEquals("SME_UPDATED", updated.type());
 		assertEquals(id, updated.resourceId());
 		assertEquals("Status.State", updated.elementPath());
-		assertEquals("State", updated.element().getIdShort());
+		assertEquals("State", updated.elementStructure().getIdShort());
 		assertTrue(updated.json().has("smElement"));
 
 		var valueWrite = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Status.State/value/updated", property);
 		assertEquals("SME_UPDATED", valueWrite.type());
 		assertEquals("Status.State", valueWrite.elementPath(), "the value topic names the element, not a child called value");
-		assertEquals("3", ((org.eclipse.digitaltwin.aas4j.v3.model.Property) valueWrite.element()).getValue(),
-				"the payload carries the new value");
+		assertEquals("3", valueWrite.json().getAsJsonObject("smElement").get("value").getAsString(),
+				"the payload carries the new value, for the value feed");
+		assertEquals(null, ((org.eclipse.digitaltwin.aas4j.v3.model.Property) valueWrite.elementStructure()).getValue(),
+				"the structure leaves it out");
 
 		var deleted = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Status/deleted", property);
 		assertEquals("SME_DELETED", deleted.type());
@@ -85,14 +117,14 @@ class AasControlEventTest {
 		var file = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Docs.Manual/attachment/updated", property);
 		assertEquals("SME_UPDATED", file.type());
 		assertEquals("Docs.Manual", file.elementPath());
-		assertEquals(null, file.element(), "an attachment event carries no element");
+		assertEquals(null, file.elementStructure(), "an attachment event carries no element");
 
 		var unparsed = AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/" + encoded + "/submodelElements/Busy/updated",
 				"not json".getBytes());
 		assertFalse(unparsed.fullRescan(), "an element event is identified by its topic; the payload is read only on demand");
 		assertEquals(id, unparsed.resourceId());
 		assertEquals("Busy", unparsed.elementPath());
-		assertEquals(null, unparsed.element(), "a payload that cannot be read has no element");
+		assertEquals(null, unparsed.elementStructure(), "a payload that cannot be read has no element");
 		assertEquals(null, unparsed.json());
 		assertTrue(AasControlEvent.parseMqtt("sm-repository/sm-repo/submodels/created", "not json".getBytes()).fullRescan());
 		assertTrue(AasControlEvent.parseMqtt("aas-repository/aas-repo/shells/created", "{}".getBytes()).ignored());

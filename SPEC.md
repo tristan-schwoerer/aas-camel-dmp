@@ -117,8 +117,10 @@ This is the only full discovery. There is no periodic repair.
   to 500 events per poll, an incomplete batch after 100 ms); each partition's
   offset is committed once per batch, after its events were accepted.
 - Parsing is lazy: the event identity is read by streaming over its top-level
-  members, skipping what it carries; the payload is parsed once, only when
-  something needs it, and shared by the relevance filter and the value feed.
+  members, skipping what it carries. The relevance filter reads the payload
+  only when it needs the structure, by a pass that skips the values of
+  Properties, Files and Blobs unread (values are not configuration, §5.3); the
+  value feed parses the whole payload, once, when it needs a value.
   An event of a type the DMP does not know (e.g. `SM_REF_ADDED` on
   `aas-events`), or one it cannot read, is ignored and logged; one that names
   no submodel asks for a full rescan.

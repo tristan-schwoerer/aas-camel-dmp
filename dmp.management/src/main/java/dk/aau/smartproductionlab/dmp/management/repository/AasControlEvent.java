@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: MIT */
 package dk.aau.smartproductionlab.dmp.management.repository;
 
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashSet;
@@ -10,8 +11,13 @@ import java.util.function.Supplier;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import org.eclipse.digitaltwin.aas4j.v3.model.Submodel;
 import org.eclipse.digitaltwin.aas4j.v3.model.SubmodelElement;
@@ -22,10 +28,12 @@ import dk.aau.smartproductionlab.dmp.aas.model.Aas;
  *
  * <p>Only the identity ({@link #type()}, {@link #resourceId()}, {@link #elementPath()}) is read up front, by a
  * streaming pass that skips the submodel or element the event carries, because most events are dropped on it.
- * Everything else is derived on first use, once, and then shared: {@link #json()} is the event in the BaSyx
- * Kafka shape ({@code type}, {@code id}, {@code smElementPath}, {@code smElement}, {@code submodel}),
- * {@link #element()} and {@link #submodel()} what it carries, {@link #semanticIds()} the semanticId key values of
- * its submodel (null when it carries none).
+ * Everything else is derived on first use, once, and then shared: {@link #json()} is the whole event in the
+ * BaSyx Kafka shape ({@code type}, {@code id}, {@code smElementPath}, {@code smElement}, {@code submodel}), for
+ * the value feed. {@link #elementStructure()} and {@link #submodelStructure()} are what it carries without the
+ * values of its Properties, Files and Blobs, and {@link #semanticIds()} the semanticId key values of its
+ * submodel (null when it carries none): the relevance filter needs no values (SPEC §5.3), and a written value can
+ * be megabytes, so these come from a pass that skips such values unread ({@link #withoutLeafValues}).
  *
  * <p>An event of a type the DMP does not know, and a malformed one, is {@link #ignored()}: it cannot concern a
  * mapping it does not describe. One without the identity of what changed asks for a {@link #fullRescan()}.
@@ -35,22 +43,27 @@ public final class AasControlEvent {
 
 	private final String type, resourceId, elementPath;
 	private final boolean fullRescan, ignored;
+	/** The model types whose {@code value} is a value, not structure, and is a JSON string. */
+	private static final Set<String> LEAF_TYPES = Set.of("Property", "File", "Blob");
+
 	private final Lazy<JsonObject> event;
+	private final Lazy<JsonObject> structure;
 	private final Lazy<SubmodelElement> element;
 	private final Lazy<Submodel> submodel;
 	private final Lazy<Set<String>> semanticIds;
 
 	private AasControlEvent(String type, String resourceId, String elementPath, boolean fullRescan, boolean ignored,
-			Supplier<JsonObject> event) {
+			Supplier<JsonObject> event, Supplier<JsonObject> structure) {
 		this.type = type;
 		this.resourceId = resourceId;
 		this.elementPath = elementPath;
 		this.fullRescan = fullRescan;
 		this.ignored = ignored;
 		this.event = new Lazy<>(event);
-		this.element = new Lazy<>(() -> read(this.event.get(), "smElement", SubmodelElement.class));
-		this.submodel = new Lazy<>(() -> read(this.event.get(), "submodel", Submodel.class));
-		this.semanticIds = new Lazy<>(() -> this.event.get() == null ? null : semanticIds(this.event.get().get("submodel")));
+		this.structure = new Lazy<>(structure);
+		this.element = new Lazy<>(() -> read(this.structure.get(), "smElement", SubmodelElement.class));
+		this.submodel = new Lazy<>(() -> read(this.structure.get(), "submodel", Submodel.class));
+		this.semanticIds = new Lazy<>(() -> this.structure.get() == null ? null : semanticIds(this.structure.get().get("submodel")));
 	}
 
 	public String type() { return type; }
@@ -59,10 +72,10 @@ public final class AasControlEvent {
 	public boolean fullRescan() { return fullRescan; }
 	/** An event the DMP does not know or cannot read: it changes nothing. */
 	public boolean ignored() { return ignored; }
-	/** The element an element event carries, or null. */
-	public SubmodelElement element() { return identified() ? element.get() : null; }
-	/** The submodel a submodel event carries, or null. */
-	public Submodel submodel() { return identified() ? submodel.get() : null; }
+	/** The element an element event carries, without the values of its Properties, Files and Blobs; or null. */
+	public SubmodelElement elementStructure() { return identified() ? element.get() : null; }
+	/** The submodel a submodel event carries, without the values of its Properties, Files and Blobs; or null. */
+	public Submodel submodelStructure() { return identified() ? submodel.get() : null; }
 	public Set<String> semanticIds() { return identified() ? semanticIds.get() : null; }
 	/** The event in the BaSyx Kafka shape, parsed once and shared; null when it has no identity. Not to be modified. */
 	public JsonObject json() { return identified() ? event.get() : null; }
@@ -114,7 +127,8 @@ public final class AasControlEvent {
 			if (type == null && wrapped) return parseWrapped(text);
 			String resourceId = submodelId != null && !submodelId.isBlank() ? submodelId
 					: aasId != null && !aasId.isBlank() ? aasId : id;
-			return of(type, resourceId, path, () -> eventObject(JsonParser.parseString(text), 0));
+			return of(type, resourceId, path, () -> eventObject(JsonParser.parseString(text), 0),
+					() -> eventObject(withoutLeafValues(text), 0));
 		} catch (java.io.IOException | RuntimeException unreadable) {
 			return malformed();
 		}
@@ -124,7 +138,8 @@ public final class AasControlEvent {
 	private static AasControlEvent parseWrapped(String text) {
 		JsonObject event = eventObject(JsonParser.parseString(text), 0);
 		if (event == null) return malformed();
-		return of(text(event, "type"), first(event, "submodelId", "aasId", "id"), text(event, "smElementPath"), () -> event);
+		return of(text(event, "type"), first(event, "submodelId", "aasId", "id"), text(event, "smElementPath"), () -> event,
+				() -> eventObject(withoutLeafValues(text), 0));
 	}
 
 	/**
@@ -142,19 +157,15 @@ public final class AasControlEvent {
 			if (levels.length == 4) {
 				// Submodel events name the submodel only in the payload.
 				String type = "SM_" + action.toUpperCase(java.util.Locale.ROOT);
-				JsonElement body;
+				String text = payload == null ? "" : new String(payload, StandardCharsets.UTF_8);
+				JsonElement structure;
 				// A submodel changed, but which one cannot be read: everything is looked at again.
-				try { body = payload == null || payload.length == 0 ? null : JsonParser.parseString(new String(payload, StandardCharsets.UTF_8)); }
+				try { structure = text.isEmpty() ? null : withoutLeafValues(text); }
 				catch (RuntimeException unreadable) { return rescan(type); }
-				if (body == null || !body.isJsonObject()) return rescan(type);
-				String id = text(body.getAsJsonObject(), "id");
-				return of(type, id, null, () -> {
-					JsonObject event = new JsonObject();
-					event.addProperty("type", type);
-					event.addProperty("id", id);
-					event.add("submodel", body);
-					return event;
-				});
+				if (structure == null || !structure.isJsonObject()) return rescan(type);
+				String id = text(structure.getAsJsonObject(), "id");
+				return of(type, id, null, () -> submodelEvent(type, id, JsonParser.parseString(text)),
+						() -> submodelEvent(type, id, structure));
 			}
 			if (levels.length < 6 || !"submodelElements".equals(levels[4])) return ignored("unknown");
 			String id = new String(Base64.getUrlDecoder().decode(levels[3]), StandardCharsets.UTF_8);
@@ -166,11 +177,20 @@ public final class AasControlEvent {
 			boolean value = levels.length >= 8 && "value".equals(levels[levels.length - 2]) && "updated".equals(action);
 			String path = String.join("/", java.util.Arrays.copyOfRange(levels, 5, levels.length - (attachment || value ? 2 : 1)));
 			String type = attachment || value ? "SME_UPDATED" : "SME_" + action.toUpperCase(java.util.Locale.ROOT);
-			return of(type, id, path, () -> event(type, id, path,
-					attachment || payload == null || payload.length == 0 ? null : JsonParser.parseString(new String(payload, StandardCharsets.UTF_8))));
+			boolean empty = attachment || payload == null || payload.length == 0;
+			return of(type, id, path, () -> event(type, id, path, empty ? null : JsonParser.parseString(new String(payload, StandardCharsets.UTF_8))),
+					() -> event(type, id, path, empty ? null : withoutLeafValues(new String(payload, StandardCharsets.UTF_8))));
 		} catch (RuntimeException unreadable) {
 			return malformed();
 		}
+	}
+
+	private static JsonObject submodelEvent(String type, String id, JsonElement submodel) {
+		JsonObject event = new JsonObject();
+		event.addProperty("type", type);
+		event.addProperty("id", id);
+		event.add("submodel", submodel);
+		return event;
 	}
 
 	private static JsonObject event(String type, String id, String path, JsonElement element) {
@@ -183,20 +203,25 @@ public final class AasControlEvent {
 	}
 
 	private static AasControlEvent of(String type, String id, String path, Supplier<JsonObject> event) {
+		return of(type, id, path, event, event);
+	}
+
+	private static AasControlEvent of(String type, String id, String path, Supplier<JsonObject> event,
+			Supplier<JsonObject> structure) {
 		if (!switch (type == null ? "" : type) {
 		case "SM_CREATED", "SM_UPDATED", "SM_DELETED", "SME_CREATED", "SME_UPDATED", "SME_DELETED", "SME_PATCHED",
 				"AAS_CREATED", "AAS_UPDATED", "AAS_DELETED" -> true;
 		default -> false;
 		}) return ignored(type == null ? "unknown" : type);
-		return id == null || id.isBlank() ? rescan(type) : new AasControlEvent(type, id, path, false, false, event);
+		return id == null || id.isBlank() ? rescan(type) : new AasControlEvent(type, id, path, false, false, event, structure);
 	}
 
 	private static AasControlEvent rescan(String type) {
-		return new AasControlEvent(type, null, null, true, false, () -> null);
+		return new AasControlEvent(type, null, null, true, false, () -> null, () -> null);
 	}
 
 	private static AasControlEvent ignored(String type) {
-		return new AasControlEvent(type, null, null, false, true, () -> null);
+		return new AasControlEvent(type, null, null, false, true, () -> null, () -> null);
 	}
 
 	private static AasControlEvent malformed() {
@@ -209,6 +234,61 @@ public final class AasControlEvent {
 		if (event == null || !(event.get(member) instanceof JsonObject value)) return null;
 		try { return Aas.read(value.toString(), type); }
 		catch (RuntimeException unreadable) { return null; }
+	}
+
+	/**
+	 * {@code text} parsed as JSON (leniently, as {@link JsonParser} parses), without the values of the Properties,
+	 * Files and Blobs in it: a {@code value} that is a string, in an object whose {@code modelType} came before it
+	 * (as BaSyx writes elements) and is one of those, is skipped unread. Everything else is kept: the values of
+	 * keys, qualifiers and extensions, which are structure, and a value met before its object's model type.
+	 * {@link Aas#withoutValues} removes the same values, so comparisons by structure come out as on the whole event.
+	 */
+	static JsonElement withoutLeafValues(String text) {
+		try (JsonReader reader = new JsonReader(new StringReader(text))) {
+			reader.setStrictness(com.google.gson.Strictness.LENIENT);
+			JsonElement parsed = readWithoutLeafValues(reader);
+			if (reader.peek() != JsonToken.END_DOCUMENT) throw new JsonSyntaxException("data after the JSON value");
+			return parsed;
+		} catch (java.io.IOException unreadable) {
+			throw new JsonSyntaxException(unreadable);
+		}
+	}
+
+	private static JsonElement readWithoutLeafValues(JsonReader reader) throws java.io.IOException {
+		switch (reader.peek()) {
+		case BEGIN_OBJECT -> {
+			JsonObject object = new JsonObject();
+			boolean leaf = false;
+			reader.beginObject();
+			while (reader.hasNext()) {
+				String name = reader.nextName();
+				if (leaf && "value".equals(name) && reader.peek() == JsonToken.STRING) {
+					reader.skipValue();
+					continue;
+				}
+				JsonElement member = readWithoutLeafValues(reader);
+				if ("modelType".equals(name)) leaf = member.isJsonPrimitive() && LEAF_TYPES.contains(member.getAsString());
+				object.add(name, member);
+			}
+			reader.endObject();
+			return object;
+		}
+		case BEGIN_ARRAY -> {
+			JsonArray array = new JsonArray();
+			reader.beginArray();
+			while (reader.hasNext()) array.add(readWithoutLeafValues(reader));
+			reader.endArray();
+			return array;
+		}
+		case STRING -> { return new JsonPrimitive(reader.nextString()); }
+		case NUMBER -> { return new JsonPrimitive(new com.google.gson.internal.LazilyParsedNumber(reader.nextString())); }
+		case BOOLEAN -> { return new JsonPrimitive(reader.nextBoolean()); }
+		case NULL -> {
+			reader.nextNull();
+			return JsonNull.INSTANCE;
+		}
+		default -> throw new JsonSyntaxException("unexpected " + reader.peek());
+		}
 	}
 
 	private static Set<String> semanticIds(JsonElement submodel) {

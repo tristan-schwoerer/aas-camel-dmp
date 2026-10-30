@@ -207,7 +207,7 @@ public final class RepositoryDiscovery {
 		if (referenced != null) {
 			if (current.wholeSubmodels().contains(id)) return true;
 			Set<String> values = current.valuePaths().getOrDefault(id, Set.of());
-			if ("SM_UPDATED".equals(type)) return !values.isEmpty() || !sameStructure(id, referenced, event.submodel());
+			if ("SM_UPDATED".equals(type)) return !values.isEmpty() || !sameStructure(id, referenced, event.submodelStructure());
 			if (!type.startsWith("SME_") || event.elementPath() == null) return true;
 			String path = event.elementPath().replace('/', '.');
 			boolean overlaps = referenced.stream().anyMatch(read -> AasReferenceResolver.within(read, path)
@@ -216,8 +216,8 @@ public final class RepositoryDiscovery {
 			if (!"SME_UPDATED".equals(type)) return true;
 			if (values.stream().anyMatch(series -> AasReferenceResolver.within(series, path) || AasReferenceResolver.within(path, series)))
 				return true;
-			// Only now is the event's element parsed.
-			return !sameStructure(id, path, referenced, event.element());
+			// Only now is the event's element read, without the values it carries.
+			return !sameStructure(id, path, referenced, event.elementStructure());
 		}
 		if (!aimcScope.isEmpty() && !aimcScope.contains(id)) return false;
 		if (!"SM_CREATED".equals(type) && !"SM_UPDATED".equals(type)) return false;
