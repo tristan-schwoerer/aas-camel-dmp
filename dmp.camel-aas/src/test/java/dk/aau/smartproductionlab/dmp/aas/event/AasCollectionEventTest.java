@@ -23,7 +23,8 @@ import com.sun.net.httpserver.HttpServer;
 
 /**
  * Event-sourced collection and list sources (SPEC §4.3): an event on the element itself, an ancestor or the
- * submodel carries the value; an event on a member carries only the member, so the element is read again.
+ * submodel carries the value (an empty one too); an event on a member, created, updated or removed, carries at most
+ * the member, so the element is read again.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AasCollectionEventTest extends CamelTestSupport {
@@ -82,6 +83,7 @@ class AasCollectionEventTest extends CamelTestSupport {
 	@Test
 	void aCollectionTakesItsValueFromItsOwnEventAndReadsItAgainAfterAMemberChanged() throws Exception {
 		MockEndpoint values = getMockEndpoint("mock:status");
+		values.reset();
 		values.expectedMessageCount(2);
 		int before = reads.get();
 		hub().publish(elementEvent("Status", STATUS.replace("AUTO", "MANUAL")), Map.of());
@@ -103,6 +105,43 @@ class AasCollectionEventTest extends CamelTestSupport {
 		hub().publish(elementEvent("Items[0]",
 				"{\"modelType\":\"Property\",\"valueType\":\"xs:int\",\"value\":\"3\"}"), Map.of());
 		values.assertIsSatisfied(5000);
+	}
+
+	@Test
+	void aRemovedMemberHasTheCollectionReadAgainAndTheCollectionsOwnRemovalDoesNot() throws Exception {
+		MockEndpoint values = getMockEndpoint("mock:status");
+		values.reset();
+		values.expectedMessageCount(1);
+		int before = reads.get();
+		hub().publish(deleted("Status.Speed"), Map.of());
+		hub().publish(deleted("Status"), Map.of());
+		values.assertIsSatisfied(5000);
+		assertEquals(Map.of("Mode", "AUTO", "Speed", 2.5), values.getExchanges().get(0).getMessage().getBody(Map.class));
+		assertEquals(before + 1, reads.get(), "only the member's removal reads");
+	}
+
+	@Test
+	void anEmptyCollectionOrListInASubmodelEventIsAnEmptyValue() throws Exception {
+		MockEndpoint status = getMockEndpoint("mock:status");
+		MockEndpoint items = getMockEndpoint("mock:items");
+		status.reset();
+		items.reset();
+		status.expectedMessageCount(1);
+		items.expectedMessageCount(1);
+		int before = reads.get();
+		// aas4j leaves out an empty value.
+		hub().publish("{\"type\":\"SM_UPDATED\",\"id\":\"" + SUBMODEL + "\",\"submodel\":{\"id\":\"" + SUBMODEL
+				+ "\",\"submodelElements\":[{\"modelType\":\"SubmodelElementCollection\",\"idShort\":\"Status\"},"
+				+ "{\"modelType\":\"SubmodelElementList\",\"idShort\":\"Items\"}]}}", Map.of());
+		status.assertIsSatisfied(5000);
+		items.assertIsSatisfied(5000);
+		assertEquals(Map.of(), status.getExchanges().get(0).getMessage().getBody(Map.class));
+		assertEquals(List.of(), items.getExchanges().get(0).getMessage().getBody(List.class));
+		assertEquals(before, reads.get(), "the submodel carries the empty value; nothing is read");
+	}
+
+	private static String deleted(String path) {
+		return "{\"type\":\"SME_DELETED\",\"id\":\"" + SUBMODEL + "\",\"smElementPath\":\"" + path + "\"}";
 	}
 
 	@Test

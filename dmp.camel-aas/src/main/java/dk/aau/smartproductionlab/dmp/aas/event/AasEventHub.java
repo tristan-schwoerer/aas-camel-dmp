@@ -63,8 +63,8 @@ public final class AasEventHub {
 
 	/**
 	 * Delivers an event to every listener it can concern: the element itself, an ancestor of it (an ancestor
-	 * update carries the subtree), an element inside it (a member of a watched collection or list), or a
-	 * whole-submodel update.
+	 * update carries the subtree), an element inside it (a member of a watched collection or list, created, updated
+	 * or deleted), or a whole-submodel update.
 	 */
 	public void publish(String event, Map<String, Object> headers) {
 		try {
@@ -86,6 +86,9 @@ public final class AasEventHub {
 			boolean concerned = switch (type == null ? "" : type) {
 				case "SME_CREATED", "SME_UPDATED" -> path != null
 						&& (within(listener.idShortPath(), path) || within(path, listener.idShortPath()));
+				// A member's removal changes a watched collection or list; the element's own removal leaves nothing
+				// to read (its mapping is recompiled).
+				case "SME_DELETED" -> path != null && !path.equals(listener.idShortPath()) && within(path, listener.idShortPath());
 				case "SM_CREATED", "SM_UPDATED" -> true;
 				default -> false;
 			};

@@ -160,8 +160,10 @@ to devices. Such a source has no value until its first change event, unless
 it is `Cached`: a `Cached` source is read once when its mapping is installed
 (§6). An event on the element itself, on a collection holding it or on the
 whole submodel carries the value, so batch updates reach event-sourced sources
-too. An event on a member of a watched collection or list carries only that
-member, so the element is read again (one read per member event). A collection
+too. An event on a member of a watched collection or list (created, updated or
+removed) carries at most that member, so the element is read again (one read per
+member event); the removal of the element itself is a change of its mapping
+(§4.2), not a value. A collection
 written whole (one `PATCH` of its `$value`) is one event and one value; one
 written member by member is one value per member write, the earlier ones
 showing a partly updated collection, as a poll at that moment would.

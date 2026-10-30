@@ -34,7 +34,7 @@ import com.google.gson.JsonParser;
  * contribution: the new value of the watched Property, collection or list.
  * An event on the element itself, on an ancestor or on the whole submodel
  * carries it; an event on a member of a watched collection or list carries
- * only that member, so the element is read again. The processor is
+ * only that member (or, for a removed member, nothing), so the element is read again. The processor is
  * transport-neutral: the filter contract is the source's {@link AasEventSource}.
  */
 public final class AasElementEventProcessor implements Processor {
@@ -150,7 +150,8 @@ public final class AasElementEventProcessor implements Processor {
 		if ("SM_UPDATED".equals(type) || "SM_CREATED".equals(type)) {
 			return true;
 		}
-		if (!"SME_CREATED".equals(type) && !"SME_UPDATED".equals(type)) {
+		boolean deleted = "SME_DELETED".equals(type);
+		if (!deleted && !"SME_CREATED".equals(type) && !"SME_UPDATED".equals(type)) {
 			return false;
 		}
 		String expectedPath = source.idShortPath();
@@ -159,6 +160,10 @@ public final class AasElementEventProcessor implements Processor {
 			return false;
 		}
 		actualPath = actualPath.replace('/', '.');
+		if (deleted) {
+			// A member of a watched collection or list was removed: the element is read again.
+			return actualPath.startsWith(expectedPath + ".") || actualPath.startsWith(expectedPath + "[");
+		}
 		if (!expectedPath.equals(actualPath)) {
 			// An update of an ancestor carries the watched element in its subtree; one of a member of a watched
 			// collection or list changes its value.
@@ -214,7 +219,7 @@ public final class AasElementEventProcessor implements Processor {
 			return null;
 		}
 		JsonObject element = current.getAsJsonObject();
-		if (!expectedType.equals(text(element, "modelType")) || !element.has("value")) {
+		if (!expectedType.equals(text(element, "modelType")) || !hasValue(element)) {
 			return null;
 		}
 		return element;
@@ -245,7 +250,16 @@ public final class AasElementEventProcessor implements Processor {
 			return null;
 		}
 		JsonElement body = JsonParser.parseString(AasHttp.of(context).get(readUrl, ENRICHMENT_TIMEOUT));
-		return body.isJsonObject() && body.getAsJsonObject().has("value") ? body : null;
+		return body.isJsonObject() && hasValue(body.getAsJsonObject()) ? body : null;
+	}
+
+	/**
+	 * Whether {@code element} has a value to deliver. An empty collection or list has: aas4j leaves out an empty
+	 * {@code value}, and {@link AasValues#elementValue} reads it as {@code {}} or {@code []}.
+	 */
+	private static boolean hasValue(JsonObject element) {
+		String modelType = text(element, "modelType");
+		return element.has("value") || "SubmodelElementCollection".equals(modelType) || "SubmodelElementList".equals(modelType);
 	}
 
 	private static JsonObject eventObject(Object body) {
