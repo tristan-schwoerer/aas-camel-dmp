@@ -774,12 +774,6 @@
           "text": "The AIMC 2.0 is used to describe how data is mapped from asset to AAS or from AAS to AAS."
         }
       ],
-      "displayName": [
-        {
-          "language": "en",
-          "text": "Asset interfaces mapping configuration"
-        }
-      ],
       "id": "urn:dmp-eval:invoke-opcua:submodel:AIMC",
       "idShort": "AIMC",
       "modelType": "Submodel",
@@ -798,12 +792,6 @@
             {
               "language": "en",
               "text": "List of MappingConfigurations that each map and transform data from their sources to their sinks."
-            }
-          ],
-          "displayName": [
-            {
-              "language": "en",
-              "text": "Mapping configurations"
             }
           ],
           "idShort": "MappingConfigurations",
@@ -839,7 +827,7 @@
               "displayName": [
                 {
                   "language": "en",
-                  "text": "Mapping configuration"
+                  "text": "Mapping"
                 }
               ],
               "modelType": "SubmodelElementCollection",
@@ -861,12 +849,6 @@
                       "text": "The transformation allows for transforming incoming data before writing it to the sinks. The transformation must contain an \"aimc_main(sources)\" entrypoint function in Lua."
                     }
                   ],
-                  "displayName": [
-                    {
-                      "language": "en",
-                      "text": "Transformation"
-                    }
-                  ],
                   "idShort": "Transformation",
                   "modelType": "Blob",
                   "semanticId": {
@@ -885,12 +867,6 @@
                     {
                       "language": "en",
                       "text": "This list includes all data sources that are used in this MappingConfiguration."
-                    }
-                  ],
-                  "displayName": [
-                    {
-                      "language": "en",
-                      "text": "Sources"
                     }
                   ],
                   "idShort": "Sources",
@@ -926,7 +902,7 @@
                       "displayName": [
                         {
                           "language": "en",
-                          "text": "Source"
+                          "text": "Request"
                         }
                       ],
                       "modelType": "SubmodelElementCollection",
@@ -945,12 +921,6 @@
                             {
                               "language": "en",
                               "text": "This holds a reference to the respective SubmodelElement used as data source. A data source can be any SubmodelElement including those defined in the InteractionMetadata of AID Submodels for fetching live-data from assets."
-                            }
-                          ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Source"
                             }
                           ],
                           "idShort": "Source",
@@ -993,12 +963,6 @@
                               "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
                             }
                           ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Source ID"
-                            }
-                          ],
                           "idShort": "SourceId",
                           "modelType": "Property",
                           "semanticId": {
@@ -1022,12 +986,6 @@
                     {
                       "language": "en",
                       "text": "This list includes all data sinks that are used in this MappingConfiguration."
-                    }
-                  ],
-                  "displayName": [
-                    {
-                      "language": "en",
-                      "text": "Sinks"
                     }
                   ],
                   "idShort": "Sinks",
@@ -1063,7 +1021,7 @@
                       "displayName": [
                         {
                           "language": "en",
-                          "text": "Sink"
+                          "text": "Request"
                         }
                       ],
                       "modelType": "SubmodelElementCollection",
@@ -1082,12 +1040,6 @@
                             {
                               "language": "en",
                               "text": "This holds a reference to the respective SubmodelElement used as data sink for live-data."
-                            }
-                          ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Sink"
                             }
                           ],
                           "idShort": "Sink",
@@ -1144,12 +1096,6 @@
                             {
                               "language": "en",
                               "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
-                            }
-                          ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Sink ID"
                             }
                           ],
                           "idShort": "SinkId",
@@ -1217,6 +1163,12 @@
                         {
                           "language": "en",
                           "text": "A response source: the output of the invoked action, or a member of it."
+                        }
+                      ],
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Reply"
                         }
                       ],
                       "modelType": "SubmodelElementCollection",
@@ -1293,12 +1245,6 @@
                               "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
                             }
                           ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Source ID"
-                            }
-                          ],
                           "idShort": "SourceId",
                           "modelType": "Property",
                           "semanticId": {
@@ -1343,6 +1289,12 @@
                         {
                           "language": "en",
                           "text": "A correlated response sink reference and its transformation identifier."
+                        }
+                      ],
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Reply"
                         }
                       ],
                       "modelType": "SubmodelElementCollection",
@@ -1401,12 +1353,6 @@
                             {
                               "language": "en",
                               "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
-                            }
-                          ],
-                          "displayName": [
-                            {
-                              "language": "en",
-                              "text": "Sink ID"
                             }
                           ],
                           "idShort": "SinkId",

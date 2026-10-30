@@ -14,22 +14,11 @@
     "StationState"
    ],
    "sinkIds": [
-    "PackMLState",
-    "OccupationState"
-   ]
-  },
-  {
-   "index": 1,
-   "idShort": null,
-   "sourceIds": [
-    "StationState"
-   ],
-   "sinkIds": [
     "Live"
    ]
   },
   {
-   "index": 2,
+   "index": 1,
    "idShort": null,
    "sourceIds": [
     "Uuid"
@@ -39,7 +28,7 @@
    ]
   },
   {
-   "index": 3,
+   "index": 2,
    "idShort": null,
    "sourceIds": [
     "Uuid"
@@ -49,7 +38,7 @@
    ]
   },
   {
-   "index": 4,
+   "index": 3,
    "idShort": null,
    "sourceIds": [
     "Uuid"
@@ -59,7 +48,7 @@
    ]
   },
   {
-   "index": 5,
+   "index": 4,
    "idShort": null,
    "sourceIds": [
     "Uuid"
@@ -69,7 +58,7 @@
    ]
   },
   {
-   "index": 6,
+   "index": 5,
    "idShort": null,
    "sourceIds": [
     "Uuid"

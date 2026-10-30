@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 [[package]]
 name = "aas-model"
 version = "0.2.0"
-source = { git = "https://github.com/tristan-schwoerer/aas-model?rev=c52fc00644eb5e139f0489a618994c45d3204f28#c52fc00644eb5e139f0489a618994c45d3204f28" }
+source = { git = "https://github.com/tristan-schwoerer/aas-model?rev=bd73e4088ca057fbadc06c07187cdf19c385ce60#bd73e4088ca057fbadc06c07187cdf19c385ce60" }
 dependencies = [
     { name = "basyx-python-sdk" },
     { name = "pydantic" },
@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "aas-model", git = "https://github.com/tristan-schwoerer/aas-model?rev=c52fc00644eb5e139f0489a618994c45d3204f28" }]
+requires-dist = [{ name = "aas-model", git = "https://github.com/tristan-schwoerer/aas-model?rev=bd73e4088ca057fbadc06c07187cdf19c385ce60" }]
 
 [[package]]
 name = "lxml"

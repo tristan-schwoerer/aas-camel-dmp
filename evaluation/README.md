@@ -148,7 +148,7 @@ it once the paper's figures come from new runs.
 generated, never edited; the runner refuses a scenario whose file does not match the manifest's SHA-256.
 
 ```bash
-cd ../fixtures && uv run python -m scenarios
+cd ../fixtures && uv run python -m scenarios   # with MQTT_SCHEMAS_DIR set, see ../fixtures/README.md
 ```
 
 Each `<id>.json` is a plain AAS environment (one shell with its AID, AIMC and `Target` submodel), without

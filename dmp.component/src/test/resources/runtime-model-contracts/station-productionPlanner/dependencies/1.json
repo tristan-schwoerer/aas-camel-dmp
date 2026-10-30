@@ -1,32 +1,9 @@
 {
- "embeddedDataSpecifications": [
-  {
-   "dataSpecification": {
-    "type": "ExternalReference",
-    "keys": [
-     {
-      "type": "GlobalReference",
-      "value": "https://smartproductionlab.aau.dk/aas/productionPlannerAAS/submodels/Variables"
-     }
-    ]
-   },
-   "dataSpecificationContent": {
-    "modelType": "DataSpecificationIec61360",
-    "preferredName": [
-     {
-      "language": "en",
-      "text": "class"
-     }
-    ],
-    "value": "Variables"
-   }
-  }
- ],
  "idShort": "Variables",
  "description": [
   {
    "language": "en",
-   "text": "Asset variable definitions with semantic concepts and live-data interface references."
+   "text": "An asset's runtime data: time series of its state, measurements and logs."
   }
  ],
  "modelType": "Submodel",
@@ -42,24 +19,283 @@
  },
  "submodelElements": [
   {
-   "idShort": "PackMLState",
-   "description": [
-    {
-     "language": "en",
-     "text": "Live value of this variable; its ontology concept rides as a supplemental semantic id."
-    }
-   ],
-   "modelType": "Property",
+   "idShort": "State",
+   "modelType": "SubmodelElementCollection",
    "semanticId": {
     "type": "ExternalReference",
     "keys": [
      {
       "type": "GlobalReference",
-      "value": "https://w3id.org/2026/apex/semantic/state/operational"
+      "value": "https://smartproductionlab.aau.dk/variables/State/1/0"
      }
     ]
    },
-   "valueType": "xs:string"
+   "value": [
+    {
+     "idShort": "Station",
+     "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://smartproductionlab.aau.dk/variables/TimeSeries/1/0"
+       }
+      ]
+     },
+     "supplementalSemanticIds": [
+      {
+       "type": "ExternalReference",
+       "keys": [
+        {
+         "type": "GlobalReference",
+         "value": "https://admin-shell.io/idta/TimeSeries/1/1"
+        }
+       ]
+      }
+     ],
+     "value": [
+      {
+       "idShort": "Metadata",
+       "modelType": "SubmodelElementCollection",
+       "semanticId": {
+        "type": "ExternalReference",
+        "keys": [
+         {
+          "type": "GlobalReference",
+          "value": "https://admin-shell.io/idta/TimeSeries/Metadata/1/1"
+         }
+        ]
+       },
+       "value": [
+        {
+         "idShort": "Name",
+         "modelType": "MultiLanguageProperty",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/TimeSeries/Metadata/Name/1/1"
+           }
+          ]
+         },
+         "value": [
+          {
+           "language": "en",
+           "text": "Station state"
+          }
+         ]
+        },
+        {
+         "idShort": "Record",
+         "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/TimeSeries/Record/1/1"
+           }
+          ]
+         },
+         "value": [
+          {
+           "idShort": "Time",
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://admin-shell.io/idta/TimeSeries/UtcTime/1/1"
+             }
+            ]
+           },
+           "valueType": "xs:dateTime"
+          },
+          {
+           "idShort": "PackMLState",
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://smartproductionlab.aau.dk/timeseries/RecordField/1/0"
+             }
+            ]
+           },
+           "supplementalSemanticIds": [
+            {
+             "type": "ExternalReference",
+             "keys": [
+              {
+               "type": "GlobalReference",
+               "value": "https://w3id.org/2026/apex/semantic/state/operational"
+              }
+             ]
+            }
+           ],
+           "valueType": "xs:string"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "idShort": "Segments",
+       "modelType": "SubmodelElementCollection",
+       "semanticId": {
+        "type": "ExternalReference",
+        "keys": [
+         {
+          "type": "GlobalReference",
+          "value": "https://admin-shell.io/idta/TimeSeries/Segments/1/1"
+         }
+        ]
+       },
+       "value": [
+        {
+         "idShort": "Live",
+         "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/TimeSeries/Segments/LinkedSegment/1/1"
+           }
+          ]
+         },
+         "value": [
+          {
+           "idShort": "State",
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://admin-shell.io/idta/TimeSeries/Segment/State/1/1"
+             }
+            ]
+           },
+           "value": "InProgress",
+           "valueType": "xs:string"
+          },
+          {
+           "idShort": "Endpoint",
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://admin-shell.io/idta/TimeSeries/Endpoint/1/1"
+             }
+            ]
+           },
+           "value": "http://influxdb:8086/api/v2/query?org=ap2030",
+           "valueType": "xs:string"
+          },
+          {
+           "idShort": "Query",
+           "modelType": "Property",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://admin-shell.io/idta/TimeSeries/Query/1/1"
+             }
+            ]
+           },
+           "value": "from(bucket: \"ap2030\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"station_state\")\n  |> filter(fn: (r) => r[\"asset\"] == \"productionPlannerAAS\")\n  |> filter(fn: (r) => r[\"_field\"] == \"{{y-value}}\")",
+           "valueType": "xs:string"
+          },
+          {
+           "idShort": "InfluxDb2Target",
+           "modelType": "SubmodelElementCollection",
+           "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+             {
+              "type": "GlobalReference",
+              "value": "https://smartproductionlab.aau.dk/timeseries/InfluxDb2Target/1/0"
+             }
+            ]
+           },
+           "value": [
+            {
+             "idShort": "Bucket",
+             "modelType": "Property",
+             "semanticId": {
+              "type": "ExternalReference",
+              "keys": [
+               {
+                "type": "GlobalReference",
+                "value": "https://smartproductionlab.aau.dk/timeseries/InfluxDb2Target/Bucket/1/0"
+               }
+              ]
+             },
+             "value": "ap2030",
+             "valueType": "xs:string"
+            },
+            {
+             "idShort": "Measurement",
+             "modelType": "Property",
+             "semanticId": {
+              "type": "ExternalReference",
+              "keys": [
+               {
+                "type": "GlobalReference",
+                "value": "https://smartproductionlab.aau.dk/timeseries/InfluxDb2Target/Measurement/1/0"
+               }
+              ]
+             },
+             "value": "station_state",
+             "valueType": "xs:string"
+            },
+            {
+             "idShort": "Tags",
+             "modelType": "SubmodelElementCollection",
+             "semanticId": {
+              "type": "ExternalReference",
+              "keys": [
+               {
+                "type": "GlobalReference",
+                "value": "https://smartproductionlab.aau.dk/timeseries/InfluxDb2Target/Tags/1/0"
+               }
+              ]
+             },
+             "value": [
+              {
+               "idShort": "asset",
+               "modelType": "Property",
+               "semanticId": {
+                "type": "ExternalReference",
+                "keys": [
+                 {
+                  "type": "GlobalReference",
+                  "value": "https://smartproductionlab.aau.dk/timeseries/InfluxDb2Target/Tag/1/0"
+                 }
+                ]
+               },
+               "value": "productionPlannerAAS",
+               "valueType": "xs:string"
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
   }
  ]
 }

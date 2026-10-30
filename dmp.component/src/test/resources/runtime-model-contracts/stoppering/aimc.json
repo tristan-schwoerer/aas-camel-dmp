@@ -1,76 +1,5 @@
 {
- "embeddedDataSpecifications": [
-  {
-   "dataSpecification": {
-    "type": "ExternalReference",
-    "keys": [
-     {
-      "type": "GlobalReference",
-      "value": "https://smartproductionlab.aau.dk/aas/syntegonStopperingSystemAAS/submodels/AssetInterfacesMappingConfiguration"
-     }
-    ]
-   },
-   "dataSpecificationContent": {
-    "modelType": "DataSpecificationIec61360",
-    "preferredName": [
-     {
-      "language": "en",
-      "text": "class"
-     }
-    ],
-    "value": "OperationalMqttMappings"
-   }
-  },
-  {
-   "dataSpecification": {
-    "type": "ExternalReference",
-    "keys": [
-     {
-      "type": "GlobalReference",
-      "value": "MappingConfigurations"
-     }
-    ]
-   },
-   "dataSpecificationContent": {
-    "modelType": "DataSpecificationIec61360",
-    "preferredName": [
-     {
-      "language": "en",
-      "text": "attribute"
-     }
-    ],
-    "value": "MappingConfigurations"
-   }
-  },
-  {
-   "dataSpecification": {
-    "type": "ExternalReference",
-    "keys": [
-     {
-      "type": "GlobalReference",
-      "value": "MappingConfigurations"
-     }
-    ]
-   },
-   "dataSpecificationContent": {
-    "modelType": "DataSpecificationIec61360",
-    "preferredName": [
-     {
-      "language": "en",
-      "text": "default"
-     }
-    ],
-    "value": "MappingConfigurations"
-   }
-  }
- ],
  "idShort": "AssetInterfacesMappingConfiguration",
- "displayName": [
-  {
-   "language": "en",
-   "text": "Asset interfaces mapping configuration"
-  }
- ],
  "description": [
   {
    "language": "en",
@@ -90,36 +19,7 @@
  },
  "submodelElements": [
   {
-   "embeddedDataSpecifications": [
-    {
-     "dataSpecification": {
-      "type": "ExternalReference",
-      "keys": [
-       {
-        "type": "GlobalReference",
-        "value": "MappingConfigurations"
-       }
-      ]
-     },
-     "dataSpecificationContent": {
-      "modelType": "DataSpecificationIec61360",
-      "preferredName": [
-       {
-        "language": "en",
-        "text": "class"
-       }
-      ],
-      "value": "DmpMappingConfigurations"
-     }
-    }
-   ],
    "idShort": "MappingConfigurations",
-   "displayName": [
-    {
-     "language": "en",
-     "text": "Mapping configurations"
-    }
-   ],
    "description": [
     {
      "language": "en",
@@ -149,117 +49,10 @@
    },
    "value": [
     {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "MQTT"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      }
-     ],
      "displayName": [
       {
        "language": "en",
-       "text": "Mapping configuration"
+       "text": "StationState"
       }
      ],
      "description": [
@@ -281,12 +74,6 @@
      "value": [
       {
        "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -308,801 +95,6 @@
       },
       {
        "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
-       "description": [
-        {
-         "language": "en",
-         "text": "The transformation allows for transforming incoming data before writing it to the sinks. The transformation must contain an \"aimc_main(sources)\" entrypoint function in Lua."
-        }
-       ],
-       "modelType": "Blob",
-       "semanticId": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Transformation"
-         }
-        ]
-       },
-       "contentType": "text/plain",
-       "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpCiAgICBsb2NhbCBxdWV1ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlByb2Nlc3NRdWV1ZSBvciB7fQogICAgcmV0dXJuIHsKICAgICAgICBQYWNrTUxTdGF0ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlN0YXRlLAogICAgICAgIE9jY3VwYXRpb25TdGF0ZSA9ICgjcXVldWUgPT0gMCkgYW5kICJbXSIgb3IganNvbi5lbmNvZGUocXVldWUpLAogICAgfQplbmQK"
-      },
-      {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
-       "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
-       "description": [
-        {
-         "language": "en",
-         "text": "This list includes all data sources that are used in this MappingConfiguration."
-        }
-       ],
-       "modelType": "SubmodelElementList",
-       "semanticId": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sources"
-         }
-        ]
-       },
-       "orderRelevant": false,
-       "typeValueListElement": "SubmodelElementCollection",
-       "semanticIdListElement": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
-         }
-        ]
-       },
-       "value": [
-        {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "StationState"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
-         "displayName": [
-          {
-           "language": "en",
-           "text": "Source"
-          }
-         ],
-         "description": [
-          {
-           "language": "en",
-           "text": "A data source is defined by a Source reference, PollingInterval and SourceId."
-          }
-         ],
-         "modelType": "SubmodelElementCollection",
-         "semanticId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
-           }
-          ]
-         },
-         "value": [
-          {
-           "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This holds a reference to the respective SubmodelElement used as data source. A data source can be any SubmodelElement including those defined in the InteractionMetadata of AID Submodels for fetching live-data from assets."
-            }
-           ],
-           "modelType": "ReferenceElement",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/Source"
-             }
-            ]
-           },
-           "value": {
-            "type": "ModelReference",
-            "keys": [
-             {
-              "type": "Submodel",
-              "value": "https://smartproductionlab.aau.dk/aas/syntegonStopperingSystemAAS/submodels/AssetInterfacesDescription"
-             },
-             {
-              "type": "SubmodelElementCollection",
-              "value": "interface_mqtt"
-             },
-             {
-              "type": "SubmodelElementCollection",
-              "value": "InteractionMetadata"
-             },
-             {
-              "type": "SubmodelElementCollection",
-              "value": "properties"
-             },
-             {
-              "type": "SubmodelElementCollection",
-              "value": "StationState"
-             }
-            ]
-           }
-          },
-          {
-           "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
-            }
-           ],
-           "modelType": "Property",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/SourceId"
-             }
-            ]
-           },
-           "value": "StationState",
-           "valueType": "xs:string"
-          }
-         ]
-        }
-       ]
-      },
-      {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
-       "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
-       "description": [
-        {
-         "language": "en",
-         "text": "This list includes all data sinks that are used in this MappingConfiguration."
-        }
-       ],
-       "modelType": "SubmodelElementList",
-       "semanticId": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sinks"
-         }
-        ]
-       },
-       "orderRelevant": true,
-       "typeValueListElement": "SubmodelElementCollection",
-       "semanticIdListElement": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
-         }
-        ]
-       },
-       "value": [
-        {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "PackMLState"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
-         "displayName": [
-          {
-           "language": "en",
-           "text": "Sink"
-          }
-         ],
-         "description": [
-          {
-           "language": "en",
-           "text": "A data sink is defined by a Sink reference and SinkId."
-          }
-         ],
-         "modelType": "SubmodelElementCollection",
-         "semanticId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
-           }
-          ]
-         },
-         "value": [
-          {
-           "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This holds a reference to the respective SubmodelElement used as data sink for live-data."
-            }
-           ],
-           "modelType": "ReferenceElement",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/Sink"
-             }
-            ]
-           },
-           "value": {
-            "type": "ModelReference",
-            "keys": [
-             {
-              "type": "Submodel",
-              "value": "https://smartproductionlab.aau.dk/aas/syntegonStopperingSystemAAS/submodels/Variables"
-             },
-             {
-              "type": "Property",
-              "value": "PackMLState"
-             }
-            ]
-           }
-          },
-          {
-           "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
-            }
-           ],
-           "modelType": "Property",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/SinkId"
-             }
-            ]
-           },
-           "value": "PackMLState",
-           "valueType": "xs:string"
-          }
-         ]
-        },
-        {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "OccupationState"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
-         "displayName": [
-          {
-           "language": "en",
-           "text": "Sink"
-          }
-         ],
-         "description": [
-          {
-           "language": "en",
-           "text": "A data sink is defined by a Sink reference and SinkId."
-          }
-         ],
-         "modelType": "SubmodelElementCollection",
-         "semanticId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
-           }
-          ]
-         },
-         "value": [
-          {
-           "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This holds a reference to the respective SubmodelElement used as data sink for live-data."
-            }
-           ],
-           "modelType": "ReferenceElement",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/Sink"
-             }
-            ]
-           },
-           "value": {
-            "type": "ModelReference",
-            "keys": [
-             {
-              "type": "Submodel",
-              "value": "https://smartproductionlab.aau.dk/aas/syntegonStopperingSystemAAS/submodels/Variables"
-             },
-             {
-              "type": "Property",
-              "value": "OccupationState"
-             }
-            ]
-           }
-          },
-          {
-           "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
-           "description": [
-            {
-             "language": "en",
-             "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
-            }
-           ],
-           "modelType": "Property",
-           "semanticId": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/SinkId"
-             }
-            ]
-           },
-           "value": "OccupationState",
-           "valueType": "xs:string"
-          }
-         ]
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "MQTTHistory"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      }
-     ],
-     "displayName": [
-      {
-       "language": "en",
-       "text": "Mapping configuration"
-      }
-     ],
-     "description": [
-      {
-       "language": "en",
-       "text": "A MappingConfiguration defines one logical unit of sources (inputs) and sinks (outputs) that are in relation to one another. The relation can be expressed via a transformation."
-      }
-     ],
-     "modelType": "SubmodelElementCollection",
-     "semanticId": {
-      "type": "ExternalReference",
-      "keys": [
-       {
-        "type": "GlobalReference",
-        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
-       }
-      ]
-     },
-     "value": [
-      {
-       "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
-       "description": [
-        {
-         "language": "en",
-         "text": "The DefaultPollingInterval defines the default time interval in seconds for fetching new data from the synchronous data sources defined in this MappingConfiguration. It must be greater than zero for synchronous protocols (e.g. HTTP) that need polling and is ignored for asynchronous protocols (e.g. MQTT)."
-        }
-       ],
-       "modelType": "Property",
-       "semanticId": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/DefaultPollingInterval"
-         }
-        ]
-       },
-       "value": "0.0",
-       "valueType": "xs:double"
-      },
-      {
-       "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1123,36 +115,7 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpCiAgICBsb2NhbCBxdWV1ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlByb2Nlc3NRdWV1ZSBvciB7fQogICAgcmV0dXJuIHsgTGl2ZSA9IHsKICAgICAgICBQYWNrTUxTdGF0ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlN0YXRlLAogICAgICAgIE9jY3VwYXRpb25TdGF0ZSA9ICgjcXVldWUgPT0gMCkgYW5kICJbXSIgb3IganNvbi5lbmNvZGUocXVldWUpLAogICAgfSB9CmVuZAo="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
        "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1182,75 +145,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "StationState"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Source"
+           "text": "StationState"
           }
          ],
          "description": [
@@ -1272,12 +170,6 @@
          "value": [
           {
            "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1322,12 +214,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1352,36 +238,7 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
        "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1411,75 +268,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Live"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Sink"
+           "text": "Live"
           }
          ],
          "description": [
@@ -1501,12 +293,6 @@
          "value": [
           {
            "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1551,12 +337,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1583,117 +363,10 @@
      ]
     },
     {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Halt"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      }
-     ],
      "displayName": [
       {
        "language": "en",
-       "text": "Mapping configuration"
+       "text": "Halt"
       }
      ],
      "description": [
@@ -1715,12 +388,6 @@
      "value": [
       {
        "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1742,12 +409,6 @@
       },
       {
        "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1768,36 +429,7 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IEhhbHQgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
        "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -1827,75 +459,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Source"
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -1917,12 +484,6 @@
          "value": [
           {
            "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1967,12 +528,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -1997,36 +552,7 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
        "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -2056,75 +582,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Halt"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Sink"
+           "text": "Halt"
           }
          ],
          "description": [
@@ -2146,12 +607,6 @@
          "value": [
           {
            "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2200,12 +655,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2232,180 +681,10 @@
      ]
     },
     {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Occupy"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseTransformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
-      }
-     ],
      "displayName": [
       {
        "language": "en",
-       "text": "Mapping configuration"
+       "text": "Occupy"
       }
      ],
      "description": [
@@ -2427,12 +706,6 @@
      "value": [
       {
        "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -2454,12 +727,6 @@
       },
       {
        "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -2480,36 +747,7 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IE9jY3VweSA9IHsgVXVpZCA9IHNvdXJjZXMuVXVpZCB9IH0gZW5k"
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
        "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -2539,75 +777,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Source"
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -2629,12 +802,6 @@
          "value": [
           {
            "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2679,12 +846,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2709,36 +870,7 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
        "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -2768,75 +900,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Occupy"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Sink"
+           "text": "Occupy"
           }
          ],
          "description": [
@@ -2858,12 +925,6 @@
          "value": [
           {
            "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2912,12 +973,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -2963,29 +1018,6 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMsIHJlcXVlc3RTb3VyY2VzKQogICAgbG9jYWwgcmVwbHkgPSBzb3VyY2VzLlJlcGx5IG9yIHt9CiAgICBsb2NhbCBsb2cgPSB7IE91dGNvbWUgPSBtZXRhLmludm9jYXRpb24ub3V0Y29tZSwgRHVyYXRpb25NcyA9IG1ldGEuaW52b2NhdGlvbi5kdXJhdGlvbk1zLAogICAgICAgIE9wZXJhdGlvbiA9IHsgVXVpZCA9IHJlcXVlc3RTb3VyY2VzLlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUgfSB9CiAgICBpZiBtZXRhLmludm9jYXRpb24ub3V0Y29tZSB+PSAiU3VjY2VlZGVkIiB0aGVuIHJldHVybiB7IExvZyA9IGxvZyB9IGVuZAogICAgcmV0dXJuIHsgVXVpZCA9IHJlcGx5LlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUsIExvZyA9IGxvZyB9CmVuZAo="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSources"
-         }
-        }
-       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -3007,69 +1039,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Reply"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
+           "language": "en",
+           "text": "Reply"
           }
          ],
          "description": [
@@ -3139,12 +1112,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -3169,29 +1136,6 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSinks"
-         }
-        }
-       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -3213,69 +1157,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -3341,12 +1226,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -3369,69 +1248,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "State"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "State"
           }
          ],
          "description": [
@@ -3497,12 +1317,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -3525,69 +1339,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Log"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Log"
           }
          ],
          "description": [
@@ -3653,12 +1408,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -3685,180 +1434,10 @@
      ]
     },
     {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Release"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseTransformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
-      }
-     ],
      "displayName": [
       {
        "language": "en",
-       "text": "Mapping configuration"
+       "text": "Release"
       }
      ],
      "description": [
@@ -3880,12 +1459,6 @@
      "value": [
       {
        "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -3907,12 +1480,6 @@
       },
       {
        "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -3933,36 +1500,7 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IFJlbGVhc2UgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
        "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -3992,75 +1530,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Source"
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -4082,12 +1555,6 @@
          "value": [
           {
            "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4132,12 +1599,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4162,36 +1623,7 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
        "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -4221,75 +1653,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Release"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Sink"
+           "text": "Release"
           }
          ],
          "description": [
@@ -4311,12 +1678,6 @@
          "value": [
           {
            "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4365,12 +1726,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4416,29 +1771,6 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMsIHJlcXVlc3RTb3VyY2VzKQogICAgbG9jYWwgcmVwbHkgPSBzb3VyY2VzLlJlcGx5IG9yIHt9CiAgICBsb2NhbCBsb2cgPSB7IE91dGNvbWUgPSBtZXRhLmludm9jYXRpb24ub3V0Y29tZSwgRHVyYXRpb25NcyA9IG1ldGEuaW52b2NhdGlvbi5kdXJhdGlvbk1zLAogICAgICAgIE9wZXJhdGlvbiA9IHsgVXVpZCA9IHJlcXVlc3RTb3VyY2VzLlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUgfSB9CiAgICBpZiBtZXRhLmludm9jYXRpb24ub3V0Y29tZSB+PSAiU3VjY2VlZGVkIiB0aGVuIHJldHVybiB7IExvZyA9IGxvZyB9IGVuZAogICAgcmV0dXJuIHsgVXVpZCA9IHJlcGx5LlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUsIExvZyA9IGxvZyB9CmVuZAo="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSources"
-         }
-        }
-       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -4460,69 +1792,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Reply"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
+           "language": "en",
+           "text": "Reply"
           }
          ],
          "description": [
@@ -4592,12 +1865,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4622,29 +1889,6 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSinks"
-         }
-        }
-       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -4666,69 +1910,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -4794,12 +1979,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4822,69 +2001,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "State"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "State"
           }
          ],
          "description": [
@@ -4950,12 +2070,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -4978,69 +2092,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Log"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Log"
           }
          ],
          "description": [
@@ -5106,12 +2161,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -5138,180 +2187,10 @@
      ]
     },
     {
-     "embeddedDataSpecifications": [
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Stoppering"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "class"
-         }
-        ],
-        "value": "DmpMappingConfiguration"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "DefaultPollingInterval"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "DefaultPollingInterval"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Transformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Transformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "Sinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "Sinks"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseTransformation"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSources"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "ResponseSinks"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
-      }
-     ],
      "displayName": [
       {
        "language": "en",
-       "text": "Mapping configuration"
+       "text": "Stoppering"
       }
      ],
      "description": [
@@ -5333,12 +2212,6 @@
      "value": [
       {
        "idShort": "DefaultPollingInterval",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Default polling interval"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -5360,12 +2233,6 @@
       },
       {
        "idShort": "Transformation",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Transformation"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -5386,36 +2253,7 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IFN0b3BwZXJpbmcgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSources"
-         }
-        }
-       ],
        "idShort": "Sources",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sources"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -5445,75 +2283,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Source"
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -5535,12 +2308,6 @@
          "value": [
           {
            "idShort": "Source",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -5585,12 +2352,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -5615,36 +2376,7 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Sinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpSinks"
-         }
-        }
-       ],
        "idShort": "Sinks",
-       "displayName": [
-        {
-         "language": "en",
-         "text": "Sinks"
-        }
-       ],
        "description": [
         {
          "language": "en",
@@ -5674,75 +2406,10 @@
        },
        "value": [
         {
-         "embeddedDataSpecifications": [
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Stoppering"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
-          }
-         ],
          "displayName": [
           {
            "language": "en",
-           "text": "Sink"
+           "text": "Stoppering"
           }
          ],
          "description": [
@@ -5764,12 +2431,6 @@
          "value": [
           {
            "idShort": "Sink",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -5818,12 +2479,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -5869,29 +2524,6 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIGxvY2FsIHJlcGx5ID0gc291cmNlcy5SZXBseSByZXR1cm4geyBVdWlkID0gcmVwbHkuVXVpZCwgU3RhdGUgPSByZXBseS5TdGF0ZSwgT3V0Y29tZSA9IHJlcGx5Lk91dGNvbWUgfSBlbmQ="
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSources"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSources"
-         }
-        }
-       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -5913,69 +2545,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Reply"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSource"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Source"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Source"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SourceId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SourceId"
-           }
+           "language": "en",
+           "text": "Reply"
           }
          ],
          "description": [
@@ -6045,12 +2618,6 @@
           },
           {
            "idShort": "SourceId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Source ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -6075,29 +2642,6 @@
        ]
       },
       {
-       "embeddedDataSpecifications": [
-        {
-         "dataSpecification": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "ResponseSinks"
-           }
-          ]
-         },
-         "dataSpecificationContent": {
-          "modelType": "DataSpecificationIec61360",
-          "preferredName": [
-           {
-            "language": "en",
-            "text": "class"
-           }
-          ],
-          "value": "DmpResponseSinks"
-         }
-        }
-       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -6119,69 +2663,10 @@
        "typeValueListElement": "SubmodelElementCollection",
        "value": [
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Uuid"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Uuid"
           }
          ],
          "description": [
@@ -6247,12 +2732,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -6275,69 +2754,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "State"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "State"
           }
          ],
          "description": [
@@ -6403,12 +2823,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
@@ -6431,69 +2845,10 @@
          ]
         },
         {
-         "embeddedDataSpecifications": [
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Outcome"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "class"
-             }
-            ],
-            "value": "DmpResponseSink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "Sink"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Sink"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "SinkId"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "SinkId"
-           }
+           "language": "en",
+           "text": "Outcome"
           }
          ],
          "description": [
@@ -6559,12 +2914,6 @@
           },
           {
            "idShort": "SinkId",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Sink ID"
-            }
-           ],
            "description": [
             {
              "language": "en",
