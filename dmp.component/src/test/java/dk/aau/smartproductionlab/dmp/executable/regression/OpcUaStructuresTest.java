@@ -201,6 +201,22 @@ class OpcUaStructuresTest {
 	}
 
 	@Test
+	void aMethodCallWaitsItsOwnTimeoutNotTheClientsRequestTimeout() throws Exception {
+		camel.addRoutes(new RouteBuilder() {
+			@Override public void configure() {
+				// The session's requestTimeout (1 s) is shorter than the Method (2.5 s) and the call's timeout (5 s).
+				from("direct:call").to(url + "?node=RAW(ns=1;s=Machine)&method=RAW(ns=1;s=Slow)&requestTimeout=1000");
+			}
+		});
+		camel.start();
+		CallMethodResult result = camel.createProducerTemplate().requestBodyAndHeader("direct:call", new Variant[0],
+				dk.aau.smartproductionlab.dmp.opcua.component.DmpMiloMethodProducer.CALL_TIMEOUT_HEADER, 5_000L,
+				CallMethodResult.class);
+		assertTrue(result.getStatusCode().isGood(), result.getStatusCode().toString());
+		assertEquals("done", result.getOutputArguments()[0].getValue());
+	}
+
+	@Test
 	void luaReadsTheFieldsOfAnObservedStructure() throws Exception {
 		List<String> writes = new java.util.concurrent.CopyOnWriteArrayList<>();
 		HttpServer aas = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -445,6 +461,22 @@ class OpcUaStructuresTest {
 				}
 			});
 			machine.addComponent(scale);
+
+			UaMethodNode slow = UaMethodNode.builder(getNodeContext()).setNodeId(new NodeId(1, "Slow"))
+					.setBrowseName(new QualifiedName(1, "Slow")).setDisplayName(LocalizedText.english("Slow"))
+					.setExecutable(true).setUserExecutable(true).buildAndAdd();
+			Argument[] none = {};
+			Argument[] done = { new Argument("Done", NodeIds.String, -1, null, LocalizedText.english("done")) };
+			slow.setOutputArguments(done);
+			slow.setInvocationHandler(new AbstractMethodInvocationHandler(slow) {
+				@Override public Argument[] getInputArguments() { return none; }
+				@Override public Argument[] getOutputArguments() { return done; }
+				@Override protected Variant[] invoke(InvocationContext context, Variant[] input) throws UaException {
+					try { Thread.sleep(2_500); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+					return new Variant[] { new Variant("done") };
+				}
+			});
+			machine.addComponent(slow);
 		}
 
 		/** After startup: the server learns its own types, so it can encode and decode Recipes. */

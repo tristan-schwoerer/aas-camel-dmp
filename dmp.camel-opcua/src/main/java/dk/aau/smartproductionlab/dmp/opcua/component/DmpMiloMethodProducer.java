@@ -4,6 +4,7 @@ package dk.aau.smartproductionlab.dmp.opcua.component;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -16,8 +17,10 @@ import org.eclipse.milo.opcua.sdk.client.OpcUaClient;
 import org.eclipse.milo.opcua.stack.core.UaException;
 import org.eclipse.milo.opcua.stack.core.types.builtin.NodeId;
 import org.eclipse.milo.opcua.stack.core.types.builtin.Variant;
+import org.eclipse.milo.opcua.stack.core.types.builtin.unsigned.Unsigned;
 import org.eclipse.milo.opcua.stack.core.types.structured.CallMethodResult;
 import org.eclipse.milo.opcua.stack.core.types.structured.CallMethodRequest;
+import org.eclipse.milo.opcua.stack.core.types.structured.CallRequest;
 import org.eclipse.milo.opcua.stack.core.types.structured.CallResponse;
 
 /**
@@ -64,6 +67,16 @@ public final class DmpMiloMethodProducer extends DefaultProducer {
 		return resolved;
 	}
 
+	/**
+	 * The Call as {@link OpcUaClient#callAsync} makes it, but with {@code timeoutMs} as its timeout hint: the client's
+	 * requestTimeout (30 s, shared by every endpoint of the session) would otherwise end a longer call first.
+	 */
+	private static CompletableFuture<CallResponse> call(OpcUaClient client, CallMethodRequest request, long timeoutMs) {
+		return client.getSessionAsync().thenCompose(session -> client.sendRequestAsync(new CallRequest(
+				client.newRequestHeader(session.getAuthenticationToken(), Unsigned.uint(timeoutMs)), new CallMethodRequest[] { request })))
+				.thenApply(CallResponse.class::cast);
+	}
+
 	@Override
 	public void process(Exchange exchange) {
 		Variant[] pending = arguments(exchange.getMessage().getBody());
@@ -76,7 +89,7 @@ public final class DmpMiloMethodProducer extends DefaultProducer {
 			NodeId[] target = target(client);
 			var object = target[0];
 			var method = target[1];
-			CallResponse response = client.callAsync(List.of(new CallMethodRequest(object, method, arguments)))
+			CallResponse response = call(client, new CallMethodRequest(object, method, arguments), timeoutMs)
 					.get(timeoutMs, TimeUnit.MILLISECONDS);
 			if (response == null || response.getResults() == null || response.getResults().length != 1)
 				throw new ConnectorInvocationException(ConnectorInvocationException.Category.REMOTE,
