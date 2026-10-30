@@ -140,6 +140,19 @@ class AasCollectionEventTest extends CamelTestSupport {
 		assertEquals(before, reads.get(), "the submodel carries the empty value; nothing is read");
 	}
 
+	@Test
+	void aCollectionWhoseValueBaSyxWithheldIsReadNotEmpty() throws Exception {
+		MockEndpoint values = getMockEndpoint("mock:status");
+		values.reset();
+		values.expectedMessageCount(1);
+		int before = reads.get();
+		hub().publish(elementEvent("Status", "{\"modelType\":\"SubmodelElementCollection\",\"idShort\":\"Status\","
+				+ "\"qualifiers\":[{\"type\":\"emptyValueUpdateEvent\",\"valueType\":\"xs:boolean\",\"value\":\"true\"}]}"), Map.of());
+		values.assertIsSatisfied(5000);
+		assertEquals(Map.of("Mode", "AUTO", "Speed", 2.5), values.getExchanges().get(0).getMessage().getBody(Map.class));
+		assertEquals(before + 1, reads.get());
+	}
+
 	private static String deleted(String path) {
 		return "{\"type\":\"SME_DELETED\",\"id\":\"" + SUBMODEL + "\",\"smElementPath\":\"" + path + "\"}";
 	}

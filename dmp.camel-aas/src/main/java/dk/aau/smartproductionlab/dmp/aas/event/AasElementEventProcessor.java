@@ -183,7 +183,7 @@ public final class AasElementEventProcessor implements Processor {
 			if (!expectedType.equals(text(property, "modelType"))) {
 				return null;
 			}
-			if (!"Property".equals(expectedType) || property.has("value")) {
+			if (hasValue(property)) {
 				return property;
 			}
 		}
@@ -255,11 +255,26 @@ public final class AasElementEventProcessor implements Processor {
 
 	/**
 	 * Whether {@code element} has a value to deliver. An empty collection or list has: aas4j leaves out an empty
-	 * {@code value}, and {@link AasValues#elementValue} reads it as {@code {}} or {@code []}.
+	 * {@code value}, and {@link AasValues#elementValue} reads it as {@code {}} or {@code []}. One whose value BaSyx
+	 * withheld from the event (qualifier {@value #EMPTY_VALUE_UPDATE}) has not; it is read.
 	 */
 	private static boolean hasValue(JsonObject element) {
+		if (element.has("value")) return true;
 		String modelType = text(element, "modelType");
-		return element.has("value") || "SubmodelElementCollection".equals(modelType) || "SubmodelElementList".equals(modelType);
+		return ("SubmodelElementCollection".equals(modelType) || "SubmodelElementList".equals(modelType)) && !withheld(element);
+	}
+
+	/** BaSyx's MQTT events leave out the value of an element with this qualifier set to true. */
+	static final String EMPTY_VALUE_UPDATE = "emptyValueUpdateEvent";
+
+	private static boolean withheld(JsonObject element) {
+		JsonElement qualifiers = element.get("qualifiers");
+		if (qualifiers == null || !qualifiers.isJsonArray()) return false;
+		for (JsonElement qualifier : qualifiers.getAsJsonArray())
+			if (qualifier.isJsonObject() && EMPTY_VALUE_UPDATE.equals(text(qualifier.getAsJsonObject(), "type"))
+					&& "true".equalsIgnoreCase(text(qualifier.getAsJsonObject(), "value")))
+				return true;
+		return false;
 	}
 
 	private static JsonObject eventObject(Object body) {
