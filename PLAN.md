@@ -36,7 +36,7 @@ and the P3/P5 work logs) is in the git history.
 - The project is AAS-Camel-DMP: Java packages and Maven groupId
   `dk.aau.smartproductionlab` (2026-10-22); the `dmp.*` modules keep their
   names.
-- Build: Java 21, Camel 4.22, AAS4J 2.0.1, Milo 1.1.6, PLC4X 0.13.1,
+- Build: Java 25, Camel 4.22, AAS4J 2.0.1, Milo 1.1.6, PLC4X 0.13.1,
   LuaJ 3.0.1, Kafka clients 4.3.1, influxdb-client-java 8.0.0, Netty 4.1.136
   (one line, through the Netty BOM), MQTT 5 only, JUnit 5 only. Only
   `dmp.component` ships a logging backend.
@@ -669,8 +669,8 @@ the stations needs the InfluxDB, since the skill mappings write their log
 | Deployed-stack cutover (D1) | Not needed; the Python manager is gone. |
 | ARSO delegation defaults (D3) | Out of scope (side project). |
 | AID checked against Modbus, MQTT or HTTP devices | No (2026-10-18). These devices do not describe themselves; only OPC UA values are checked against the server's DataTypes (SPEC §5.2). Unsupported schema terms are rejected instead. |
-| `linux/arm/v7` image | Dropped (2026-10-18); the image is built for `linux/amd64` and `linux/arm64`. Inherited from the DataBridge build; `eclipse-temurin:21-jre` has no arm/v7 variant, the DMP runs on x86-64 servers, and current Raspberry Pis run arm64. |
-| Java 25 (E4) | Stay on Java 21 for now (2026-10-18). The full suite, integration tests included, passes compiled for and run on Temurin 25.0.4; the base image exists for amd64 and arm64. On 25, Netty 4.1 (Milo) and the Kafka clients log `sun.misc.Unsafe` deprecation warnings; later JDKs plan to deny that access. Camel 4.22 supports 25; PLC4X 0.13.1 is tested to 24; Milo and LuaJ make no statement. |
+| `linux/arm/v7` image | Dropped (2026-10-18); the image is built for `linux/amd64` and `linux/arm64`. Inherited from the DataBridge build; `eclipse-temurin:21-jre` and `25-jre` have no arm/v7 variant, the DMP runs on x86-64 servers, and current Raspberry Pis run arm64. |
+| Java 25 (E4) | Upgraded to Java 25 (2026-10-30), after the evaluation runs, for its LTS support; no code change. The full suite, integration tests included, passes compiled for and run on Temurin 25.0.4; the base images exist for amd64 and arm64. The DMP is not faster: the capacity tests' gain on 25 was the test fixtures' `com.sun.net.httpserver` (JDK-6968351, fixed in 23), and with `sun.net.httpserver.nodelay` Java 21 matches it. The image runs with compact object headers (JEP 519): with 1000 and 2000 MQTT mappings installed (2 CPUs, `-Xmx1g`) a mapping retains 132 KiB of heap instead of 145 KiB (−9%), install and update times unchanged. The same runs show install and removal growing quadratically with N (1000: 114 s and ~195 s, 2000: 443–471 s and ~820 s), open. On 25, Netty 4.1 (Milo) and the Kafka clients log `sun.misc.Unsafe` deprecation warnings; the access is still allowed by default up to JDK 27, later JDKs plan to deny it. Camel 4.22 and Kafka 4.3 support 25; PLC4X 0.13.1 is tested to 24; Milo and LuaJ make no statement. Not 27: no LTS, and Camel does not support it. |
 | LuaJ replacement (E1) | Stay on LuaJ and work around its defects in `LuaSandbox` (as `6167ad5` did for the shared string metatable). Cobalt promises no API stability; luajava runs native code that can crash the JVM. Revisit only if a defect cannot be worked around. |
 
 ## Accepted limitations

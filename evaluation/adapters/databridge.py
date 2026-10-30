@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from adapters.base import Adapter, Repository, Scenario, b64url, canary, REPOSITORY_INTERNAL
+from adapters.base import Adapter, Repository, Scenario, b64url, canary, java_runtime, REPOSITORY_INTERNAL
 
 IMAGE = "eclipsebasyx/databridge:1.0.0-milestone-08@sha256:206bc8a68ea73e06dac7d048c0bd9c4133697b7872790bf4b7bee44a10f1c16b"
 SOURCE_COMMIT = "f9ea5d8e4b0cce97d492656d0ff3c4a992856b07"
@@ -54,7 +54,7 @@ class DataBridgeAdapter(Adapter):
 
     def prepare(self, run) -> dict:
         self.run = run
-        return {"image": IMAGE, "sourceCommit": SOURCE_COMMIT, "heap": run.options["jvm_heap"],
+        return {"image": IMAGE, "runtime": java_runtime(IMAGE), "sourceCommit": SOURCE_COMMIT, "heap": run.options["jvm_heap"],
                 "adaptations": ["configured with its own files, written from the scenario (it reads no AIMC)",
                                 "the value member picked by a JSONata transformer, which also encodes it as a JSON "
                                 "string (its AAS sink quotes without escaping)",

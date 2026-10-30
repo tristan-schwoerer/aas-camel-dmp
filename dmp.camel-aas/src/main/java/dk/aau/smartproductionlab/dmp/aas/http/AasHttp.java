@@ -24,6 +24,8 @@ import org.apache.camel.CamelContext;
 public final class AasHttp {
 	public static final String REGISTRY_NAME = "dmpAasHttp";
 	public static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+	/** The largest response body a read takes (SPEC §5.3); a larger one fails the read before it fills the heap. */
+	public static final long MAX_READ_BYTES = 16L * 1024 * 1024;
 	private static final HttpClient CLIENT = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
 			.followRedirects(HttpClient.Redirect.NEVER).build();
 
@@ -60,7 +62,7 @@ public final class AasHttp {
 	/** A GET of JSON, without a thread of its own: the caller's timeout cancels the request. */
 	public String get(String url, Duration timeout) throws IOException {
 		CompletableFuture<HttpResponse<String>> response = CLIENT.sendAsync(request(url, timeout).GET().build(),
-				HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+				HttpResponse.BodyHandlers.limiting(HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8), MAX_READ_BYTES));
 		try {
 			return checked("AAS read", response.get(timeout.toMillis(), TimeUnit.MILLISECONDS));
 		} catch (TimeoutException timedOut) {

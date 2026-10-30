@@ -507,7 +507,9 @@ An element below a submodel is addressed by its idShortPath: collection
 members joined by `.`, list items by index (`Location.x`, `Items[0]`), sent
 percent-encoded as one path segment (`Items%5B0%5D`). Every data-plane request
 (read, write, value-feed enrichment) carries the repository authorization that
-discovery uses.
+discovery uses. A read (a poll or an enrichment) takes a response body of at
+most 16 MiB, as discovery does; a larger one fails the read, which delivers no
+value.
 
 A write is the element's ValueOnly form (AAS Part 2) with each Property value
 as its lexical text in a JSON string, at every depth, because BaSyx 2.0
@@ -1052,7 +1054,7 @@ id can read it; the status itself stays without names and messages.
 | ADR-003/004 | Lua input/output are tables keyed by SourceId/SinkId of decoded values; JSON encoding belongs to connectors. |
 | ADR-005 | Sandbox, CPU budget and JVM heap bound; no per-script memory cap. |
 | ADR-007 | Normalize at the protocol boundary; Lua is protocol-agnostic. |
-| ADR-009/026 | Camel 4.22, Java 21. |
+| ADR-009/026 | Camel 4.22, Java 25. |
 | ADR-011 | Lua comes only from AIMC Blobs. |
 | ADR-014 | Coarse/fine references via `valuePath`, symmetric on sources and sinks. |
 | ADR-017 | Mapping-scoped entity identities; raw SourceId/SinkId reach Lua. |

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 
-from adapters.base import REPOSITORY_INTERNAL, Adapter, Repository, Scenario
+from adapters.base import REPOSITORY_INTERNAL, Adapter, Repository, Scenario, java_runtime
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 INFLUX_TOKEN = "dmp-eval-token"  # testbed/docker-compose.yml, influxdb
@@ -50,7 +50,8 @@ class DmpAdapter(Adapter):
         self.image = image
         image_id = subprocess.run(["docker", "image", "inspect", "-f", "{{.Id}}", image], check=True,
                                   capture_output=True, text=True).stdout.strip()
-        return {"image": image, "imageId": image_id, "commit": commit, "dirty": dirty, "heap": run.options["jvm_heap"]}
+        return {"image": image, "imageId": image_id, "runtime": java_runtime(image), "commit": commit, "dirty": dirty,
+                "heap": run.options["jvm_heap"]}
 
     def variants(self, scenario: Scenario, config: dict) -> list[str | None]:
         if scenario.kind == "write":

@@ -1,7 +1,7 @@
 # AAS-Camel-DMP
 
 A data-mapping processor (DMP) for Asset Administration Shells, built on
-[Apache Camel](https://camel.apache.org/) 4 and Java 21. It is a fork of the
+[Apache Camel](https://camel.apache.org/) 4 and Java 25. It is a fork of the
 [Eclipse BaSyx DataBridge](https://github.com/eclipse-basyx/basyx-databridge).
 
 The DMP runs as **one Java process**. It has no configuration files: every

@@ -20,6 +20,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +77,16 @@ class Scenario:
                         entry["target"]["submodel"], entry["target"]["path"], json.loads(text), entry["sink"],
                         entry.get("influxdb"), entry.get("kind", "observe"),
                         entry.get("device"), entry.get("delegationPath"))
+
+
+def java_runtime(image: str) -> str | None:
+    """The JVM the image runs, as ``java -version`` names it (vendor and exact build); None if it cannot tell."""
+    try:
+        version = subprocess.run(["docker", "run", "--rm", "--entrypoint", "java", image, "-version"], check=True,
+                                 capture_output=True, text=True, timeout=60).stderr
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return next((line.strip() for line in version.splitlines() if "Runtime Environment" in line), None)
 
 
 def b64url(identifier: str) -> str:

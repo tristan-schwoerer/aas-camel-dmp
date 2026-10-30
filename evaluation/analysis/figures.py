@@ -23,7 +23,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter, NullLocator  # noqa: E402
+from matplotlib.ticker import FixedLocator, FuncFormatter, NullFormatter  # noqa: E402
 
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"
 
@@ -92,6 +92,24 @@ def payload_axis(ax, sizes: list[int], label_every: int = 4) -> None:
     ax.tick_params(axis="x", which="minor", length=2)
 
 
+def latency_axis(ax, values: list[float], max_labels: int = 8) -> None:
+    """A log2 latency axis evenly stepped like the payload axis: a labelled gridline at every power of 2, or, when
+    that would be more than ``max_labels``, at every power of 4 with light ones at the powers of 2 between."""
+    low, high = min(values) / 1.25, max(values) * 1.25
+    powers = [2.0 ** k for k in range(int(math.floor(math.log2(low))), int(math.ceil(math.log2(high))) + 1)]
+    powers = [p for p in powers if low <= p <= high]
+    step = 1 if len(powers) <= max_labels else 2
+    ax.set_yscale("log", base=2)
+    ax.yaxis.set_major_locator(FixedLocator([p for p in powers if round(math.log2(p)) % step == 0]))
+    ax.yaxis.set_minor_locator(FixedLocator([p for p in powers if round(math.log2(p)) % step != 0]))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+    ax.set_ylim(low, high)
+    ax.grid(True, which="major", axis="y", color=GRID, linewidth=0.6)
+    ax.grid(True, which="minor", axis="y", color=GRID, linewidth=0.35, linestyle=(0, (2, 2)))
+    ax.tick_params(axis="y", which="minor", length=2)
+
+
 def northbound(run: Path) -> Path:
     series: dict[tuple[str, str], list[dict]] = {}
     for system, point, phase in measured(run):
@@ -118,14 +136,8 @@ def northbound(run: Path) -> Path:
                     markersize=3.6, markerfacecolor="white" if reference else color, markeredgewidth=0.9, label=label,
                     zorder=3)
         ax.set_xscale("log", base=2)
-        ax.set_yscale("log")
         payload_axis(ax, sizes)
-        ticks = [t for t in (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000)
-                 if ax.get_ylim()[0] <= t <= ax.get_ylim()[1] * 1.05]
-        ax.yaxis.set_major_locator(FixedLocator(ticks))
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
-        ax.yaxis.set_minor_locator(NullLocator())
-        ax.grid(True, which="major", axis="y", color=GRID, linewidth=0.5)
+        latency_axis(ax, [r[q] for rows in series.values() for r in rows for q in ("p25", "p50", "p75")])
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)

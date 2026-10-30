@@ -124,7 +124,7 @@ can be re-run on any run folder; `analysis/figures.py` reads only the run's `sum
 
 ```
 results/<experiment>/<UTC time>/
-├── manifest.json          commit, harness digest, images, every system's image and commit, host, limits, config, plan
+├── manifest.json          commit, harness digest, images, every system's image, JVM and commit, host, limits, config, plan
 ├── testbed.resolved.yml   the Compose project as it ran
 ├── summary.json           every point's summary
 ├── <figure>.pdf .png .csv the figure and the data it plots
