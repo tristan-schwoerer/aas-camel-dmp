@@ -1,0 +1,130 @@
+{
+  "aasModelCommit": "c52fc00644eb5e139f0489a618994c45d3204f28",
+  "broker": "mqtt://mosquitto:1883/",
+  "qos": 1,
+  "scenarios": {
+    "aas-property": {
+      "topic": "dmp-eval/aas-property/device",
+      "aimc": "urn:dmp-eval:aas-property:submodel:AIMC",
+      "sink": "aas",
+      "target": {
+        "submodel": "urn:dmp-eval:aas-property:submodel:Target",
+        "path": "Value"
+      },
+      "sha256": "b84e3339c60784cf3ef380bfab311d3f6ce7f6596287b45bad67b583cd6caa54"
+    },
+    "influxdb-segment": {
+      "topic": "dmp-eval/influxdb-segment/device",
+      "aimc": "urn:dmp-eval:influxdb-segment:submodel:AIMC",
+      "sink": "influxdb2",
+      "target": {
+        "submodel": "urn:dmp-eval:influxdb-segment:submodel:Target",
+        "path": "Series.Segments.Live"
+      },
+      "influxdb": {
+        "origin": "http://influxdb:8086",
+        "org": "ap2030"
+      },
+      "sha256": "de16768f951e118e8c32b93c12dde4f6fc8462265b7ce75dabbed5979a7a6efb"
+    },
+    "write-mqtt": {
+      "kind": "write",
+      "topic": "dmp-eval/write-mqtt/setpoint",
+      "aimc": "urn:dmp-eval:write-mqtt:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "mqtt",
+        "topic": "dmp-eval/write-mqtt/setpoint"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:write-mqtt:submodel:Target",
+        "path": "Setpoint"
+      },
+      "sha256": "8dcb64624ac94cd488f85b59c4406724ff18e56ed3768ea6653b442f6b41c115"
+    },
+    "write-http": {
+      "kind": "write",
+      "topic": null,
+      "aimc": "urn:dmp-eval:write-http:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "http",
+        "url": "http://device-sim:8090/write-http/setpoint",
+        "method": "PUT"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:write-http:submodel:Target",
+        "path": "Setpoint"
+      },
+      "sha256": "54922b1dd4ec02ae4dd09dbd74db3835f352f99e5feec54f6854d907b862cfaa"
+    },
+    "write-opcua": {
+      "kind": "write",
+      "topic": null,
+      "aimc": "urn:dmp-eval:write-opcua:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "opcua",
+        "url": "opc.tcp://device-sim:4840/",
+        "node": "ns=2;s=Setpoint"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:write-opcua:submodel:Target",
+        "path": "Setpoint"
+      },
+      "sha256": "1cf2e5f5a49bc5d773e1841610d4bed26d0d28da9cece92343306a17c2801121"
+    },
+    "invoke-mqtt": {
+      "kind": "invoke",
+      "topic": "dmp-eval/invoke-mqtt/echo",
+      "aimc": "urn:dmp-eval:invoke-mqtt:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "mqtt",
+        "topic": "dmp-eval/invoke-mqtt/echo",
+        "responseTopic": "dmp-eval/invoke-mqtt/echo/reply"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:invoke-mqtt:submodel:Target",
+        "path": "Echo.operation"
+      },
+      "delegationPath": "/submodels/dXJuOmRtcC1ldmFsOmludm9rZS1tcXR0OnN1Ym1vZGVsOlRhcmdldA/submodel-elements/Echo.operation/invoke",
+      "sha256": "842e55d311f66a20e7a6747c6e79900c784687191fab6ceb5209028d0038849d"
+    },
+    "invoke-http": {
+      "kind": "invoke",
+      "topic": null,
+      "aimc": "urn:dmp-eval:invoke-http:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "http",
+        "url": "http://device-sim:8090/invoke-http/echo",
+        "method": "POST"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:invoke-http:submodel:Target",
+        "path": "Echo.operation"
+      },
+      "delegationPath": "/submodels/dXJuOmRtcC1ldmFsOmludm9rZS1odHRwOnN1Ym1vZGVsOlRhcmdldA/submodel-elements/Echo.operation/invoke",
+      "sha256": "954eb9c9e0d3eda19b15099e2b5ba65f6c2f7e0c16176e8bc3d4edf3ed31cbeb"
+    },
+    "invoke-opcua": {
+      "kind": "invoke",
+      "topic": null,
+      "aimc": "urn:dmp-eval:invoke-opcua:submodel:AIMC",
+      "sink": "device",
+      "device": {
+        "protocol": "opcua",
+        "url": "opc.tcp://device-sim:4840/",
+        "object": "ns=2;s=Device",
+        "method": "ns=2;s=Echo"
+      },
+      "target": {
+        "submodel": "urn:dmp-eval:invoke-opcua:submodel:Target",
+        "path": "Echo.operation"
+      },
+      "delegationPath": "/submodels/dXJuOmRtcC1ldmFsOmludm9rZS1vcGN1YTpzdWJtb2RlbDpUYXJnZXQ/submodel-elements/Echo.operation/invoke",
+      "sha256": "22cf946c80d02d0658718e4a68fdded7cc4b706ee90d2adec51f45c97c22912e"
+    }
+  }
+}

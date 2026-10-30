@@ -1,0 +1,19 @@
+# The evaluation harness (README.md). Not a package: run its modules from
+# this directory with `uv run python -m <module>`; uv.lock pins every dependency.
+[project]
+name = "dmp-evaluation"
+version = "0.1.0"
+description = "Repeatable experiments for the AAS-Camel-DMP evaluation (EVALUATION.md)"
+requires-python = ">=3.12,<3.13"
+# The runner, its figures and the measurement tools (the tools also run in the harness image).
+dependencies = [
+    "paho-mqtt>=2.1,<3",
+    "confluent-kafka>=2.6,<3",
+    "requests>=2.32,<3",
+    "pyyaml>=6,<7",
+    "asyncua>=1.1,<2",
+    "matplotlib>=3.9,<4",
+]
+
+[tool.uv]
+package = false

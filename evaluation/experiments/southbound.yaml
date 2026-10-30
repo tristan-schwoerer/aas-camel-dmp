@@ -1,0 +1,18 @@
+# AAS → device: a client writes an AAS Property (write-*) or invokes an AAS Operation (invoke-*); the DMP takes the
+# write from the repository's change events to the device (MQTT publish, HTTP PUT, OPC UA Write) or answers the
+# delegated call with the device's action (MQTT 5 request/reply, HTTP POST, OPC UA Call). native writes to or
+# calls the device itself, the baseline. Calls one at a time (closed loop). The run ends with figure
+# southbound-components and its data.
+#
+#   uv run python -m harness.run experiments/southbound.yaml
+experiment: southbound
+systems: [dmp, native]
+scenarios: [write-mqtt, write-http, write-opcua, invoke-mqtt, invoke-http, invoke-opcua]
+event_transports: [kafka, mqtt]  # writes through the DMP: BaSyx's events on Kafka, or on the MQTT broker
+invoke_via: [aas, dmp]           # calls through the DMP: via BaSyx, or the DMP's endpoint itself (BaSyx's share)
+payload_bytes: [256]
+schedule:
+  - {phase: warmup, rate: 10, seconds: 20}
+  - {phase: measure, rate: 10, seconds: 60}
+seed: 2027       # the order of the points
+cooldown_s: 30   # at most this long for the device to receive the last writes

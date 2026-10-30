@@ -1,0 +1,219 @@
+# The evaluation testbed (EVALUATION.md §3): one AAS environment on MongoDB,
+# Kafka for its events, one MQTT broker shared by every system, and the
+# systems under test behind profiles. Isolated from the lab stacks: own
+# project, own network, control ports on 127.0.0.1 only.
+#
+# The runner (harness/run.py) drives it; by hand:
+#   docker compose -p dmp-eval -f testbed/docker-compose.yml up -d --wait
+#
+# Every image is pinned by digest. The tag beside it is only for readers.
+# The measurement tools run in the harness image (../Dockerfile) on the
+# same network, so no measured message crosses a published port.
+#
+# Registries are left out: no system under test reads them.
+
+name: dmp-eval
+
+x-sut-limits: &sut-limits
+  # The same CPU and memory limit for every system under test (§3), on the same cores: a hybrid CPU
+  # (the i7-1360P this was built on: CPUs 0-7 are its performance cores, 8-15 its efficient ones)
+  # would otherwise put a system on fast cores in one run and slow ones in the next.
+  cpus: ${SUT_CPUS:-2}
+  cpuset: "${SUT_CPUSET:-0-3}"
+  mem_limit: ${SUT_MEMORY:-2g}
+  memswap_limit: ${SUT_MEMORY:-2g}
+
+x-infrastructure-cores: &infrastructure-cores
+  # The repository, its database, Kafka and the broker: cores of their own, apart from the system
+  # under test and from the measurement tools (TOOLS_CPUSET, used by the runner).
+  cpuset: "${INFRA_CPUSET:-4-7}"
+
+services:
+  mongo:
+    <<: *infrastructure-cores
+    image: mongo:5.0.10@sha256:ff4050d808f943c0835c0aa24cce07afd86193253713020ca399a2b6c7840a03
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: mongoAdmin
+      MONGO_INITDB_ROOT_PASSWORD: mongoPassword
+    healthcheck:
+      test: mongo --quiet --eval 'db.runCommand("ping").ok'
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [eval]
+
+  kafka:
+    <<: *infrastructure-cores
+    image: confluentinc/cp-kafka:7.9.1@sha256:632e5f09affa3fe2a044da044ec4b40542a7aea5c48ac6eb13d42bc78ec9c9b5
+    environment:
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      CLUSTER_ID: ZG1wLWV2YWwtdGVzdGJlZA  # base64url of 16 bytes, as KRaft requires
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # A submodel event carries the written value: 1 MiB payloads need more than the 1 MB default.
+      KAFKA_MESSAGE_MAX_BYTES: "10485760"
+      KAFKA_REPLICA_FETCH_MAX_BYTES: "10485760"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx1g"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/kafka/9092"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    networks: [eval]
+
+  # InfluxDB 2 for influxdb-segment's TimeSeries segment: only started when a scenario writes to it.
+  # Org, bucket and origin as aas-model's constants, so the scenario's LinkedSegment names it.
+  influxdb:
+    <<: *infrastructure-cores
+    profiles: [influxdb]
+    image: influxdb:2.7.12@sha256:b8d940ca9376f85118260f5b6bd236b8a00b1749c3350c5578d4cde8e27f31f2
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: dmp-eval-influx
+      DOCKER_INFLUXDB_INIT_ORG: ap2030
+      DOCKER_INFLUXDB_INIT_BUCKET: ap2030
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: dmp-eval-token
+    healthcheck:
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    networks: [eval]
+
+  aas-env:
+    <<: *infrastructure-cores
+    image: eclipsebasyx/aas-environment:2.0.0-SNAPSHOT@sha256:88fc71ccc6074c7d80f0b49ce83685eeb756bc9ee0829a8b9acc91b0f65a4bc5
+    environment:
+      - SERVER_PORT=8081
+      - BASYX_BACKEND=MongoDB
+      - BASYX_CORS_ALLOWED_ORIGINS=*
+      - BASYX_CORS_ALLOWED_METHODS=GET,POST,PATCH,DELETE,PUT,OPTIONS,HEAD
+      - BASYX_EXTERNALURL=http://aas-env:8081
+      - SPRING_DATA_MONGODB_HOST=mongo
+      - SPRING_DATA_MONGODB_DATABASE=aas-env
+      - SPRING_DATA_MONGODB_AUTHENTICATION_DATABASE=admin
+      - SPRING_DATA_MONGODB_USERNAME=mongoAdmin
+      - SPRING_DATA_MONGODB_PASSWORD=mongoPassword
+      # Change events on Kafka, or (southbound, the DMP's MQTT transport) on the shared broker instead.
+      - BASYX_FEATURE_KAFKA_ENABLED=${BASYX_KAFKA_ENABLED:-true}
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - SPRING_KAFKA_PRODUCER_PROPERTIES_MAX_REQUEST_SIZE=10485760
+      - BASYX_AASREPOSITORY_FEATURE_MQTT_ENABLED=false
+      - BASYX_SUBMODELREPOSITORY_FEATURE_MQTT_ENABLED=${BASYX_MQTT_ENABLED:-false}
+      - MQTT_HOSTNAME=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_CLIENTID=dmp-eval-aas-env
+      # BaSyx refuses to delegate an Operation to a private address unless it is allowlisted (invoke-*), as in the lab stack.
+      - BASYX_SUBMODELREPOSITORY_FEATURE_OPERATION_DELEGATION_SECURITY_ALLOWLIST_HOSTS=dmp
+      - BASYX_SUBMODELREPOSITORY_FEATURE_OPERATION_DELEGATION_SECURITY_ALLOWLIST_PORTS=8080
+    ports:
+      - "127.0.0.1:${EVAL_AAS_PORT:-28081}:8081"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      mosquitto:
+        condition: service_healthy
+    networks: [eval]
+
+  mosquitto:
+    <<: *infrastructure-cores
+    image: eclipse-mosquitto:2@sha256:a908c65cc8e67ec9d292ef27c2c0360dbaaee7eb1b935cdd194e67697f15dea1
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -p 1883 -t dmp-eval/probe -m ok || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [eval]
+
+  # ------------------------------------------------------------ systems under test
+  dmp:
+    profiles: [dmp]
+    image: ${DMP_IMAGE:-dmp:eval}
+    pull_policy: never
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    <<: *sut-limits
+    environment:
+      - DMP_MANAGED_AAS_REPOSITORY_URI=http://aas-env:8081
+      # Repository events from Kafka, or (southbound) from BaSyx's MQTT feature on the shared broker.
+      - DMP_MANAGED_EVENT_TRANSPORT=${DMP_EVENT_TRANSPORT:-kafka}
+      - DMP_MANAGED_KAFKA_BROKERS=kafka:9092
+      - DMP_MANAGED_CONTROL_TOPIC=submodel-events
+      - DMP_MANAGED_CONTROL_GROUP_ID=dmp-eval
+      - DMP_MANAGED_MQTT_BROKER_URI=tcp://mosquitto:1883
+      - DMP_MANAGED_MQTT_CLIENT_ID=dmp-eval
+      # TimeSeries sinks (influxdb-segment); unset otherwise.
+      - DMP_INFLUX_URL=${DMP_INFLUX_URL:-}
+      - DMP_INFLUX_ORG=${DMP_INFLUX_ORG:-}
+      - DMP_INFLUX_TOKEN=${DMP_INFLUX_TOKEN:-}
+      - JAVA_OPTS=-Xmx${JVM_HEAP:-1g}
+    ports:
+      - "127.0.0.1:${EVAL_DMP_PORT:-28086}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      kafka:
+        condition: service_healthy
+      aas-env:
+        condition: service_started
+    networks: [eval]
+
+  # Eclipse BaSyx DataBridge, the system the DMP replaces: its last image (the project is
+  # archived), configured with its own files (adapters/databridge.py). Per-message logging is
+  # turned down to warnings, as no other system logs every message.
+  databridge:
+    profiles: [databridge]
+    image: eclipsebasyx/databridge:1.0.0-milestone-08@sha256:206bc8a68ea73e06dac7d048c0bd9c4133697b7872790bf4b7bee44a10f1c16b
+    <<: *sut-limits
+    environment:
+      - JAVA_TOOL_OPTIONS=-Xmx${JVM_HEAP:-1g} -Dorg.slf4j.simpleLogger.log.route1=warn -Dorg.slf4j.simpleLogger.log.org.eclipse.digitaltwin.basyx.databridge.aas.AASEndpoint=warn
+    volumes:
+      - ${EVAL_DATABRIDGE_CONFIG:-./.databridge}:/usr/share/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8085/health || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      aas-env:
+        condition: service_started
+    networks: [eval]
+
+  # nodered-dmp's runtime: the flow its generator emits is deployed here (adapters/nodered_dmp.py).
+  nodered:
+    profiles: [nodered-dmp]
+    image: nodered/node-red:5.0.8@sha256:b5adb6c9dd29ab80c852d82bc87daed84e729dcff9b00ca1bf958e6de470f2c1
+    <<: *sut-limits
+    ports:
+      - "127.0.0.1:${EVAL_NODERED_PORT:-28880}:1880"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      aas-env:
+        condition: service_started
+    networks: [eval]
+
+networks:
+  eval:
+    name: dmp-eval

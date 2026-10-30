@@ -8,3 +8,5 @@
 .vscode
 .pytest_cache
 *.md
+evaluation
+fixtures

@@ -1,0 +1,925 @@
+{
+  "assetAdministrationShells": [
+    {
+      "assetInformation": {
+        "assetKind": "Instance",
+        "globalAssetId": "urn:dmp-eval:write-opcua:asset"
+      },
+      "id": "urn:dmp-eval:write-opcua:aas",
+      "idShort": "eval_write_opcua",
+      "modelType": "AssetAdministrationShell",
+      "submodels": [
+        {
+          "keys": [
+            {
+              "type": "Submodel",
+              "value": "urn:dmp-eval:write-opcua:submodel:AID"
+            }
+          ],
+          "type": "ModelReference"
+        },
+        {
+          "keys": [
+            {
+              "type": "Submodel",
+              "value": "urn:dmp-eval:write-opcua:submodel:AIMC"
+            }
+          ],
+          "type": "ModelReference"
+        },
+        {
+          "keys": [
+            {
+              "type": "Submodel",
+              "value": "urn:dmp-eval:write-opcua:submodel:Target"
+            }
+          ],
+          "type": "ModelReference"
+        }
+      ]
+    }
+  ],
+  "submodels": [
+    {
+      "description": [
+        {
+          "language": "en",
+          "text": "Definition of the Submodel Asset Interfaces Description identified by its semanticId."
+        }
+      ],
+      "id": "urn:dmp-eval:write-opcua:submodel:AID",
+      "idShort": "AID",
+      "modelType": "Submodel",
+      "semanticId": {
+        "keys": [
+          {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/2/Submodel"
+          }
+        ],
+        "type": "ExternalReference"
+      },
+      "submodelElements": [
+        {
+          "description": [
+            {
+              "language": "en",
+              "text": "Indicates the entry point for a particular asset interface"
+            }
+          ],
+          "idShort": "interface_opcua",
+          "modelType": "SubmodelElementCollection",
+          "semanticId": {
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/Interface"
+              }
+            ],
+            "type": "ExternalReference"
+          },
+          "supplementalSemanticIds": [
+            {
+              "keys": [
+                {
+                  "type": "GlobalReference",
+                  "value": "http://opcfoundation.org/UA/WoT-Binding/"
+                }
+              ],
+              "type": "ExternalReference"
+            },
+            {
+              "keys": [
+                {
+                  "type": "GlobalReference",
+                  "value": "https://www.w3.org/2019/wot/td"
+                }
+              ],
+              "type": "ExternalReference"
+            }
+          ],
+          "value": [
+            {
+              "description": [
+                {
+                  "language": "en",
+                  "text": "Provides a human-readable title to give a human-readable context of the interface."
+                }
+              ],
+              "idShort": "title",
+              "modelType": "Property",
+              "semanticId": {
+                "keys": [
+                  {
+                    "type": "GlobalReference",
+                    "value": "https://www.w3.org/2019/wot/td#title"
+                  }
+                ],
+                "type": "ExternalReference"
+              },
+              "value": "iface",
+              "valueType": "xs:string"
+            },
+            {
+              "description": [
+                {
+                  "language": "en",
+                  "text": "Provides the metadata of the asset\u2019s endpoint (base, content type that is used for interaction, etc)"
+                }
+              ],
+              "idShort": "EndpointMetadata",
+              "modelType": "SubmodelElementCollection",
+              "semanticId": {
+                "keys": [
+                  {
+                    "type": "GlobalReference",
+                    "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/EndpointMetadata"
+                  }
+                ],
+                "type": "ExternalReference"
+              },
+              "value": [
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Defines asset connection entry point. Each protocol specifies a base pattern. Please see Annex B.1 of the AID document for more details."
+                    }
+                  ],
+                  "idShort": "base",
+                  "modelType": "Property",
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/td#baseURI"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "value": "opc.tcp://device-sim:4840/",
+                  "valueType": "xs:string"
+                },
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Defines content type based on a media type (e.g., text/plain) and potential character decoding/encoding type (e.g., charset=utf-8) for the media type (see RFC2046) of the whole interface"
+                    }
+                  ],
+                  "idShort": "contentType",
+                  "modelType": "Property",
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/hypermedia#forContentType"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "value": "application/octet-stream",
+                  "valueType": "xs:string"
+                },
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Selects one or more of the security scheme(s) that can be applied at runtime from the collection of security schemes defines in securityDefinitions. "
+                    }
+                  ],
+                  "idShort": "security",
+                  "modelType": "SubmodelElementList",
+                  "orderRelevant": true,
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/td#hasSecurityConfiguration"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "semanticIdListElement": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "typeValueListElement": "ReferenceElement",
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "Defines the security scheme according to W3C:"
+                        }
+                      ],
+                      "modelType": "ReferenceElement",
+                      "semanticId": {
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
+                          }
+                        ],
+                        "type": "ExternalReference"
+                      },
+                      "value": {
+                        "keys": [
+                          {
+                            "type": "Submodel",
+                            "value": "urn:dmp-eval:write-opcua:submodel:AID"
+                          },
+                          {
+                            "type": "SubmodelElementCollection",
+                            "value": "interface_opcua"
+                          },
+                          {
+                            "type": "SubmodelElementCollection",
+                            "value": "EndpointMetadata"
+                          },
+                          {
+                            "type": "SubmodelElementCollection",
+                            "value": "securityDefinitions"
+                          },
+                          {
+                            "type": "SubmodelElementCollection",
+                            "value": "nosec_sc"
+                          }
+                        ],
+                        "type": "ModelReference"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Defines the security scheme according to W3C:"
+                    }
+                  ],
+                  "idShort": "securityDefinitions",
+                  "modelType": "SubmodelElementCollection",
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/td#definesSecurityScheme"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "No security scheme definition"
+                        }
+                      ],
+                      "idShort": "nosec_sc",
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://www.w3.org/2019/wot/security#NoSecurityScheme"
+                          }
+                        ],
+                        "type": "ExternalReference"
+                      },
+                      "value": [
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Defines the security mechanism that used during access. Supported modes one of nosec, basic, digest, bearer, psk, oauth2, apikey, combo, auto, uav_channelsec and uav_authentication_"
+                            }
+                          ],
+                          "idShort": "scheme",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://www.w3.org/2019/wot/security#SecurityScheme"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": "nosec",
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "description": [
+                {
+                  "language": "en",
+                  "text": "Provides the metadata of the actually interfaces such as which datapoints and functions are provided by the properties, actions, and events interaction abstraction. "
+                }
+              ],
+              "idShort": "InteractionMetadata",
+              "modelType": "SubmodelElementCollection",
+              "semanticId": {
+                "keys": [
+                  {
+                    "type": "GlobalReference",
+                    "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/InteractionMetadata"
+                  }
+                ],
+                "type": "ExternalReference"
+              },
+              "supplementalSemanticIds": [
+                {
+                  "keys": [
+                    {
+                      "type": "GlobalReference",
+                      "value": "https://www.w3.org/2019/wot/td#InteractionAffordance"
+                    }
+                  ],
+                  "type": "ExternalReference"
+                }
+              ],
+              "value": [
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "Collection of asset\u2019s datapoint definitions as property SMC "
+                    }
+                  ],
+                  "idShort": "properties",
+                  "modelType": "SubmodelElementCollection",
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://www.w3.org/2019/wot/td#PropertyAffordance"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "Defines an interaction property that covers usually a datapoint definition that can be read or subscribed to.  "
+                        }
+                      ],
+                      "idShort": "Setpoint",
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/PropertyDefinition"
+                          }
+                        ],
+                        "type": "ExternalReference"
+                      },
+                      "supplementalSemanticIds": [
+                        {
+                          "keys": [
+                            {
+                              "type": "GlobalReference",
+                              "value": "https://www.w3.org/2019/wot/td#name"
+                            }
+                          ],
+                          "type": "ExternalReference"
+                        }
+                      ],
+                      "value": [
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Optional element when the idShort of {property_name} cannot be used to reflect the desired property name due to the idShort restrictions (e.g., payload message uses \u201ctemperature-value\u201d as key term)."
+                            }
+                          ],
+                          "idShort": "key",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesDescription/1/0/key"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "supplementalSemanticIds": [
+                            {
+                              "keys": [
+                                {
+                                  "type": "GlobalReference",
+                                  "value": "https://www.w3.org/2019/wot/td#name"
+                                }
+                              ],
+                              "type": "ExternalReference"
+                            }
+                          ],
+                          "value": "Setpoint",
+                          "valueType": "xs:string"
+                        },
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Indicates the abstract data type (one of object, array, string, number, integer, boolean, or null) of the described datapoint"
+                            }
+                          ],
+                          "idShort": "type",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": "string",
+                          "valueType": "xs:string"
+                        },
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Provides a human-readable title to give a human-readable context of the interface."
+                            }
+                          ],
+                          "idShort": "title",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://www.w3.org/2019/wot/td#title"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": "Setpoint",
+                          "valueType": "xs:string"
+                        },
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "Contains information about datapoint resource location. "
+                            }
+                          ],
+                          "idShort": "forms",
+                          "modelType": "SubmodelElementCollection",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://www.w3.org/2019/wot/td#hasForm"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": [
+                            {
+                              "description": [
+                                {
+                                  "language": "en",
+                                  "text": "Target IRI relative path or full IRI of asset\u2019s datapoint. The relative endpoint definition in href is always relative to base defined in EndpointMetadata"
+                                }
+                              ],
+                              "idShort": "href",
+                              "modelType": "Property",
+                              "semanticId": {
+                                "keys": [
+                                  {
+                                    "type": "GlobalReference",
+                                    "value": "https://www.w3.org/2019/wot/hypermedia#hasTarget"
+                                  }
+                                ],
+                                "type": "ExternalReference"
+                              },
+                              "value": "/?id=ns=2;s=Setpoint",
+                              "valueType": "xs:string"
+                            },
+                            {
+                              "description": [
+                                {
+                                  "language": "en",
+                                  "text": "Defines content type based on a media type (e.g., text/plain) and potential character decoding/encoding type (e.g., charset=utf-8) for the media type (see RFC2046) of the whole interface"
+                                }
+                              ],
+                              "idShort": "contentType",
+                              "modelType": "Property",
+                              "semanticId": {
+                                "keys": [
+                                  {
+                                    "type": "GlobalReference",
+                                    "value": "https://www.w3.org/2019/wot/hypermedia#forContentType"
+                                  }
+                                ],
+                                "type": "ExternalReference"
+                              },
+                              "value": "application/octet-stream",
+                              "valueType": "xs:string"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": [
+        {
+          "language": "en",
+          "text": "The AIMC 2.0 is used to describe how data is mapped from asset to AAS or from AAS to AAS."
+        }
+      ],
+      "displayName": [
+        {
+          "language": "en",
+          "text": "Asset interfaces mapping configuration"
+        }
+      ],
+      "id": "urn:dmp-eval:write-opcua:submodel:AIMC",
+      "idShort": "AIMC",
+      "modelType": "Submodel",
+      "semanticId": {
+        "keys": [
+          {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/Submodel"
+          }
+        ],
+        "type": "ExternalReference"
+      },
+      "submodelElements": [
+        {
+          "description": [
+            {
+              "language": "en",
+              "text": "List of MappingConfigurations that each map and transform data from their sources to their sinks."
+            }
+          ],
+          "displayName": [
+            {
+              "language": "en",
+              "text": "Mapping configurations"
+            }
+          ],
+          "idShort": "MappingConfigurations",
+          "modelType": "SubmodelElementList",
+          "orderRelevant": false,
+          "semanticId": {
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/1/0/MappingConfigurations"
+              }
+            ],
+            "type": "ExternalReference"
+          },
+          "semanticIdListElement": {
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+              }
+            ],
+            "type": "ExternalReference"
+          },
+          "typeValueListElement": "SubmodelElementCollection",
+          "value": [
+            {
+              "description": [
+                {
+                  "language": "en",
+                  "text": "A MappingConfiguration defines one logical unit of sources (inputs) and sinks (outputs) that are in relation to one another. The relation can be expressed via a transformation."
+                }
+              ],
+              "displayName": [
+                {
+                  "language": "en",
+                  "text": "Mapping configuration"
+                }
+              ],
+              "modelType": "SubmodelElementCollection",
+              "semanticId": {
+                "keys": [
+                  {
+                    "type": "GlobalReference",
+                    "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+                  }
+                ],
+                "type": "ExternalReference"
+              },
+              "value": [
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "This list includes all data sources that are used in this MappingConfiguration."
+                    }
+                  ],
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Sources"
+                    }
+                  ],
+                  "idShort": "Sources",
+                  "modelType": "SubmodelElementList",
+                  "orderRelevant": false,
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sources"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "semanticIdListElement": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "A data source is defined by a Source reference, PollingInterval and SourceId."
+                        }
+                      ],
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Source"
+                        }
+                      ],
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+                          }
+                        ],
+                        "type": "ExternalReference"
+                      },
+                      "value": [
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This holds a reference to the respective SubmodelElement used as data source. A data source can be any SubmodelElement including those defined in the InteractionMetadata of AID Submodels for fetching live-data from assets."
+                            }
+                          ],
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Source"
+                            }
+                          ],
+                          "idShort": "Source",
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/Source"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": {
+                            "keys": [
+                              {
+                                "type": "Submodel",
+                                "value": "urn:dmp-eval:write-opcua:submodel:Target"
+                              },
+                              {
+                                "type": "Property",
+                                "value": "Setpoint"
+                              }
+                            ],
+                            "type": "ModelReference"
+                          }
+                        },
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data access in the Lua transformation or establishes a relationship to a corresponding sink when no transformation is given. It must only be unique with respect to the Sources-list of the parent MappingConfiguration and not globally."
+                            }
+                          ],
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Source ID"
+                            }
+                          ],
+                          "idShort": "SourceId",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source/SourceId"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": "Setpoint",
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "description": [
+                    {
+                      "language": "en",
+                      "text": "This list includes all data sinks that are used in this MappingConfiguration."
+                    }
+                  ],
+                  "displayName": [
+                    {
+                      "language": "en",
+                      "text": "Sinks"
+                    }
+                  ],
+                  "idShort": "Sinks",
+                  "modelType": "SubmodelElementList",
+                  "orderRelevant": true,
+                  "semanticId": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sinks"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "semanticIdListElement": {
+                    "keys": [
+                      {
+                        "type": "GlobalReference",
+                        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+                      }
+                    ],
+                    "type": "ExternalReference"
+                  },
+                  "typeValueListElement": "SubmodelElementCollection",
+                  "value": [
+                    {
+                      "description": [
+                        {
+                          "language": "en",
+                          "text": "A data sink is defined by a Sink reference and SinkId."
+                        }
+                      ],
+                      "displayName": [
+                        {
+                          "language": "en",
+                          "text": "Sink"
+                        }
+                      ],
+                      "modelType": "SubmodelElementCollection",
+                      "semanticId": {
+                        "keys": [
+                          {
+                            "type": "GlobalReference",
+                            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+                          }
+                        ],
+                        "type": "ExternalReference"
+                      },
+                      "value": [
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This holds a reference to the respective SubmodelElement used as data sink for live-data."
+                            }
+                          ],
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Sink"
+                            }
+                          ],
+                          "idShort": "Sink",
+                          "modelType": "ReferenceElement",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/Sink"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": {
+                            "keys": [
+                              {
+                                "type": "Submodel",
+                                "value": "urn:dmp-eval:write-opcua:submodel:AID"
+                              },
+                              {
+                                "type": "SubmodelElementCollection",
+                                "value": "interface_opcua"
+                              },
+                              {
+                                "type": "SubmodelElementCollection",
+                                "value": "InteractionMetadata"
+                              },
+                              {
+                                "type": "SubmodelElementCollection",
+                                "value": "properties"
+                              },
+                              {
+                                "type": "SubmodelElementCollection",
+                                "value": "Setpoint"
+                              }
+                            ],
+                            "type": "ModelReference"
+                          }
+                        },
+                        {
+                          "description": [
+                            {
+                              "language": "en",
+                              "text": "This is a unique and non-empty identifier that facilitates data writing in the Lua transformation or establishes a relationship to a corresponding source when no transformation is given. It must only be unique with respect to the Sinks-list of the containing MappingConfiguration and not globally."
+                            }
+                          ],
+                          "displayName": [
+                            {
+                              "language": "en",
+                              "text": "Sink ID"
+                            }
+                          ],
+                          "idShort": "SinkId",
+                          "modelType": "Property",
+                          "semanticId": {
+                            "keys": [
+                              {
+                                "type": "GlobalReference",
+                                "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink/SinkId"
+                              }
+                            ],
+                            "type": "ExternalReference"
+                          },
+                          "value": "Setpoint",
+                          "valueType": "xs:string"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "urn:dmp-eval:write-opcua:submodel:Target",
+      "idShort": "Target",
+      "modelType": "Submodel",
+      "submodelElements": [
+        {
+          "idShort": "Setpoint",
+          "modelType": "Property",
+          "valueType": "xs:string"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+# Device → sink against payload size: every system on aas-property, the value member of a JSON message into an AAS
+# string Property; the DMP also on influxdb-segment, the same value into an InfluxDB 2 TimeSeries segment. Measured is
+# O5 acked_ms from the capture: tSend until the sink's answer to the write reached the system (the PATCH
+# reference: its own round trip). The run ends with figure acked-vs-payload-influxdb-all and its data.
+#
+#   uv run python -m harness.run experiments/northbound.yaml
+experiment: northbound
+systems: [dmp, databridge, nodered-dmp, patch]
+scenarios: [aas-property, influxdb-segment]
+payload_bytes: [256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576, 2097152]
+max_payload_bytes: {influxdb-segment: 1048576}  # the largest string field InfluxDB 2.7 accepts
+schedule:
+  - {phase: warmup, rate: 10, seconds: 20}
+  - {phase: measure, rate: 10, seconds: 60}
+seed: 2027       # the order of the points
+cooldown_s: 60   # at most this long for the system to work off its backlog
+capture: true    # O5: tcpdump in the system's network namespace, tools/residence.py
