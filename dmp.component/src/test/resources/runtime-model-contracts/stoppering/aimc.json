@@ -65,6 +65,12 @@
   }
  ],
  "idShort": "AssetInterfacesMappingConfiguration",
+ "displayName": [
+  {
+   "language": "en",
+   "text": "Asset interfaces mapping configuration"
+  }
+ ],
  "description": [
   {
    "language": "en",
@@ -84,7 +90,36 @@
  },
  "submodelElements": [
   {
+   "embeddedDataSpecifications": [
+    {
+     "dataSpecification": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "MappingConfigurations"
+       }
+      ]
+     },
+     "dataSpecificationContent": {
+      "modelType": "DataSpecificationIec61360",
+      "preferredName": [
+       {
+        "language": "en",
+        "text": "class"
+       }
+      ],
+      "value": "DmpMappingConfigurations"
+     }
+    }
+   ],
    "idShort": "MappingConfigurations",
+   "displayName": [
+    {
+     "language": "en",
+     "text": "Mapping configurations"
+    }
+   ],
    "description": [
     {
      "language": "en",
@@ -219,69 +254,12 @@
         ],
         "value": "Sinks"
        }
-      },
+      }
+     ],
+     "displayName": [
       {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "cac5c765c7285cf2b364104c49d1055b"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "6b2725cc0de35986927f460d0617c8ba"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "a5e9d0e014425ed4b1e2555044998e3c"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
+       "language": "en",
+       "text": "Mapping configuration"
       }
      ],
      "description": [
@@ -291,9 +269,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -315,6 +308,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -335,7 +334,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpCiAgICBsb2NhbCBxdWV1ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlByb2Nlc3NRdWV1ZSBvciB7fQogICAgcmV0dXJuIHsKICAgICAgICBQYWNrTUxTdGF0ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlN0YXRlLAogICAgICAgIE9jY3VwYXRpb25TdGF0ZSA9ICgjcXVldWUgPT0gMCkgYW5kICJbXSIgb3IganNvbi5lbmNvZGUocXVldWUpLAogICAgfQplbmQK"
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -414,27 +442,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "a8f2d18d049857a292061f9d96c25cdc"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -449,27 +456,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "948f3facc1b5547fa67c0d9b8e0a9a87"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -479,9 +471,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -526,6 +533,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -550,7 +563,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -599,7 +641,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -645,6 +687,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -652,9 +700,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -687,6 +750,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -728,7 +797,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -774,6 +843,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -781,9 +856,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -816,6 +906,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -947,69 +1043,12 @@
         ],
         "value": "Sinks"
        }
-      },
+      }
+     ],
+     "displayName": [
       {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "98dc5d92bc2159baa48a8952235c0659"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "f4ecfa170e4750f6a558c3e1730fbdf9"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "9da3dde9b90b5b539053fbe87c5e0010"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
+       "language": "en",
+       "text": "Mapping configuration"
       }
      ],
      "description": [
@@ -1019,9 +1058,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1043,6 +1097,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1063,7 +1123,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpCiAgICBsb2NhbCBxdWV1ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlByb2Nlc3NRdWV1ZSBvciB7fQogICAgcmV0dXJuIHsgTGl2ZSA9IHsKICAgICAgICBQYWNrTUxTdGF0ZSA9IHNvdXJjZXMuU3RhdGlvblN0YXRlLlN0YXRlLAogICAgICAgIE9jY3VwYXRpb25TdGF0ZSA9ICgjcXVldWUgPT0gMCkgYW5kICJbXSIgb3IganNvbi5lbmNvZGUocXVldWUpLAogICAgfSB9CmVuZAo="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1142,27 +1231,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "113243fa51f05757b8838b4bb4544a0e"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -1177,27 +1245,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "ce1d7c52d6445be08717bd41ab257d89"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -1207,9 +1260,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1254,6 +1322,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1278,7 +1352,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1327,7 +1430,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -1373,6 +1476,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -1380,9 +1489,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1427,6 +1551,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1558,69 +1688,12 @@
         ],
         "value": "Sinks"
        }
-      },
+      }
+     ],
+     "displayName": [
       {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "60c25941e0155d82bbf4114a257bada8"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseTransformation"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "db8f7c8d72e05406b27ca0290506d502"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSources"
-       }
-      },
-      {
-       "dataSpecification": {
-        "type": "ExternalReference",
-        "keys": [
-         {
-          "type": "GlobalReference",
-          "value": "537e604aea195cf29605fd392d945d65"
-         }
-        ]
-       },
-       "dataSpecificationContent": {
-        "modelType": "DataSpecificationIec61360",
-        "preferredName": [
-         {
-          "language": "en",
-          "text": "attribute"
-         }
-        ],
-        "value": "ResponseSinks"
-       }
+       "language": "en",
+       "text": "Mapping configuration"
       }
      ],
      "description": [
@@ -1630,9 +1703,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1654,6 +1742,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1674,7 +1768,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IEhhbHQgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1753,27 +1876,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "f83b00d56af55057855accbb9369f768"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -1788,27 +1890,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "0674928799c75aee900e7b80f75930ae"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -1818,9 +1905,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1865,6 +1967,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -1889,7 +1997,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -1938,7 +2075,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -1984,6 +2121,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -1991,9 +2134,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2042,6 +2200,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2238,6 +2402,12 @@
        }
       }
      ],
+     "displayName": [
+      {
+       "language": "en",
+       "text": "Mapping configuration"
+      }
+     ],
      "description": [
       {
        "language": "en",
@@ -2245,9 +2415,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -2269,6 +2454,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -2289,7 +2480,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IE9jY3VweSA9IHsgVXVpZCA9IHNvdXJjZXMuVXVpZCB9IH0gZW5k"
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -2368,27 +2588,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "cb430deeab6b5240a6a6481e8e63382c"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -2403,27 +2602,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "f303a11c8409578da4e5fbdacccb3b95"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -2433,9 +2617,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2480,6 +2679,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2504,7 +2709,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -2553,7 +2787,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -2599,6 +2833,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -2606,9 +2846,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2657,6 +2912,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2702,6 +2963,29 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMsIHJlcXVlc3RTb3VyY2VzKQogICAgbG9jYWwgcmVwbHkgPSBzb3VyY2VzLlJlcGx5IG9yIHt9CiAgICBsb2NhbCBsb2cgPSB7IE91dGNvbWUgPSBtZXRhLmludm9jYXRpb24ub3V0Y29tZSwgRHVyYXRpb25NcyA9IG1ldGEuaW52b2NhdGlvbi5kdXJhdGlvbk1zLAogICAgICAgIE9wZXJhdGlvbiA9IHsgVXVpZCA9IHJlcXVlc3RTb3VyY2VzLlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUgfSB9CiAgICBpZiBtZXRhLmludm9jYXRpb24ub3V0Y29tZSB+PSAiU3VjY2VlZGVkIiB0aGVuIHJldHVybiB7IExvZyA9IGxvZyB9IGVuZAogICAgcmV0dXJuIHsgVXVpZCA9IHJlcGx5LlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUsIExvZyA9IGxvZyB9CmVuZAo="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSources"
+         }
+        }
+       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -2795,6 +3079,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
@@ -2846,6 +3139,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -2870,6 +3169,29 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSinks"
+         }
+        }
+       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -2963,6 +3285,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -3010,6 +3341,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3104,6 +3441,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -3151,6 +3497,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3245,6 +3597,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -3292,6 +3653,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3488,6 +3855,12 @@
        }
       }
      ],
+     "displayName": [
+      {
+       "language": "en",
+       "text": "Mapping configuration"
+      }
+     ],
      "description": [
       {
        "language": "en",
@@ -3495,9 +3868,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -3519,6 +3907,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -3539,7 +3933,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IFJlbGVhc2UgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -3618,27 +4041,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "6c2f180087865f40bafedadcbd7c978a"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -3653,27 +4055,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "c8b2c70d355d5823a9f47f7dd2e67c89"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -3683,9 +4070,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3730,6 +4132,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3754,7 +4162,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -3803,7 +4240,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -3849,6 +4286,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -3856,9 +4299,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3907,6 +4365,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -3952,6 +4416,29 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMsIHJlcXVlc3RTb3VyY2VzKQogICAgbG9jYWwgcmVwbHkgPSBzb3VyY2VzLlJlcGx5IG9yIHt9CiAgICBsb2NhbCBsb2cgPSB7IE91dGNvbWUgPSBtZXRhLmludm9jYXRpb24ub3V0Y29tZSwgRHVyYXRpb25NcyA9IG1ldGEuaW52b2NhdGlvbi5kdXJhdGlvbk1zLAogICAgICAgIE9wZXJhdGlvbiA9IHsgVXVpZCA9IHJlcXVlc3RTb3VyY2VzLlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUgfSB9CiAgICBpZiBtZXRhLmludm9jYXRpb24ub3V0Y29tZSB+PSAiU3VjY2VlZGVkIiB0aGVuIHJldHVybiB7IExvZyA9IGxvZyB9IGVuZAogICAgcmV0dXJuIHsgVXVpZCA9IHJlcGx5LlV1aWQsIFN0YXRlID0gcmVwbHkuU3RhdGUsIExvZyA9IGxvZyB9CmVuZAo="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSources"
+         }
+        }
+       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -4045,6 +4532,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
@@ -4096,6 +4592,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -4120,6 +4622,29 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSinks"
+         }
+        }
+       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -4213,6 +4738,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -4260,6 +4794,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -4354,6 +4894,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -4401,6 +4950,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -4495,6 +5050,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -4542,6 +5106,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -4738,6 +5308,12 @@
        }
       }
      ],
+     "displayName": [
+      {
+       "language": "en",
+       "text": "Mapping configuration"
+      }
+     ],
      "description": [
       {
        "language": "en",
@@ -4745,9 +5321,24 @@
       }
      ],
      "modelType": "SubmodelElementCollection",
+     "semanticId": {
+      "type": "ExternalReference",
+      "keys": [
+       {
+        "type": "GlobalReference",
+        "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration"
+       }
+      ]
+     },
      "value": [
       {
        "idShort": "DefaultPollingInterval",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Default polling interval"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -4769,6 +5360,12 @@
       },
       {
        "idShort": "Transformation",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Transformation"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -4789,7 +5386,36 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIHJldHVybiB7IFN0b3BwZXJpbmcgPSB7IFV1aWQgPSBzb3VyY2VzLlV1aWQgfSB9IGVuZA=="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSources"
+         }
+        }
+       ],
        "idShort": "Sources",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sources"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -4868,27 +5494,6 @@
             "keys": [
              {
               "type": "GlobalReference",
-              "value": "97441c5a77785a8aade9b09bd05d4f0e"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "PollingInterval"
-           }
-          },
-          {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
               "value": "SourceId"
              }
             ]
@@ -4903,27 +5508,12 @@
             ],
             "value": "SourceId"
            }
-          },
+          }
+         ],
+         "displayName": [
           {
-           "dataSpecification": {
-            "type": "ExternalReference",
-            "keys": [
-             {
-              "type": "GlobalReference",
-              "value": "a682f8619ebf5d479fee1cb64f885a8a"
-             }
-            ]
-           },
-           "dataSpecificationContent": {
-            "modelType": "DataSpecificationIec61360",
-            "preferredName": [
-             {
-              "language": "en",
-              "text": "attribute"
-             }
-            ],
-            "value": "Evaluation"
-           }
+           "language": "en",
+           "text": "Source"
           }
          ],
          "description": [
@@ -4933,9 +5523,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Source"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -4980,6 +5585,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5004,7 +5615,36 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "Sinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpSinks"
+         }
+        }
+       ],
        "idShort": "Sinks",
+       "displayName": [
+        {
+         "language": "en",
+         "text": "Sinks"
+        }
+       ],
        "description": [
         {
          "language": "en",
@@ -5053,7 +5693,7 @@
               "text": "class"
              }
             ],
-            "value": "SinksItem"
+            "value": "DmpSink"
            }
           },
           {
@@ -5099,6 +5739,12 @@
            }
           }
          ],
+         "displayName": [
+          {
+           "language": "en",
+           "text": "Sink"
+          }
+         ],
          "description": [
           {
            "language": "en",
@@ -5106,9 +5752,24 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://admin-shell.io/idta/AssetInterfacesMappingConfiguration/2/0/MappingConfiguration/Sink"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5157,6 +5818,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5202,6 +5869,29 @@
        "value": "ZnVuY3Rpb24gYWltY19tYWluKHNvdXJjZXMpIGxvY2FsIHJlcGx5ID0gc291cmNlcy5SZXBseSByZXR1cm4geyBVdWlkID0gcmVwbHkuVXVpZCwgU3RhdGUgPSByZXBseS5TdGF0ZSwgT3V0Y29tZSA9IHJlcGx5Lk91dGNvbWUgfSBlbmQ="
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSources"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSources"
+         }
+        }
+       ],
        "idShort": "ResponseSources",
        "description": [
         {
@@ -5295,6 +5985,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSource/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Source",
@@ -5346,6 +6045,12 @@
           },
           {
            "idShort": "SourceId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Source ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5370,6 +6075,29 @@
        ]
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "ResponseSinks"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "DmpResponseSinks"
+         }
+        }
+       ],
        "idShort": "ResponseSinks",
        "description": [
         {
@@ -5463,6 +6191,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -5510,6 +6247,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5604,6 +6347,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -5651,6 +6403,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",
@@ -5745,6 +6503,15 @@
           }
          ],
          "modelType": "SubmodelElementCollection",
+         "semanticId": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "https://smartproductionlab.aau.dk/aimc/ResponseSink/1/0"
+           }
+          ]
+         },
          "value": [
           {
            "idShort": "Sink",
@@ -5792,6 +6559,12 @@
           },
           {
            "idShort": "SinkId",
+           "displayName": [
+            {
+             "language": "en",
+             "text": "Sink ID"
+            }
+           ],
            "description": [
             {
              "language": "en",

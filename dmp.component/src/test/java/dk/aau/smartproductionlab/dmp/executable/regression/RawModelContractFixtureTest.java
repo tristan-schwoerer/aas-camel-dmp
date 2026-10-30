@@ -34,7 +34,7 @@ import com.google.gson.JsonParser;
 
 /**
  * The models aas-model authors, as the DMP reads and compiles them. The fixtures are generated
- * by {@code aas-model/scripts/dmp_contract_fixtures.py}: synthetic cases, one protocol or mapping
+ * by {@code fixtures/contracts.py} with aas-model: synthetic cases, one protocol or mapping
  * form each, and every resource of aas-model's catalog as registration builds it. A changed
  * outcome after regenerating is a change in aas-model or in the DMP, to be reviewed.
  */
@@ -46,14 +46,14 @@ public class RawModelContractFixtureTest {
 	public void theFixturesAreExactlyWhatAasModelGenerated() throws Exception {
 		JsonObject manifest = json("manifest.json");
 		assertEquals(2, manifest.get("formatVersion").getAsInt());
-		assertEquals("aas-model/scripts/dmp_contract_fixtures.py", manifest.get("generator").getAsString());
+		assertEquals("aas-camel-dmp/fixtures/contracts.py", manifest.get("generator").getAsString());
 		for (var entry : manifest.getAsJsonObject("resources").entrySet()) {
 			byte[] bytes = resource(entry.getKey());
 			JsonObject integrity = entry.getValue().getAsJsonObject();
 			assertEquals(integrity.get("byteLength").getAsInt(), bytes.length, entry.getKey());
 			assertEquals(integrity.get("sha256").getAsString(),
 					HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)),
-					entry.getKey() + " was edited by hand; regenerate it from aas-model");
+					entry.getKey() + " was edited by hand; regenerate it with fixtures/contracts.py");
 		}
 		for (JsonObject fixture : cases()) {
 			for (String role : List.of("aimc", "aid", "expected"))

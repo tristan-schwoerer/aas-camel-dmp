@@ -1,0 +1,14 @@
+# The AASs the DMP is tested and evaluated with, authored with aas-model (README.md). Not a package: run its
+# modules from this directory with `uv run python -m <module>`; uv.lock pins every dependency.
+[project]
+name = "dmp-fixtures"
+version = "0.1.0"
+description = "The DMP's model contract fixtures and the evaluation's scenarios, authored with aas-model"
+requires-python = ">=3.11"
+dependencies = ["aas-model"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+aas-model = { git = "https://github.com/tristan-schwoerer/aas-model", rev = "c52fc00644eb5e139f0489a618994c45d3204f28" }

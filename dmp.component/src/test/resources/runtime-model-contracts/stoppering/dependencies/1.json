@@ -1045,6 +1045,29 @@
        }
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "operation"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "SkillOperation"
+         }
+        }
+       ],
        "idShort": "operation",
        "description": [
         {
@@ -1064,16 +1087,10 @@
        },
        "qualifiers": [
         {
-         "value": "http://dmp:8080/operations/syntegonStopperingSystemAAS/Halt",
+         "value": "http://dmp:8080/submodels/aHR0cHM6Ly9zbWFydHByb2R1Y3Rpb25sYWIuYWF1LmRrL2Fhcy9zeW50ZWdvblN0b3BwZXJpbmdTeXN0ZW1BQVMvc3VibW9kZWxzL0NvbnRyb2xDb21wb25lbnRJbnN0YW5jZQ/submodel-elements/Skills.Halt.operation/invoke",
          "kind": "ConceptQualifier",
          "valueType": "xs:string",
          "type": "invocationDelegation"
-        },
-        {
-         "value": "true",
-         "kind": "ConceptQualifier",
-         "valueType": "xs:string",
-         "type": "Synchronous"
         }
        ],
        "inputVariables": [
@@ -1642,6 +1659,29 @@
        }
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "operation"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "SkillOperation"
+         }
+        }
+       ],
        "idShort": "operation",
        "description": [
         {
@@ -1661,16 +1701,10 @@
        },
        "qualifiers": [
         {
-         "value": "http://dmp:8080/operations/syntegonStopperingSystemAAS/Occupy",
+         "value": "http://dmp:8080/submodels/aHR0cHM6Ly9zbWFydHByb2R1Y3Rpb25sYWIuYWF1LmRrL2Fhcy9zeW50ZWdvblN0b3BwZXJpbmdTeXN0ZW1BQVMvc3VibW9kZWxzL0NvbnRyb2xDb21wb25lbnRJbnN0YW5jZQ/submodel-elements/Skills.Occupy.operation/invoke",
          "kind": "ConceptQualifier",
          "valueType": "xs:string",
          "type": "invocationDelegation"
-        },
-        {
-         "value": "true",
-         "kind": "ConceptQualifier",
-         "valueType": "xs:string",
-         "type": "Synchronous"
         }
        ],
        "outputVariables": [
@@ -2254,6 +2288,29 @@
        }
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "operation"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "SkillOperation"
+         }
+        }
+       ],
        "idShort": "operation",
        "description": [
         {
@@ -2273,16 +2330,10 @@
        },
        "qualifiers": [
         {
-         "value": "http://dmp:8080/operations/syntegonStopperingSystemAAS/Release",
+         "value": "http://dmp:8080/submodels/aHR0cHM6Ly9zbWFydHByb2R1Y3Rpb25sYWIuYWF1LmRrL2Fhcy9zeW50ZWdvblN0b3BwZXJpbmdTeXN0ZW1BQVMvc3VibW9kZWxzL0NvbnRyb2xDb21wb25lbnRJbnN0YW5jZQ/submodel-elements/Skills.Release.operation/invoke",
          "kind": "ConceptQualifier",
          "valueType": "xs:string",
          "type": "invocationDelegation"
-        },
-        {
-         "value": "true",
-         "kind": "ConceptQualifier",
-         "valueType": "xs:string",
-         "type": "Synchronous"
         }
        ],
        "outputVariables": [
@@ -2823,6 +2874,12 @@
       },
       {
        "idShort": "interface_reference",
+       "description": [
+        {
+         "language": "en",
+         "text": "Reference to the AID action that natively implements this skill."
+        }
+       ],
        "modelType": "ReferenceElement",
        "semanticId": {
         "type": "ExternalReference",
@@ -2860,6 +2917,29 @@
        }
       },
       {
+       "embeddedDataSpecifications": [
+        {
+         "dataSpecification": {
+          "type": "ExternalReference",
+          "keys": [
+           {
+            "type": "GlobalReference",
+            "value": "operation"
+           }
+          ]
+         },
+         "dataSpecificationContent": {
+          "modelType": "DataSpecificationIec61360",
+          "preferredName": [
+           {
+            "language": "en",
+            "text": "class"
+           }
+          ],
+          "value": "SkillOperation"
+         }
+        }
+       ],
        "idShort": "operation",
        "description": [
         {
@@ -2879,16 +2959,10 @@
        },
        "qualifiers": [
         {
-         "value": "http://dmp:8080/operations/syntegonStopperingSystemAAS/Stoppering",
+         "value": "http://dmp:8080/submodels/aHR0cHM6Ly9zbWFydHByb2R1Y3Rpb25sYWIuYWF1LmRrL2Fhcy9zeW50ZWdvblN0b3BwZXJpbmdTeXN0ZW1BQVMvc3VibW9kZWxzL0NvbnRyb2xDb21wb25lbnRJbnN0YW5jZQ/submodel-elements/Skills.Stoppering.operation/invoke",
          "kind": "ConceptQualifier",
          "valueType": "xs:string",
          "type": "invocationDelegation"
-        },
-        {
-         "value": "false",
-         "kind": "ConceptQualifier",
-         "valueType": "xs:string",
-         "type": "Asynchronous"
         }
        ],
        "outputVariables": [

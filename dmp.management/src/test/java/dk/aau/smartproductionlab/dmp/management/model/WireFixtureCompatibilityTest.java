@@ -1,6 +1,5 @@
 package dk.aau.smartproductionlab.dmp.management.model;
 
-import dk.aau.smartproductionlab.dmp.aas.model.Aas;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.IOException;
@@ -17,7 +16,7 @@ class WireFixtureCompatibilityTest {
 		Map<?,?> manifest=(Map<?,?>)JsonCodec.parseJson(resource("manifest.json"));
 		List<?> cases=(List<?>)manifest.get("cases");
 		assertFalse(cases.isEmpty());
-		// Every model aas-model generates projects (aas-model/scripts/dmp_contract_fixtures.py).
+		// Every model aas-model generates projects (fixtures/contracts.py).
 		for(Object raw:cases) {
 			Map<?,?> contract=(Map<?,?>)raw;
 			String aimc=(String)contract.get("aimc");
