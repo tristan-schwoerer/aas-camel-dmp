@@ -42,12 +42,16 @@ public final class DmpInfluxDb2Endpoint extends InfluxDb2Endpoint {
 	/** The segment's authored period; {@code null} where it has none. */
 	private final Instant start;
 	private final Instant stop;
+	/** Points go to the component's batching writer instead of waiting for InfluxDB (WriteMode Asynchronous). */
+	private final boolean asynchronous;
 
 	DmpInfluxDb2Endpoint(String uri, DmpInfluxDb2Component component, String measurement, String bucket,
-			String timePath, Map<String, String> tags, List<RecordColumn> columns, Instant start, Instant stop) {
+			String timePath, Map<String, String> tags, List<RecordColumn> columns, Instant start, Instant stop,
+			boolean asynchronous) {
 		super(uri, component);
 		this.start = start;
 		this.stop = stop;
+		this.asynchronous = asynchronous;
 		this.measurement = measurement;
 		this.timePath = timePath;
 		this.tags = Map.copyOf(tags);
@@ -135,7 +139,6 @@ public final class DmpInfluxDb2Endpoint extends InfluxDb2Endpoint {
 	}
 
 	/** Puts {@code value} at {@code path} in the row: {@code .} into a table, {@code [i]} into a list. */
-	@SuppressWarnings("unchecked")
 	private static void place(Map<String, Object> row, String path, Object value) {
 		List<Object> segments = new java.util.ArrayList<>();
 		java.util.regex.Matcher matcher = SEGMENT.matcher(path);
@@ -188,13 +191,23 @@ public final class DmpInfluxDb2Endpoint extends InfluxDb2Endpoint {
 		return point.time(time[0], WritePrecision.NS);
 	}
 
-	/** Writes the row as one point and waits for InfluxDB to acknowledge it. */
+	/**
+	 * Writes the row as one point and waits for InfluxDB to acknowledge it; a segment written asynchronously hands
+	 * the point to the batching writer instead. Either way a row that does not fit the Record raises before any write.
+	 */
 	void write(Object row) {
 		Point point = point(row, Instant.now());
 		DmpInfluxDb2Component component = getComponent();
 		InfluxSettings settings = component.settings();
 		InfluxDBClient client = component.getInfluxDBClient();
 		if (settings == null || client == null) throw notConfigured();
+		if (asynchronous) {
+			com.influxdb.client.WriteApi batches = component.batches();
+			if (batches == null) throw notConfigured();
+			batches.writePoint(getBucket(), settings.org(), point);
+			component.submitted();
+			return;
+		}
 		try {
 			client.getWriteApiBlocking().writePoint(getBucket(), settings.org(), point);
 		} catch (InfluxException failure) {

@@ -1239,7 +1239,10 @@ public final class ConnectorConfigurationFactory {
 				.withSchema(schemaForAidTarget(target,mapping,path,issues)).withValuePath(valuePath(target));
 	}
 
-	/** A TimeSeries LinkedSegment written one point per row on the configured InfluxDB. */
+	/**
+	 * A TimeSeries LinkedSegment written one point per row on the configured InfluxDB: acknowledged per point, or
+	 * batched without waiting where its target's WriteMode is Asynchronous.
+	 */
 	private static Sink seriesSink(EndpointPlan endpoint,MappingPlan mapping,int position,
 			SeriesTarget target,RuntimeSettings runtime,List<Issue> issues) {
 		String path=endpointPath(mapping,"Sinks",position);
@@ -1249,7 +1252,7 @@ public final class ConnectorConfigurationFactory {
 			issue(issues,mapping,path,"the segment is Completed or has an EndTime; only an open segment can be written");return null;
 		}
 		return new Sink(entityId(mapping,"sink",position),endpoint.id(),new InfluxDb2Endpoint(series.measurement(),
-				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end()));
+				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end(),series.asynchronous()));
 	}
 
 	/**
@@ -1268,7 +1271,7 @@ public final class ConnectorConfigurationFactory {
 		}
 		TimeSeriesProjection.Series series=target.projection();
 		Source source=new Source(entityId(mapping,"source",position),endpoint.id(),new InfluxDb2Endpoint(series.measurement(),
-				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end()),
+				series.bucket(),series.timePath(),series.tags(),series.columns(),series.start(),series.end(),false),
 				Source.Delivery.READ,interval.orElse(0));
 		return hasIssue(issues,mapping)?null:source;
 	}

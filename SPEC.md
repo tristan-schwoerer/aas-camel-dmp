@@ -485,7 +485,7 @@ no such payloads.
 | Property/collection Sink | Write (`PATCH …/$value`, ValueOnly) |
 | List Sink | Rejected; its items are Sinks (`Items[0]`) |
 | Operation as Sink | Rejected (no chained actions) |
-| TimeSeries LinkedSegment as Sink | One InfluxDB point per evaluation (§5.5) |
+| TimeSeries LinkedSegment as Sink | One InfluxDB point per evaluation, acknowledged or batched by its `WriteMode` (§5.5) |
 | TimeSeries LinkedSegment as Source | Read of the latest row; requires an explicit interval (§5.5) |
 
 An element below a submodel is addressed by its idShortPath: collection
@@ -558,6 +558,23 @@ submodels (a segment directly below the submodel) are not supported yet.
   `DMP_INFLUX_ORG`); otherwise, or without a configured InfluxDB, the mapping
   is blocked. The IDTA `Query` is for people and the web UI; the DMP never
   parses it.
+- The target's optional `WriteMode` (`…/InfluxDb2Target/WriteMode/1/0`)
+  says how a Sink writes: `Synchronous` (absent counts as it) waits for
+  InfluxDB to acknowledge each point, and a rejected or failed write fails the
+  sink (§6). `Asynchronous` hands the point to one shared batching buffer and
+  the sink succeeds at once: a batch leaves after `DMP_INFLUX_FLUSH_INTERVAL`
+  (default `PT1S`) or at 1000 points; unreachable, 5xx, 408 and 429 are
+  retried by the client; a batch InfluxDB rejects, one that still fails after
+  the retries, and the oldest points beyond `DMP_INFLUX_BUFFER_LIMIT`
+  (default 10000) are dropped, logged as warnings and counted under
+  `influxAsynchronousWrites` in `/management/status` (`submittedPoints`,
+  `writtenPoints`, `failedBatches`, `retries`, `overflows`, `lastError`).
+  It is for logs and other rows whose loss must not stop the data flow: the
+  evaluation never waits for InfluxDB, no failure reaches `meta.invocation`,
+  a Source on the same segment can read a row older than one still buffered,
+  and buffered points are lost if the process dies. A row that does not fit
+  the Record still fails the sink, before anything is buffered. Any other
+  value blocks the mapping.
 - Lua returns the row for the segment's SinkId as a table keyed by Record
   idShort, groups nested (`row.Position.X`). A field the row omits is not
   written; an unknown field, a value of another type than the field's
@@ -934,7 +951,7 @@ end
 | MQTT 5 | Observe (subscribe), Write (publish), Invoke (request/reply) | Read; MQTT 3.1.1 |
 | HTTP | Read (poll), Observe and events (`longpoll`, `sse`), Write, Invoke; static headers | `websub`, inbound requests other than Operations |
 | PLC4X (Modbus) | Read, acknowledged Write of one tag per affordance | Invoke (Modbus has no actions) |
-| InfluxDB 2 (TimeSeries, §5.5) | Acknowledged Write of one point per row, Read of the latest row (polled) | Observe (InfluxDB has no subscriptions); other databases |
+| InfluxDB 2 (TimeSeries, §5.5) | Acknowledged Write of one point per row, or batched without waiting (`WriteMode` `Asynchronous`); Read of the latest row (polled) | Observe (InfluxDB has no subscriptions); other databases |
 | SNMP (v1, v2c) | Read (GET, polled), Write (SET) | Traps, SNMPv3, tables |
 | BACnet | — (rejected: the PLC4X 0.13.1 `bacnet-ip` driver neither reads nor writes; it only listens for COV notifications) | Read, Write, Observe |
 
@@ -955,7 +972,7 @@ any component, and the upstream component stays usable unchanged:
 | `dmp-milo-client:` | camel-milo client | a Method producer that answers with the Call's result (camel-milo 4.22 drops it); a consumer whose monitored item has its own subscription and a sample queue (camel-milo shares one subscription per server, created with the first endpoint's publishing interval, and keeps only the latest sample); event monitored items with an EventFilter (options `eventFields`, `eventType`; camel-milo has only data-change filters); a Write producer that waits for the server, fails on a Bad status and writes scalars as the variable's DataType (camel-milo ignores the status); structures decoded and encoded with the server's DataTypes (§5.2) |
 | `dmp-snmp:` | camel-snmp (SNMP4J) | checked GET (error status, missing object and timeout raise) and SET of the object's own SMI type; camel-snmp has no SET |
 | `dmp-http-observe:` | — (camel-http has no consumer) | observing an HTTP resource by long polling or server-sent events (§5.2) |
-| `dmp-influxdb2:` | camel-influxdb2 (influxdb-client-java) | blocking writes whose rejection or failure fails the exchange (camel-influxdb2 writes through the asynchronous batching API, whose errors never reach the exchange); typed points from a Record row; a polling consumer reading the latest row with Flux (camel-influxdb2 has no consumer); no creation of orgs or buckets (camel-influxdb2 creates them by default); one client for the configured InfluxDB, its token outside every URI |
+| `dmp-influxdb2:` | camel-influxdb2 (influxdb-client-java) | blocking writes whose rejection or failure fails the exchange (camel-influxdb2 writes only through the asynchronous batching API, whose errors never reach the exchange); that batching API only where a segment asks for it (`writeMode=Asynchronous`), one writer for all such segments, its failures and overflows counted and logged; typed points from a Record row; a polling consumer reading the latest row with Flux (camel-influxdb2 has no consumer); no creation of orgs or buckets (camel-influxdb2 creates them by default); one client for the configured InfluxDB, its token outside every URI |
 
 Connector invocation steps (`SynchronousInvocationAdapter.configureInvoke`)
 map arguments and replies of actions (HTTP, OPC UA, MQTT); an Operation bound

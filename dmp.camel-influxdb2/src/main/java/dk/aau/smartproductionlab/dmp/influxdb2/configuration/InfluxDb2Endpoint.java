@@ -15,11 +15,12 @@ import dk.aau.smartproductionlab.dmp.influxdb2.component.DmpInfluxDb2Component;
  * A TimeSeries LinkedSegment on the configured InfluxDB: written one point per row as a sink, its latest row read
  * as a source.
  *
- * @param start the segment's authored period's start, {@code null} where it has none
- * @param end   its end, {@code null} where it has none
+ * @param start        the segment's authored period's start, {@code null} where it has none
+ * @param end          its end, {@code null} where it has none
+ * @param asynchronous a sink's points are batched and not waited for (WriteMode {@code Asynchronous})
  */
 public record InfluxDb2Endpoint(String measurement, String bucket, String timePath, Map<String, String> tags,
-		List<RecordColumn> columns, Instant start, Instant end) implements Endpoint {
+		List<RecordColumn> columns, Instant start, Instant end, boolean asynchronous) implements Endpoint {
 	public InfluxDb2Endpoint {
 		tags = Map.copyOf(tags);
 		columns = List.copyOf(columns);
@@ -27,6 +28,6 @@ public record InfluxDb2Endpoint(String measurement, String bucket, String timePa
 
 	@Override
 	public String uri(BundleResources resources) {
-		return DmpInfluxDb2Component.uri(measurement, bucket, timePath, tags, columns, start, end);
+		return DmpInfluxDb2Component.uri(measurement, bucket, timePath, tags, columns, start, end, asynchronous);
 	}
 }

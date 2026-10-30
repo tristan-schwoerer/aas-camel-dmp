@@ -130,6 +130,7 @@ The container listens on port 8080 for operation calls, `/health` and
 | `DMP_INFLUX_URL` | Optional InfluxDB 2 base URL for TimeSeries segments (SPEC §5.5); without it, segment mappings are blocked |
 | `DMP_INFLUX_ORG`, `DMP_INFLUX_TOKEN` | Required with `DMP_INFLUX_URL`; the token is never logged or exposed |
 | `DMP_INFLUX_LOOKBACK` | How far back a segment Source looks for the latest row (ISO-8601, default `P30D`) |
+| `DMP_INFLUX_FLUSH_INTERVAL`, `DMP_INFLUX_BUFFER_LIMIT` | Batching of segments whose `WriteMode` is `Asynchronous`: a batch leaves at the latest after the interval (ISO-8601, default `PT1S`); beyond the limit (points, default 10000) the oldest are dropped |
 
 ### Health and status
 

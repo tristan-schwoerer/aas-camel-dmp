@@ -64,14 +64,19 @@ public final class TimeSeriesProjection {
 	public static final String MEASUREMENT = BASE + "/timeseries/InfluxDb2Target/Measurement/1/0";
 	public static final String TAGS = BASE + "/timeseries/InfluxDb2Target/Tags/1/0";
 	public static final String TAG = BASE + "/timeseries/InfluxDb2Target/Tag/1/0";
+	public static final String WRITE_MODE = BASE + "/timeseries/InfluxDb2Target/WriteMode/1/0";
+	private static final String SYNCHRONOUS = "Synchronous";
+	private static final String ASYNCHRONOUS = "Asynchronous";
 
 	/**
 	 * What one LinkedSegment writes and reads: one point per row of its series' Record. {@code start} and {@code end}
 	 * are the segment's authored period ({@code null} when not authored); a segment is open for writes unless it is
-	 * {@code Completed} or has an end.
+	 * {@code Completed} or has an end. {@code asynchronous}: its target's WriteMode is {@code Asynchronous}, so its
+	 * points are batched and not waited for (absent or {@code Synchronous}: each point is acknowledged).
 	 */
 	public record Series(URI endpoint, String bucket, String measurement, Map<String, String> tags, String timePath,
-			List<RecordColumn> columns, Instant start, Instant end, boolean open, List<Reference> references) {
+			List<RecordColumn> columns, Instant start, Instant end, boolean open, List<Reference> references,
+			boolean asynchronous) {
 		public Series { tags = Map.copyOf(tags); columns = List.copyOf(columns); references = List.copyOf(references); }
 	}
 
@@ -142,9 +147,12 @@ public final class TimeSeriesProjection {
 		if (state != null && !IN_PROGRESS.equals(state) && !COMPLETED.equals(state))
 			throw error("the segment's State must be " + IN_PROGRESS + " or " + COMPLETED + ", not " + state);
 		if (IN_PROGRESS.equals(state) && end != null) throw error("an InProgress segment has no EndTime");
+		String writeMode = optional(Aas.children(target), WRITE_MODE, "WriteMode");
+		if (writeMode != null && !SYNCHRONOUS.equals(writeMode) && !ASYNCHRONOUS.equals(writeMode))
+			throw error("the InfluxDb2Target's WriteMode must be " + SYNCHRONOUS + " or " + ASYNCHRONOUS + ", not " + writeMode);
 		return new Series(endpoint, value(only(Aas.children(target), BUCKET, "Bucket"), "Bucket"),
 				value(only(Aas.children(target), MEASUREMENT, "Measurement"), "Measurement"), tags, timePath, columns,
-				start, end, end == null && !COMPLETED.equals(state), references);
+				start, end, end == null && !COMPLETED.equals(state), references, ASYNCHRONOUS.equals(writeMode));
 	}
 
 	/** The value of an optional segment property; an empty value counts as not authored. */

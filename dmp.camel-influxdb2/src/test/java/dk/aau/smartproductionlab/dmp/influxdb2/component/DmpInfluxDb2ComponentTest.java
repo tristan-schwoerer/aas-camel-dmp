@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,9 @@ class DmpInfluxDb2ComponentTest {
 			new RecordColumn("Waypoints[1].x", "xs:double"));
 	private static final String URI_ = DmpInfluxDb2Component.uri("station_state", "ap2030", "Time",
 			Map.of("asset", "imaDispensing"), COLUMNS, null, null);
+	/** The same segment, written asynchronously. */
+	private static final String ASYNC = DmpInfluxDb2Component.uri("station_state", "ap2030", "Time",
+			Map.of("asset", "imaDispensing"), COLUMNS, null, null, true);
 	/** A completed segment: 2026-10-20, 06:00 to 14:00 UTC. */
 	private static final String BATCH = DmpInfluxDb2Component.uri("station_state", "ap2030", "Time",
 			Map.of("asset", "imaDispensing"), COLUMNS, Instant.parse("2026-10-20T06:00:00Z"), Instant.parse("2026-10-20T14:00:00Z"));
@@ -161,6 +165,62 @@ class DmpInfluxDb2ComponentTest {
 		ConnectorInvocationException failure = failure(Map.of("PackMLState", "IDLE"));
 		assertEquals("INFLUX_WRITE_FAILED", failure.getConnectorCode());
 		assertEquals(ConnectorInvocationException.Category.TRANSPORT, failure.getCategory());
+	}
+
+	/** Batches leave after {@code flush}; long enough that rows sent together share one. */
+	private DmpInfluxDb2Component batching(Duration flush) {
+		DmpInfluxDb2Component component = context.getComponent(DmpInfluxDb2Component.SCHEME, DmpInfluxDb2Component.class);
+		component.configure(new InfluxSettings(URI.create("http://127.0.0.1:" + influx.getAddress().getPort()), "ap2030",
+				"secret-token", InfluxSettings.DEFAULT_LOOKBACK, flush, 100));
+		return component;
+	}
+
+	private static void await(java.util.function.BooleanSupplier condition, String what) throws InterruptedException {
+		for (int i = 0; i < 100 && !condition.getAsBoolean(); i++) Thread.sleep(50);
+		assertTrue(condition.getAsBoolean(), what);
+	}
+
+	@Test
+	void anAsynchronousSegmentBatchesItsRowsWithoutWaitingForInfluxDb() throws InterruptedException {
+		DmpInfluxDb2Component component = batching(Duration.ofMillis(500));
+		for (String state : List.of("IDLE", "EXECUTE", "COMPLETE")) template.requestBody(ASYNC, Map.of("PackMLState", state));
+		assertTrue(writes.isEmpty(), "the exchanges did not wait for InfluxDB");
+
+		await(() -> writes.size() == 1, "the rows left as one batch");
+		List<String> lines = writes.get(0).body().strip().lines().toList();
+		assertEquals(3, lines.size(), writes.get(0).body());
+		assertTrue(lines.get(2).contains("PackMLState=\"COMPLETE\""), lines.get(2));
+		await(() -> Long.valueOf(3).equals(component.asynchronousWrites().get("writtenPoints")), "InfluxDB's answer is counted");
+		assertEquals(3L, component.asynchronousWrites().get("submittedPoints"));
+	}
+
+	@Test
+	void aBatchInfluxDbRejectsIsCountedAndLoggedWithoutFailingTheExchange() throws InterruptedException {
+		DmpInfluxDb2Component component = batching(Duration.ofMillis(50));
+		status = 422;
+		template.requestBody(ASYNC, Map.of("PackMLState", "IDLE"));
+
+		await(() -> Long.valueOf(1).equals(component.asynchronousWrites().get("failedBatches")), "the rejected batch is counted");
+		assertEquals(0L, component.asynchronousWrites().get("writtenPoints"));
+		assertTrue(((String) component.asynchronousWrites().get("lastError")).contains("field type conflict"),
+				String.valueOf(component.asynchronousWrites().get("lastError")));
+	}
+
+	@Test
+	void anAsynchronousSegmentStillRejectsARowThatDoesNotFitItsRecord() {
+		batching(Duration.ofMillis(50));
+		CamelExecutionException failure = assertThrows(CamelExecutionException.class,
+				() -> template.requestBody(ASYNC, Map.of("Count", "three")));
+		assertEquals("INFLUX_ROW_INVALID", assertInstanceOf(ConnectorInvocationException.class, failure.getCause()).getConnectorCode());
+	}
+
+	@Test
+	void stoppingSendsTheBufferedRows() throws Exception {
+		batching(Duration.ofMinutes(1));
+		template.requestBody(ASYNC, Map.of("PackMLState", "IDLE"));
+		assertTrue(writes.isEmpty());
+		context.stop();
+		assertEquals(1, writes.size(), "the buffer is flushed when the component stops");
 	}
 
 	@Test

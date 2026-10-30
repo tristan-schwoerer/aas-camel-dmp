@@ -22,6 +22,7 @@ import dk.aau.smartproductionlab.dmp.core.plan.Sink;
 import dk.aau.smartproductionlab.dmp.core.plan.Source;
 import dk.aau.smartproductionlab.dmp.core.routebuilder.ManagedRouteResource;
 import dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint;
+import dk.aau.smartproductionlab.dmp.management.model.TimeSeriesProjection;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory;
 import dk.aau.smartproductionlab.dmp.management.compiler.ConnectorConfigurationFactory.DesiredBundle;
 import dk.aau.smartproductionlab.dmp.management.compiler.MappingPlanCompiler;
@@ -229,6 +230,42 @@ class TimeSeriesDiscoveryTest {
 				assertTrue(issues(bundle).contains(metadata[3]), issues(bundle));
 			}
 		}
+	}
+
+	@Test
+	void aSegmentIsWrittenSynchronouslyUnlessItsTargetSaysAsynchronous() throws Exception {
+		try (var repository = fixture(variables())) {
+			var sink = (InfluxDb2Endpoint) influxSink(only(discovery(repository, INFLUX).scan())).endpoint();
+			assertFalse(sink.asynchronous(), "absent, each point is acknowledged");
+			assertFalse(sink.uri(RESOURCES).contains("writeMode"), sink.uri(RESOURCES));
+		}
+		try (var repository = fixture(writeMode(variables(), "Asynchronous"))) {
+			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
+			assertTrue(bundle.valid(), issues(bundle));
+			var sink = (InfluxDb2Endpoint) influxSink(bundle).endpoint();
+			assertTrue(sink.asynchronous());
+			assertTrue(sink.uri(RESOURCES).endsWith("&writeMode=Asynchronous"), sink.uri(RESOURCES));
+		}
+		try (var repository = fixture(writeMode(variables(), "Synchronous"))) {
+			assertFalse(((InfluxDb2Endpoint) influxSink(only(discovery(repository, INFLUX).scan())).endpoint()).asynchronous());
+		}
+		try (var repository = fixture(writeMode(variables(), "Batched"))) {
+			DesiredBundle bundle = only(discovery(repository, INFLUX).scan());
+			assertFalse(bundle.valid());
+			assertTrue(issues(bundle).contains("WriteMode must be Synchronous or Asynchronous, not Batched"), issues(bundle));
+		}
+	}
+
+	/** The fixture with a WriteMode in its Live segment's InfluxDb2Target. */
+	private static String writeMode(String variables, String mode) {
+		var model = com.google.gson.JsonParser.parseString(variables).getAsJsonObject();
+		var live = child(child(child(child(model.getAsJsonArray("submodelElements"), "State").getAsJsonArray("value"),
+				"Station").getAsJsonArray("value"), "Segments").getAsJsonArray("value"), "Live").getAsJsonArray("value");
+		child(live, "InfluxDb2Target").getAsJsonArray("value").add(com.google.gson.JsonParser.parseString(
+				"{\"modelType\":\"Property\",\"idShort\":\"WriteMode\",\"valueType\":\"xs:string\",\"value\":\"" + mode
+				+ "\",\"semanticId\":{\"type\":\"ExternalReference\",\"keys\":[{\"type\":\"GlobalReference\",\"value\":\""
+				+ TimeSeriesProjection.WRITE_MODE + "\"}]}}"));
+		return model.toString();
 	}
 
 	/** The fixture with its Live segment's State, StartTime and EndTime set ({@code null}: not authored). */

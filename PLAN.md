@@ -558,6 +558,15 @@ gone); failures are an HTTP status with the AAS API's `Result`, though BaSyx
 needs neither; it waits the authored `InvocationTimeout` (default `PT30S`, at
 most `PT15M`, BaSyx Go's own maximum).
 
+**WriteMode (2026-10-27).** The target's optional `WriteMode` chooses per
+segment: `Synchronous` (default, as above) or `Asynchronous`, the client's
+batching `WriteApi` on purpose, for logs whose loss must not stop the data
+flow: one writer for all such segments (`DMP_INFLUX_FLUSH_INTERVAL`,
+`DMP_INFLUX_BUFFER_LIMIT`), failures and overflows logged and counted in
+`/management/status`. A per-batch acknowledgement would not help one mapping:
+its evaluations run one at a time, so it never has more than one point in
+flight. aas-model: `time_series(..., write_mode=...)`.
+
 **Web UI.** The TimeSeries plugin reads a TimeSeries submodel or SMC (children
 from `value`, the group's idShortPath as prefix), resolves references and
 names fields by idShortPath.

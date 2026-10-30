@@ -562,7 +562,7 @@ class MappingReconciliationServiceTest {
 	private static RepositoryDiscovery.MappingCandidate seriesCandidate(String aimc, String bundleId, String measurement,
 			String valueType) {
 		var series = new dk.aau.smartproductionlab.dmp.influxdb2.configuration.InfluxDb2Endpoint(measurement, "ap2030", "Time",
-				Map.of(), List.of(new dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn("Count", valueType)), null, null);
+				Map.of(), List.of(new dk.aau.smartproductionlab.dmp.influxdb2.RecordColumn("Count", valueType)), null, null, false);
 		var configuration = new MappingRoute(bundleId, List.of(), null, List.of(new Sink("sink-" + bundleId, null, series)), null);
 		var fingerprint = fingerprint(configuration);
 		var bundle = new CompiledBundle(bundleId, 0, bundleId, bundleId, configuration, fingerprint);

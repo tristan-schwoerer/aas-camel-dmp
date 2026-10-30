@@ -72,8 +72,12 @@ public final class ManagedDmpRuntime implements AutoCloseable {
 			component.startComponent();
 			// Data-plane reads, writes and event enrichment carry the authorization discovery uses.
 			if (settings.authorization() != null) AasHttp.of(component.runtimeContext()).authorize(settings.authorization());
-			if (influx != null) component.runtimeContext()
-					.getComponent(DmpInfluxDb2Component.SCHEME, DmpInfluxDb2Component.class).configure(influx);
+			if (influx != null) {
+				DmpInfluxDb2Component series = component.runtimeContext()
+						.getComponent(DmpInfluxDb2Component.SCHEME, DmpInfluxDb2Component.class);
+				series.configure(influx);
+				ManagedRuntimeStatus.trackInflux(series);
+			}
 			reconciliation = new MappingReconciliationService(component, discovery,
 					settings.maxMappings(), settings.maxQueuedInvalidations(), settings.retryMillis());
 			MappingStateLog mappingStateLog = new MappingStateLog();
