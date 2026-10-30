@@ -86,6 +86,13 @@ class OperationRequestProcessorTest {
 						() -> new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange));
 				assertEquals(400, failure.getStatus(), String.valueOf(value));
 			}
+			for (String text : new String[] { "{", "not json", "[] trailing" }) {
+				var exchange = new DefaultExchange(camel);
+				exchange.getMessage().setBody(text);
+				var failure = assertThrows(OperationValidationException.class,
+						() -> new OperationRequestProcessor(Map.of(), Map.of("Invoke", "$")).process(exchange));
+				assertEquals(400, failure.getStatus(), text);
+			}
 		}
 	}
 

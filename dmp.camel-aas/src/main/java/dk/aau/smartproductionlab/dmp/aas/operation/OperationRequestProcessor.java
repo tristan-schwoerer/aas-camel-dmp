@@ -59,7 +59,13 @@ public class OperationRequestProcessor implements Processor {
 
 	@Override
 	public void process(Exchange exchange) throws Exception {
-		Object body = decodeRestJson(exchange.getMessage().getBody());
+		Object body;
+		try {
+			body = decodeRestJson(exchange.getMessage().getBody());
+		} catch (com.google.gson.JsonParseException notJson) {
+			throw new OperationValidationException("DMP_OPERATION_VALIDATION_FAILED", 400,
+					"Operation request is not JSON", java.util.List.of());
+		}
 		if (!(body instanceof java.util.List<?>) || !OperationPayloads.isOperationVariables(body)) {
 			throw new OperationValidationException("DMP_OPERATION_VALIDATION_FAILED", 400,
 					"Operation request must be the OperationVariable array BaSyx delegates", java.util.List.of());
