@@ -39,7 +39,9 @@ submodel events.
    submodel and recompiles only the AIMCs that depend on it; a new submodel is
    read once to see whether it is an AIMC. Unchanged mappings (same
    fingerprint) keep their routes. There is no periodic repair; a pass that
-   fails transiently is retried with backoff.
+   fails transiently is retried with backoff. A repository whose events the DMP
+   does not read (BaSyx Go) is rescanned at an interval instead
+   (`DMP_MANAGED_EVENT_TRANSPORT=poll`), and its AAS element sources are polled.
 
 ### What a mapping can do
 
@@ -107,7 +109,8 @@ The container listens on port 8080 for operation calls, `/health` and
 | `DMP_MANAGED_AAS_REPOSITORY_URI` | **Required.** Credential-free HTTP(S) repository root |
 | `DMP_MANAGED_AAS_AUTHORIZATION` | Optional `Authorization` header for repository reads (secret) |
 | `DMP_CREDENTIALS_FILE` | Optional JSON file (a mounted secret) with the credentials the AIDs' security schemes need, by endpoint or scheme reference (SPEC §5.2); without it only `nosec` interfaces compile |
-| `DMP_MANAGED_EVENT_TRANSPORT` | `kafka` (default) or `mqtt`: where repository events come from |
+| `DMP_MANAGED_EVENT_TRANSPORT` | `kafka` (default) or `mqtt`: where BaSyx Java's repository events come from; `poll`: no events (BaSyx Go), a full rescan every `DMP_MANAGED_RESCAN_INTERVAL` and every AAS source polled at its authored interval |
+| `DMP_MANAGED_RESCAN_INTERVAL` | With `poll`: the rescan interval (ISO-8601, 1 s to 1 day, default `PT30S`) |
 | `DMP_MANAGED_KAFKA_BROKERS` | **Required for Kafka.** Kafka bootstrap servers for control events |
 | `DMP_MANAGED_CONTROL_TOPIC` | **Required for Kafka.** 1–8 comma-separated literal topic names, e.g. `submodel-events` |
 | `DMP_MANAGED_CONTROL_GROUP_ID` | **Required for Kafka.** Consumer group of the control listener |

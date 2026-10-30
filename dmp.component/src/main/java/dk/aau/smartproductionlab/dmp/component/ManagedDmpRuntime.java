@@ -14,12 +14,14 @@ import dk.aau.smartproductionlab.dmp.management.compiler.DmpCredentials;
 import dk.aau.smartproductionlab.dmp.management.repository.AasRepositoryClient;
 import dk.aau.smartproductionlab.dmp.management.repository.KafkaControlEventRouteBuilder;
 import dk.aau.smartproductionlab.dmp.management.repository.MqttControlEventRouteBuilder;
+import dk.aau.smartproductionlab.dmp.management.repository.PollingControlRouteBuilder;
 import dk.aau.smartproductionlab.dmp.management.repository.MappingReconciliationService;
 import dk.aau.smartproductionlab.dmp.management.repository.RepositoryDiscovery;
 
 /**
  * The repository-managed runtime: one full scan at startup, then repository events over Kafka or MQTT keep
- * the installed mappings current.
+ * the installed mappings current, or, for a repository whose events the DMP does not read, a full rescan at an
+ * interval.
  */
 public final class ManagedDmpRuntime implements AutoCloseable {
 	@FunctionalInterface interface ControlRouteFactory {
@@ -47,6 +49,7 @@ public final class ManagedDmpRuntime implements AutoCloseable {
 		this(settings, influx, new DmpComponent(), discovery(settings, influx, credentials),
 				(managedSettings, service) -> managedSettings.mqtt() != null
 						? new MqttControlEventRouteBuilder(managedSettings.mqtt(), service)
+						: managedSettings.polling() != null ? new PollingControlRouteBuilder(managedSettings.polling(), service)
 						: new KafkaControlEventRouteBuilder(managedSettings.kafka(), service));
 	}
 
@@ -150,7 +153,8 @@ public final class ManagedDmpRuntime implements AutoCloseable {
 	private static RepositoryDiscovery discovery(ManagedRuntimeSettings settings, InfluxSettings influx, DmpCredentials credentials) {
 		var repository = new AasRepositoryClient(settings.repositoryUri(), settings.connectTimeout(),
 				settings.requestTimeout(), settings.pageSize(), settings.maxPages(), settings.authorization());
-		return new RepositoryDiscovery(repository, new RuntimeSettings(settings.repositoryUri(), influx, credentials),
+		return new RepositoryDiscovery(repository,
+				new RuntimeSettings(settings.repositoryUri(), influx, credentials, settings.repositoryEvents()),
 				settings.maxParallelReads(), settings.aimcIds());
 	}
 }

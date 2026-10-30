@@ -144,11 +144,18 @@ public final class ConnectorConfigurationFactory {
 		public DesiredBundle { issues=List.copyOf(issues); }
 		public boolean valid() { return desired.valid() && bundle!=null && issues.isEmpty(); }
 	}
-	/** {@code influx} is the InfluxDB TimeSeries segments must name, or {@code null} when none is configured. */
-	/** The DMP's deployment as compilation input: the repository, the InfluxDB, and the credentials AID schemes need. */
-	public record RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx, DmpCredentials credentials) {
+	/**
+	 * The DMP's deployment as compilation input: the repository, the InfluxDB TimeSeries segments must name
+	 * ({@code null} when none is configured), the credentials AID schemes need, and whether the repository's change
+	 * events reach the DMP ({@code repositoryEvents}; without them, AAS element sources are polled).
+	 */
+	public record RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx, DmpCredentials credentials,
+			boolean repositoryEvents) {
 		public RuntimeSettings(URI aasRepositoryBaseUri) { this(aasRepositoryBaseUri, null, null); }
 		public RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx) { this(aasRepositoryBaseUri, influx, null); }
+		public RuntimeSettings(URI aasRepositoryBaseUri, InfluxSettings influx, DmpCredentials credentials) {
+			this(aasRepositoryBaseUri, influx, credentials, true);
+		}
 		public RuntimeSettings {
 			Objects.requireNonNull(aasRepositoryBaseUri,"aasRepositoryBaseUri");
 			if(credentials==null)credentials=DmpCredentials.none();
@@ -1299,6 +1306,10 @@ public final class ConnectorConfigurationFactory {
 		OptionalLong interval=endpoint.pollingInterval().present()
 				? endpointPollingMillis(endpoint.pollingInterval(),mapping,position,issues) : pollingMillis(mapping,new ArrayList<>());
 		SubmodelElement element=target.resolved().element();
+		if(interval.isEmpty() && !runtime.repositoryEvents()) {
+			issue(issues,mapping,path,"the repository's change events do not reach the DMP (DMP_MANAGED_EVENT_TRANSPORT=poll);"
+					+" an AAS source needs a positive PollingInterval or the mapping's DefaultPollingInterval");return null;
+		}
 		if((element instanceof Property || element instanceof SubmodelElementCollection || element instanceof SubmodelElementList)
 				&& interval.isEmpty()) {
 			// Without a positive PollingInterval (none, or 0) a Property, collection or list follows the repository's

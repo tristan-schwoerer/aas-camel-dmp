@@ -73,6 +73,24 @@ class ManagedRuntimeSettingsTest {
 				"DMP_MANAGED_MQTT_BROKER_URI", "tcp://broker:1883", "DMP_MANAGED_MQTT_USERNAME", "only-user")));
 	}
 
+	@Test void pollTransportRescansAtAnIntervalAndHasNoRepositoryEvents() {
+		var settings = ManagedRuntimeSettings.fromEnvironment(Map.of(
+				"DMP_MANAGED_AAS_REPOSITORY_URI", "http://aas.test/repo", "DMP_MANAGED_EVENT_TRANSPORT", "poll"));
+		assertEquals("poll", settings.transport());
+		assertFalse(settings.repositoryEvents());
+		assertEquals(java.time.Duration.ofSeconds(30), settings.polling().interval(), "PT30S unless configured");
+		assertNull(settings.kafka());
+		assertNull(settings.mqtt());
+		assertEquals(java.time.Duration.ofMinutes(2), ManagedRuntimeSettings.fromEnvironment(Map.of(
+				"DMP_MANAGED_AAS_REPOSITORY_URI", "http://aas.test/repo", "DMP_MANAGED_EVENT_TRANSPORT", "poll",
+				"DMP_MANAGED_RESCAN_INTERVAL", "PT2M")).polling().interval());
+		assertTrue(ManagedRuntimeSettings.fromEnvironment(required()).repositoryEvents());
+		for (String invalid : new String[] { "30", "PT0.5S", "P2D" })
+			assertThrows(IllegalArgumentException.class, () -> ManagedRuntimeSettings.fromEnvironment(Map.of(
+					"DMP_MANAGED_AAS_REPOSITORY_URI", "http://aas.test/repo", "DMP_MANAGED_EVENT_TRANSPORT", "poll",
+					"DMP_MANAGED_RESCAN_INTERVAL", invalid)), invalid);
+	}
+
 	@Test void controlTopicEnvironmentAcceptsBoundedDistinctKafkaNamesAndRejectsInjection() {
 		var env = new java.util.HashMap<>(Map.of("DMP_MANAGED_AAS_REPOSITORY_URI", "http://aas.test/repo", "DMP_MANAGED_KAFKA_BROKERS", "kafka:9092",
 				"DMP_MANAGED_CONTROL_GROUP_ID", "control-group"));

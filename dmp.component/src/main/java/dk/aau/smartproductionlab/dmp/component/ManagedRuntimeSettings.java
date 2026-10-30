@@ -11,23 +11,34 @@ import java.util.Set;
 import dk.aau.smartproductionlab.dmp.core.util.JsonCodec;
 import dk.aau.smartproductionlab.dmp.management.repository.KafkaControlEventRouteBuilder;
 import dk.aau.smartproductionlab.dmp.management.repository.MqttControlEventRouteBuilder;
+import dk.aau.smartproductionlab.dmp.management.repository.PollingControlRouteBuilder;
 
 /**
- * Runtime settings of the DMP, read from DMP_MANAGED_* environment variables. Exactly one event transport is
- * configured: Kafka ({@code kafka}) or the BaSyx MQTT feature ({@code mqtt}).
+ * Runtime settings of the DMP, read from DMP_MANAGED_* environment variables. Exactly one way of learning about
+ * repository changes is configured: BaSyx Java's Kafka events ({@code kafka}), its MQTT feature ({@code mqtt}), or
+ * none, rescanning at an interval instead ({@code poll}, e.g. for BaSyx Go; AAS element sources are then polled).
  */
 public record ManagedRuntimeSettings(URI repositoryUri, String authorization,
 		KafkaControlEventRouteBuilder.Settings kafka, MqttControlEventRouteBuilder.Settings mqtt, Set<String> aimcIds,
 		int maxMappings, int maxQueuedInvalidations, int maxParallelReads, long retryMillis,
 		Duration connectTimeout, Duration requestTimeout, int pageSize, int maxPages,
-		KafkaSecurity kafkaSecurity) {
+		KafkaSecurity kafkaSecurity, PollingControlRouteBuilder.Settings polling) {
+	public ManagedRuntimeSettings(URI repositoryUri, String authorization,
+			KafkaControlEventRouteBuilder.Settings kafka, MqttControlEventRouteBuilder.Settings mqtt, Set<String> aimcIds,
+			int maxMappings, int maxQueuedInvalidations, int maxParallelReads, long retryMillis,
+			Duration connectTimeout, Duration requestTimeout, int pageSize, int maxPages, KafkaSecurity kafkaSecurity) {
+		this(repositoryUri, authorization, kafka, mqtt, aimcIds, maxMappings, maxQueuedInvalidations, maxParallelReads,
+				retryMillis, connectTimeout, requestTimeout, pageSize, maxPages, kafkaSecurity, null);
+	}
+
 	public ManagedRuntimeSettings {
 		kafkaSecurity = kafkaSecurity == null ? KafkaSecurity.plaintext() : kafkaSecurity;
 		if (repositoryUri == null || !repositoryUri.isAbsolute() || repositoryUri.getHost() == null
 				|| repositoryUri.getUserInfo() != null || repositoryUri.getFragment() != null || repositoryUri.getQuery() != null
 				|| !("http".equalsIgnoreCase(repositoryUri.getScheme()) || "https".equalsIgnoreCase(repositoryUri.getScheme())))
 			throw new IllegalArgumentException("managed AAS repository URI must be credential-free HTTP(S) without a query or fragment");
-		if ((kafka == null) == (mqtt == null)) throw new IllegalArgumentException("exactly one event transport, Kafka or MQTT, is required");
+		if ((kafka != null ? 1 : 0) + (mqtt != null ? 1 : 0) + (polling != null ? 1 : 0) != 1)
+			throw new IllegalArgumentException("exactly one event transport, Kafka, MQTT or polling, is required");
 		aimcIds = aimcIds == null ? Set.of() : Set.copyOf(aimcIds);
 		if (aimcIds.size() > 8192 || aimcIds.stream().anyMatch(String::isBlank))
 			throw new IllegalArgumentException("managed AIMC filter must contain at most 8192 nonblank exact IDs");
@@ -52,7 +63,10 @@ public record ManagedRuntimeSettings(URI repositoryUri, String authorization,
 				retryMillis, connectTimeout, requestTimeout, pageSize, maxPages, KafkaSecurity.plaintext());
 	}
 
-	public String transport() { return kafka != null ? "kafka" : "mqtt"; }
+	public String transport() { return kafka != null ? "kafka" : mqtt != null ? "mqtt" : "poll"; }
+
+	/** Whether the repository's change events reach the DMP; without them AAS element sources are polled. */
+	public boolean repositoryEvents() { return polling == null; }
 
 	/** Control-plane only. Secrets are never placed in Camel endpoint URIs or diagnostics. */
 	public record KafkaSecurity(String protocol, String mechanism, String username, String password) {
@@ -89,6 +103,7 @@ public record ManagedRuntimeSettings(URI repositoryUri, String authorization,
 		String transport = environment.getOrDefault("DMP_MANAGED_EVENT_TRANSPORT", "kafka").trim().toLowerCase(java.util.Locale.ROOT);
 		KafkaControlEventRouteBuilder.Settings kafka = null;
 		MqttControlEventRouteBuilder.Settings mqtt = null;
+		PollingControlRouteBuilder.Settings polling = null;
 		switch (transport) {
 		case "kafka" -> kafka = new KafkaControlEventRouteBuilder.Settings(
 				required(environment, "DMP_MANAGED_KAFKA_BROKERS"), required(environment, "DMP_MANAGED_CONTROL_TOPIC"),
@@ -103,7 +118,14 @@ public record ManagedRuntimeSettings(URI repositoryUri, String authorization,
 					environment.getOrDefault("DMP_MANAGED_MQTT_REPOSITORY_ID", "+").trim(),
 					longValue(environment, "DMP_MANAGED_MQTT_SESSION_EXPIRY_SECONDS", 86_400));
 		}
-		default -> throw new IllegalArgumentException("DMP_MANAGED_EVENT_TRANSPORT must be kafka or mqtt");
+		case "poll" -> {
+			String interval = environment.getOrDefault("DMP_MANAGED_RESCAN_INTERVAL", "PT30S").trim();
+			try { polling = new PollingControlRouteBuilder.Settings(Duration.parse(interval)); }
+			catch (java.time.format.DateTimeParseException invalid) {
+				throw new IllegalArgumentException("DMP_MANAGED_RESCAN_INTERVAL must be an ISO-8601 duration such as PT30S");
+			}
+		}
+		default -> throw new IllegalArgumentException("DMP_MANAGED_EVENT_TRANSPORT must be kafka, mqtt or poll");
 		}
 		return new ManagedRuntimeSettings(repository, environment.get("DMP_MANAGED_AAS_AUTHORIZATION"),
 				kafka, mqtt, aimcIds(environment.get("DMP_MANAGED_AIMC_IDS")), integer(environment, "DMP_MANAGED_MAX_MAPPINGS", 4096),
@@ -116,7 +138,7 @@ public record ManagedRuntimeSettings(URI repositoryUri, String authorization,
 				new KafkaSecurity(
 						environment.getOrDefault("DMP_MANAGED_KAFKA_SECURITY_PROTOCOL", "PLAINTEXT"),
 						environment.get("DMP_MANAGED_KAFKA_SASL_MECHANISM"), environment.get("DMP_MANAGED_KAFKA_SASL_USERNAME"),
-						environment.get("DMP_MANAGED_KAFKA_SASL_PASSWORD")));
+						environment.get("DMP_MANAGED_KAFKA_SASL_PASSWORD")), polling);
 	}
 
 	@Override public String toString() {

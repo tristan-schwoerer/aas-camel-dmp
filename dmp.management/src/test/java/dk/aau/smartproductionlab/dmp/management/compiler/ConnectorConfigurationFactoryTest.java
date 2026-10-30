@@ -719,6 +719,24 @@ class ConnectorConfigurationFactoryTest {
 	}
 
 	@Test
+	void withoutRepositoryEventsAnAasSourceIsPolledAndNeedsAnInterval() {
+		var collection=AasFixtures.collection("Status",property("State","RUNNING"));
+		var target=new DirectTarget(new AasReferenceResolver.ResolvedElement(
+				AasFixtures.submodel("urn:owner/submodels/Variables","Variables"),collection.getValue().get(0)));
+		var reference=AasFixtures.reference("Submodel","urn:owner/submodels/Variables","SubmodelElementCollection","Status","Property","State");
+		var out=new EndpointPlan("Out",reference,target);
+		var runtime=new ConnectorConfigurationFactory.RuntimeSettings(URI.create("http://aas.example:8081"),null,null,false);
+		var blocked=factory.create(new Plan(List.of(mappingPlan("aas-poll",0,new EndpointPlan("State",reference,target),out))),"route",runtime);
+		assertTrue(blocked.routes().isEmpty());
+		assertTrue(blocked.issues().stream().anyMatch(issue -> issue.message().contains("change events do not reach the DMP")),
+				blocked.issues().toString());
+		var polled=factory.create(new Plan(List.of(withDefaultPollingInterval(mappingPlan("aas-poll",0,
+				new EndpointPlan("State",reference,target),out),"2"))),"route",runtime);
+		assertTrue(polled.issues().isEmpty(),polled.issues().toString());
+		assertInstanceOf(AasElementSource.class,sources(polled).get(0).endpoint(),"the mapping's DefaultPollingInterval reads it");
+	}
+
+	@Test
 	void nestedAasSinksAreAddressedByTheirIdShortPath() {
 		var collection=AasFixtures.collection("Location",property("x","0.0"));
 		var target=new DirectTarget(new AasReferenceResolver.ResolvedElement(

@@ -103,10 +103,19 @@ connection per device. What still has threads per endpoint: HTTP observation
 4. Shells are never read. References still containing `{aas_id}` macros block
    their mapping; models are expected to be fully resolved at authoring time.
 
-This is the only full discovery. There is no periodic repair.
+This is the only full discovery. There is no periodic repair, except without
+events (`poll`, below).
 
 ### 4.2 Events
 
+- Without events: `DMP_MANAGED_EVENT_TRANSPORT=poll`, for a repository whose
+  events the DMP does not read (BaSyx Go, whose CloudEvents name only the
+  submodel). Every `DMP_MANAGED_RESCAN_INTERVAL` (default `PT30S`, 1 s to 1
+  day) is a full discovery, read afresh; unchanged fingerprints keep their
+  bundles, so only what changed is reinstalled, at most one interval late. AAS
+  element sources are then polled: one without a positive `PollingInterval` or
+  `DefaultPollingInterval` blocks its mapping. `/health` needs no event
+  transport. Operations are delegated as with events (§7).
 - Transport: `DMP_MANAGED_EVENT_TRANSPORT=kafka` (BaSyx `aas-events`/
   `submodel-events` topics, committed offsets) or `mqtt` (BaSyx
   submodel-repository MQTT feature, two persistent QoS 1 subscriptions:
@@ -1048,8 +1057,8 @@ id can read it; the status itself stays without names and messages.
 | ADR-024 | Each Source's `Evaluation/Mode` (`OnUpdate` without one) says whether it triggers and how it is read; acquisition otherwise comes from declared capability (2026-10-23, replacing `TriggerSourceIds`). An observed `Cached` source that can be read is read once at installation (2026-10-27). An Operation's further sources are `ReadAtEvaluation` only: `Cached` fan-in was tried and withdrawn (2026-10-28). |
 | ADR-025 | Connector capabilities are explicit per interaction (§9). |
 | ADR-027 | Single Java process; Python management node, per-asset containers and file configuration removed (2026-10-15). |
-| ADR-028 | Need-to-know discovery and event-only lifecycle; no periodic repair (2026-10-15). |
-| ADR-029 | REST path comes from the Operation's `invocationDelegation` URL; shells and `{aas_id}` expansion are not used. |
+| ADR-028 | Need-to-know discovery and event-only lifecycle; no periodic repair (2026-10-15). Without readable events (`poll`, BaSyx Go), a full rescan at an interval and polled AAS sources (2026-10-28). |
+| ADR-029 | REST path comes from the Operation's `invocationDelegation` URL; shells and `{aas_id}` expansion are not used. The path is the Operation's AAS API invoke path, checked at compile time; the body is BaSyx's `OperationVariable[]`, a failure the AAS API's `Result` (2026-10-28). |
 
 Retired: ADR-006 (file-loaded scripts), ADR-008/012 (one DMP per asset),
 ADR-010 (Kafka-only eventing), ADR-013 (Python management node), ADR-015

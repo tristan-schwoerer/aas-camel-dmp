@@ -427,6 +427,27 @@ class MappingReconciliationServiceTest {
 	}
 
 	@Test
+	void aRescanTickDuringAPendingPassLeavesThatPassToInstall() {
+		Runtime runtime = new Runtime();
+		AtomicReference<PollingControlRouteBuilder> polling = new AtomicReference<>();
+		var service = service(runtime, () -> {
+			polling.get().rescan();
+			return scan(valid("first"), true);
+		});
+		polling.set(new PollingControlRouteBuilder(new PollingControlRouteBuilder.Settings(java.time.Duration.ofSeconds(1)), service));
+		runtime.startComponent();
+		try {
+			service.invalidate(null);
+			var pass = service.reconcileNow();
+			assertFalse(pass.superseded(), "a tick while the pass runs does not supersede it");
+			assertEquals(1, pass.installedOrUpdated());
+			assertFalse(service.repairPending());
+			polling.get().rescan();
+			assertTrue(service.repairPending(), "the first tick after the pass rescans");
+		} finally { service.close(); runtime.stopComponent(); }
+	}
+
+	@Test
 	void newMembershipEventDuringEmptyScanRequiresRepairWithoutDiscardingUnrelatedWork() {
 		Runtime runtime = new Runtime();
 		AtomicReference<MappingReconciliationService> reference = new AtomicReference<>();
